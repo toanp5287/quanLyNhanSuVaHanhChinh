@@ -1,20 +1,39 @@
-// const app = document.querySelector("#app");
 
-// async function loadHome() {
-//   try {
-//     const response = await fetch("/src/pages/home.html");
+import homeHtml from "./pages/home.html?raw";
+import login from "./pages/login.html?raw";
 
-//     if (!response.ok) {
-//       throw new Error("Không tìm thấy home.html");
-//     }
+const app = document.querySelector("#app");
 
-//     const html = await response.text();
+function mountHome(html) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
 
-//     app.innerHTML = html;
-//   } catch (error) {
-//     console.error("Lỗi tải trang:", error);
-//     app.innerHTML = "<h1>Không thể tải trang chủ!</h1>";
-//   }
-// }
+    document.body.className = doc.body.className;
+    app.innerHTML = doc.body.innerHTML;
 
-// loadHome();
+    // Khởi chạy lại các script trong HTML
+    app.querySelectorAll("script").forEach((oldScript) => {
+        const script = document.createElement("script");
+
+        Array.from(oldScript.attributes).forEach((attr) => {
+            script.setAttribute(attr.name, attr.value);
+        });
+
+        script.textContent = oldScript.textContent;
+        oldScript.replaceWith(script);
+    });
+}
+
+
+mountHome(login);
+
+
+document.addEventListener("click", (e) => {
+    const button = e.target.closest("#dangNhap");
+
+    if (!button) return;
+
+    e.preventDefault();
+
+
+    mountHome(homeHtml);
+});
