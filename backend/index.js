@@ -3,6 +3,11 @@ import cors from "cors";
 import dotenv from "dotenv";
 import routerAuth from "./src/routes/auth.router.js"; // luu ý dự án dử dụng module nên import đuỗi phải có .js
 import routerPermissions from "./src/routes/permissions.router.js";
+import routerEmployees from "./src/routes/employees.router.js";
+import routerOrganization from "./src/routes/organization.router.js";
+import routerContracts from "./src/routes/contracts.router.js";
+import routerRewardsDiscipline from "./src/routes/rewardsDiscipline.router.js";
+import routerMyProfile from "./src/routes/myProfile.router.js";
 import connectMysql from "./src/config/database.js";
 const app = express();
 
@@ -19,6 +24,10 @@ const port = process.env.PORT || 4000;
 app.use(express.json());
 app.use("/auth", routerAuth);
 app.use("/permissions", routerPermissions);
+app.use("/employees", routerEmployees);
+app.use("/organization", routerOrganization);
+app.use("/contracts", routerContracts);
+app.use("/my-profile", routerMyProfile);
 app.listen(port, async () => {
   await connectMysql();
   console.log(`Server đang chạy ở http://localhost:${port}`);

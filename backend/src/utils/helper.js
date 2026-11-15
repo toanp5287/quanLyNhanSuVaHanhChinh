@@ -35,10 +35,7 @@ export const buildEmployeeScope = (user) => {
 export const canViewSalary = (user) => {
   if (!user) return false;
 
-  if (hasPermission(user.permissions, "PAY.RUN_PAYROLL")) return true;
-  if (hasPermission(user.permissions, "HR.PROFILE_MANAGE")) return true;
-
-  return user.data_scope === "SELF";
+  return !["SUPER_ADMIN", "OFFICE_ADMIN"].includes(user.role_id);
 };
 
 export const toPublicUser = (row) => {
