@@ -59,6 +59,7 @@ const state = {
     utilization_percent: 0,
   },
   departments: [],
+  expandedDepartments: new Set(),
   positions: [],
   options: { departments: [], grade_levels: [] },
   departmentFormMode: "create",
@@ -587,6 +588,8 @@ const renderChart = () => {
     if (depth > 12) return "";
 
     const children = childrenMap.get(department.id) || [];
+    const canCollapse = depth >= 1;
+    const expanded = !canCollapse || state.expandedDepartments.has(String(department.id));
     const progress = getHeadcountProgress(department);
     const editButton = state.canManage
       ? `<button type="button" class="w-8 h-8 rounded hover:bg-surface-container-high text-primary flex items-center justify-center" data-edit-department="${escapeHtml(department.id)}" title="Sửa phòng ban">
@@ -631,8 +634,17 @@ const renderChart = () => {
         </div>
         ${
           children.length
-            ? `<div class="ml-5 mt-2 pl-4 border-l-2 border-surface-variant grid grid-cols-1 xl:grid-cols-2 gap-2">
-                ${children.map((child) => renderNode(child, depth + 1)).join("")}
+            ? `${canCollapse ? `<button type="button"
+                id="org-toggle-${escapeHtml(department.id)}"
+                class="mt-2 inline-flex items-center gap-1 rounded px-3 py-2 text-primary hover:bg-surface-container-high font-label-sm text-label-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                data-toggle-department="${escapeHtml(department.id)}"
+                aria-expanded="${expanded}"
+                aria-controls="org-children-${escapeHtml(department.id)}">
+                <span class="material-symbols-outlined text-[20px]" aria-hidden="true">${expanded ? "expand_less" : "expand_more"}</span>
+                ${expanded ? "Thu gọn" : "Hiện"} ${children.length} phòng ban trực thuộc
+              </button>` : ""}
+              <div id="org-children-${escapeHtml(department.id)}" class="${expanded ? "grid" : "hidden"} ml-5 mt-2 pl-4 border-l-2 border-surface-variant grid-cols-1 xl:grid-cols-2 gap-2">
+                ${expanded ? children.map((child) => renderNode(child, depth + 1)).join("") : ""}
               </div>`
             : ""
         }
@@ -1599,6 +1611,19 @@ const bindEvents = (user) => {
   });
 
   document.getElementById("orgChart")?.addEventListener("click", (event) => {
+    const toggleButton = event.target.closest("[data-toggle-department]");
+    if (toggleButton) {
+      const id = toggleButton.getAttribute("data-toggle-department");
+      if (state.expandedDepartments.has(id)) {
+        state.expandedDepartments.delete(id);
+      } else {
+        state.expandedDepartments.add(id);
+      }
+      renderChart();
+      document.getElementById(`org-toggle-${id}`)?.focus();
+      return;
+    }
+
     const editButton = event.target.closest("[data-edit-department]");
     if (editButton) {
       openEditDepartment(editButton.getAttribute("data-edit-department"));
