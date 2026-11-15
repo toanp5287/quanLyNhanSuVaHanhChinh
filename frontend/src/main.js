@@ -3,11 +3,22 @@ import loginHtml from "./pages/login.html?raw";
 import { initLogin } from "./js/login.js";
 import { initHome, setupShell } from "./js/home.js";
 import { initPermissions } from "./js/permissions.js";
+import { initMyProfile } from "./js/my-profile.js";
+import { getEmployeeModeFromHash, initEmployees } from "./js/employees.js";
+import {
+  getContractStatusFromHash,
+  initContracts,
+} from "./js/contracts.js";
+import {
+  getOrganizationTabFromHash,
+  initOrganization,
+} from "./js/organization.js";
 import {
   clearSession,
   getCurrentUser,
   getMe,
   getToken,
+  hasPermission,
   logout,
 } from "./services/auth.service.js";
 
@@ -83,15 +94,114 @@ function showPermissions(user) {
   initPermissions(user);
 }
 
+function showMyProfile(user) {
+  if (!user || !hasPermission("ESS.SELF_PROFILE", user)) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  mountPage(homeHtml);
+  app.classList.add("hrm-fade-in");
+  initMyProfile(user);
+}
+
+function showEmployees(user, mode = "all") {
+  if (!user || !hasPermission("HR.PROFILE_VIEW", user)) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  if (user.data_scope === "SELF") {
+    window.location.hash = "#/ho-so-ca-nhan";
+    return;
+  }
+
+  mountPage(homeHtml);
+  app.classList.add("hrm-fade-in");
+  setupShell(user);
+  initEmployees(user, mode);
+}
+
+function showOrganization(user, tab = "chart") {
+  if (!user || !hasPermission("HR.PROFILE_VIEW", user)) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  if (user.data_scope === "SELF") {
+    window.location.hash = "#/ho-so-ca-nhan";
+    return;
+  }
+
+  mountPage(homeHtml);
+  app.classList.add("hrm-fade-in");
+  setupShell(user);
+  initOrganization(user, tab);
+}
+
+function showContracts(user, status = "ALL") {
+  if (!user || !hasPermission("HR.CONTRACT_MANAGE", user)) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  mountPage(homeHtml);
+  app.classList.add("hrm-fade-in");
+  setupShell(user);
+  initContracts(user, status);
+}
+
 function renderRoute(user) {
-  if (window.location.hash === "#/phan-quyen") {
+  const hash = window.location.hash;
+
+  if (hash === "#/phan-quyen") {
     showPermissions(user);
+  } else if (
+    hash === "#/so-do-phong-ban" ||
+    hash.startsWith("#/so-do-phong-ban/")
+  ) {
+    showOrganization(user, getOrganizationTabFromHash(hash));
+  } else if (hash === "#/hop-dong" || hash.startsWith("#/hop-dong/")) {
+    showContracts(user, getContractStatusFromHash(hash));
+  } else if (hash === "#/nhan-vien" || hash.startsWith("#/nhan-vien/")) {
+    showEmployees(user, getEmployeeModeFromHash(hash));
+  } else if (hash === "#/ho-so-ca-nhan") {
+    showMyProfile(user);
+  } else if (hash === "#/trang-chu") {
+    showHome(user);
+  } else if (!hash && user?.role_id === "EMPLOYEE") {
+    showMyProfile(user);
   } else {
     showHome(user);
   }
 }
 
 document.addEventListener("click", (event) => {
+  const card = event.target.closest(".action-card");
+
+  if (card && !event.target.closest("button")) {
+    const title = card.getAttribute("data-title") || "";
+    const cardRoutes = {
+      "Cổng thông tin cá nhân": "#/ho-so-ca-nhan",
+      "Hồ sơ cá nhân & JD": "#/ho-so-ca-nhan",
+      "Tất cả nhân viên": "#/nhan-vien",
+      "Nhân viên đang làm": "#/nhan-vien/dang-lam",
+      "Nhân viên đã nghỉ": "#/nhan-vien/da-nghi",
+      "Hợp đồng lao động": "#/hop-dong",
+      "Sơ đồ phòng ban": "#/so-do-phong-ban",
+    };
+
+    if (cardRoutes[title]) {
+      event.preventDefault();
+      window.location.hash = cardRoutes[title];
+      return;
+    }
+  }
+
   const link = event.target.closest("aside nav a[data-path]");
   if (!link) return;
 
@@ -99,13 +209,20 @@ document.addEventListener("click", (event) => {
 
   const path = link.getAttribute("data-path");
 
+  if (path === "nhan-su") {
+    const user = getCurrentUser();
+    window.location.hash =
+      user?.data_scope === "SELF" ? "#/ho-so-ca-nhan" : "#/nhan-vien";
+    return;
+  }
+
   if (path === "phan-quyen") {
     window.location.hash = "#/phan-quyen";
     return;
   }
 
   if (path === "menu-launcher") {
-    window.location.hash = "";
+    window.location.hash = "#/trang-chu";
   }
 });
 

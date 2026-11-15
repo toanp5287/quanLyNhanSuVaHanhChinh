@@ -1,0 +1,624 @@
+<!doctype html>
+
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Danh sách nhân sự - HRM</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-surface font-body-md text-body-md text-on-surface">
+    <header class="fixed top-0 left-0 right-0 z-50 flex flex-col">
+      <div
+        class="h-14 bg-primary-container px-space-md flex items-center justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]"
+      >
+        <div class="flex items-center gap-space-sm">
+          <button
+            class="p-space-xs text-on-primary hover:bg-white/10 rounded flex items-center justify-center transition-colors"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[22px]">menu</span>
+          </button>
+          <div
+            class="w-8 h-8 rounded bg-white/10 flex items-center justify-center text-on-primary"
+          >
+            <span class="material-symbols-outlined text-[20px]">apps</span>
+          </div>
+          <span
+            class="font-headline-sm text-headline-sm text-on-primary whitespace-nowrap hidden sm:inline-block"
+            >Quản lý nhân sự HRM</span
+          >
+        </div>
+        <div class="flex-1 max-w-xl mx-space-md">
+          <div class="relative flex items-center w-full">
+            <span
+              class="material-symbols-outlined absolute left-3 text-secondary-fixed-dim text-[18px]"
+              >search</span
+            >
+            <input
+              class="w-full h-9 pl-9 pr-4 rounded bg-secondary text-on-secondary placeholder:text-secondary-fixed-dim text-body-md font-body-md focus:outline-none focus:bg-secondary focus:ring-1 focus:ring-white transition-all"
+              placeholder="Tìm kiếm Menu..."
+              type="text"
+            />
+          </div>
+        </div>
+        <div class="flex items-center gap-space-xs">
+          <button
+            class="p-space-xs text-on-primary hover:bg-white/10 rounded flex items-center justify-center transition-colors"
+            title="Đồng bộ"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[20px]">sync</span>
+          </button>
+          <button
+            class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs hover:ring-2 hover:ring-white/40 transition-all"
+            id="userMenuBtn"
+            title="Thông tin tài khoản"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-on-primary text-[18px]"
+              >person</span
+            >
+          </button>
+          <button
+            class="p-space-xs text-on-primary hover:bg-white/10 rounded flex items-center justify-center transition-colors"
+            id="logoutBtn"
+            title="Đăng xuất"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[20px]">logout</span>
+          </button>
+          <div
+            class="hidden fixed right-4 top-14 z-[80] w-72 rounded-lg bg-surface-container-lowest text-on-surface shadow-xl border border-surface-variant p-4"
+            id="userMenuDropdown"
+          ></div>
+        </div>
+      </div>
+      <div
+        class="h-11 bg-surface-container-lowest px-space-md flex items-center justify-between border-b border-surface-variant"
+      >
+        <div class="flex items-center gap-space-sm pl-14">
+          <span class="font-body-md text-on-surface-variant flex items-center gap-space-xs"
+            ><a class="hover:text-primary transition-colors" href="#">Quản lý nhân sự</a
+            ><span class="material-symbols-outlined text-[16px]"
+              >chevron_right</span
+            ></span
+          >
+          <span class="font-headline-sm text-headline-sm text-primary font-bold"
+            >Danh sách nhân sự</span
+          >
+        </div>
+        <div class="flex items-center gap-space-xs">
+          <span
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm"
+          >
+            <span class="material-symbols-outlined text-[14px]"
+              >verified_user</span
+            >
+            Phân hệ 1 - Core HR
+          </span>
+        </div>
+      </div>
+    </header>
+
+    <aside
+      class="fixed left-0 top-14 bottom-0 w-14 bg-surface-container-lowest z-50 flex flex-col items-center py-space-sm border-r border-surface-variant overflow-visible"
+    >
+      <nav
+        class="flex flex-col items-center gap-space-xs w-full px-space-xs"
+        data-active-classes="bg-secondary-fixed text-on-secondary-fixed font-bold"
+      >
+        <a
+          aria-label="Trang chủ"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="menu-launcher"
+          data-tooltip="Trang chủ"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]">home</span></a
+        ><a
+          aria-label="Nhân sự"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="nhan-su"
+          data-tooltip="Nhân sự"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]">group</span></a
+        ><a
+          aria-label="Lịch biểu"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="lich-bieu"
+          data-tooltip="Lịch biểu"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]"
+            >calendar_month</span
+          ></a
+        ><a
+          aria-label="Nghỉ phép"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="nghi-phep"
+          data-tooltip="Nghỉ phép"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]"
+            >beach_access</span
+          ></a
+        ><a
+          aria-label="Bảo hiểm"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="bao-hiem"
+          data-tooltip="Bảo hiểm"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]">shield</span></a
+        ><a
+          aria-label="Khen thưởng"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="khen-thuong"
+          data-tooltip="Khen thưởng"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]"
+            >military_tech</span
+          ></a
+        ><a
+          aria-label="Tiền lương"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="tien-luong"
+          data-tooltip="Tiền lương"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]"
+            >payments</span
+          ></a
+        ><a
+          aria-label="Tuyển dụng"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="tuyen-dung"
+          data-tooltip="Tuyển dụng"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]"
+            >person_search</span
+          ></a
+        ><a
+          aria-label="Đào tạo"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="dao-tao"
+          data-tooltip="Đào tạo"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]">school</span></a
+        ><a
+          aria-label="Đánh giá"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="danh-gia"
+          data-tooltip="Đánh giá"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]"
+            >rate_review</span
+          ></a
+        ><a
+          aria-label="Tài sản"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="tai-san"
+          data-tooltip="Tài sản"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]"
+            >inventory_2</span
+          ></a
+        ><a
+          aria-label="Báo cáo"
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="bao-cao"
+          data-tooltip="Báo cáo"
+          href="#"
+          ><span class="material-symbols-outlined text-[20px]"
+            >summarize</span
+          ></a
+        >
+      </nav>
+    </aside>
+
+    <div class="pl-14">
+      <main
+        class="relative pt-[100px] w-full min-h-screen bg-surface px-space-lg py-space-md"
+      >
+        <div
+          class="flex flex-col w-full gap-space-lg pb-space-xl"
+          id="employeesRoot"
+        >
+          <div
+            class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-space-md"
+          >
+            <div class="flex flex-col gap-space-xs">
+              <div
+                class="flex items-center gap-space-xs text-on-surface-variant font-label-md text-label-md"
+              >
+                <a class="hover:text-primary transition-colors" href="#"
+                  >Quản lý nhân sự</a
+                >
+                <span class="material-symbols-outlined text-[14px]"
+                  >chevron_right</span
+                >
+                <span class="text-on-surface font-semibold"
+                  >Danh sách nhân sự</span
+                >
+              </div>
+              <h1
+                class="font-headline-lg text-headline-lg text-on-surface"
+                id="employeesTitle"
+              >
+                Tất cả nhân viên
+              </h1>
+              <p
+                class="font-body-md text-body-md text-on-surface-variant"
+                id="employeesSubtitle"
+              >
+                Danh sách nhân sự theo phạm vi dữ liệu được cấp cho tài khoản của
+                bạn.
+              </p>
+              <div class="flex items-center flex-wrap gap-space-xs mt-1">
+                <span
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm font-semibold"
+                  id="employeesTotalBadge"
+                  >Đang tải...</span
+                >
+                <span
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-label-sm text-label-sm"
+                  id="employeesScopeBadge"
+                  >Phạm vi: -</span
+                >
+                <span
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm"
+                  id="employeesRoleBadge"
+                  >-</span
+                >
+              </div>
+            </div>
+            <div class="flex items-center flex-wrap gap-space-xs">
+              <button
+                class="h-9 px-space-md rounded bg-surface-container-lowest text-on-surface hover:bg-surface-container transition-colors font-label-lg text-label-lg flex items-center gap-1.5 shadow-sm border border-surface-variant"
+                id="btnRefreshEmployees"
+                type="button"
+              >
+                <span class="material-symbols-outlined text-[18px]">sync</span>
+                <span>Làm mới</span>
+              </button>
+              <button
+                class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container transition-colors font-label-lg text-label-lg flex items-center gap-1.5 shadow-sm"
+                id="btnAddEmployee"
+                type="button"
+                hidden
+              >
+                <span class="material-symbols-outlined text-[18px]"
+                  >person_add</span
+                >
+                <span>Thêm nhân viên mới</span>
+              </button>
+            </div>
+          </div>
+
+          <div
+            class="hidden items-start gap-space-sm rounded-lg border px-space-md py-space-sm font-body-sm text-body-sm"
+            id="employeesNotice"
+          ></div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-space-md">
+            <button
+              class="text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-primary-container transition-colors"
+              data-mode="all"
+              type="button"
+            >
+              <div class="flex items-start justify-between gap-space-sm">
+                <div>
+                  <span
+                    class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block"
+                    >Tất cả nhân viên</span
+                  >
+                  <span
+                    class="font-headline-lg text-headline-lg text-primary font-bold"
+                    id="countAll"
+                    >-</span
+                  >
+                </div>
+                <span
+                  class="w-9 h-9 rounded bg-primary-fixed text-primary flex items-center justify-center"
+                >
+                  <span class="material-symbols-outlined text-[20px]"
+                    >groups</span
+                  >
+                </span>
+              </div>
+              <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+                Toàn bộ hồ sơ nhân sự trong phạm vi được phép xem.
+              </p>
+            </button>
+
+            <button
+              class="text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-emerald-300 transition-colors"
+              data-mode="working"
+              type="button"
+            >
+              <div class="flex items-start justify-between gap-space-sm">
+                <div>
+                  <span
+                    class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block"
+                    >Nhân viên đang làm</span
+                  >
+                  <span
+                    class="font-headline-lg text-headline-lg text-emerald-700 font-bold"
+                    id="countWorking"
+                    >-</span
+                  >
+                </div>
+                <span
+                  class="w-9 h-9 rounded bg-emerald-100 text-emerald-700 flex items-center justify-center"
+                >
+                  <span class="material-symbols-outlined text-[20px]"
+                    >person_check</span
+                  >
+                </span>
+              </div>
+              <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+                Gồm nhân viên đang làm việc và đang nghỉ thai sản.
+              </p>
+            </button>
+
+            <button
+              class="text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-amber-300 transition-colors"
+              data-mode="resigned"
+              type="button"
+            >
+              <div class="flex items-start justify-between gap-space-sm">
+                <div>
+                  <span
+                    class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block"
+                    >Nhân viên đã nghỉ</span
+                  >
+                  <span
+                    class="font-headline-lg text-headline-lg text-amber-600 font-bold"
+                    id="countResigned"
+                    >-</span
+                  >
+                </div>
+                <span
+                  class="w-9 h-9 rounded bg-amber-100 text-amber-700 flex items-center justify-center"
+                >
+                  <span class="material-symbols-outlined text-[20px]"
+                    >person_off</span
+                  >
+                </span>
+              </div>
+              <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+                Hồ sơ lưu trữ của nhân sự đã nghỉ việc.
+              </p>
+            </button>
+          </div>
+
+          <section
+            class="bg-surface-container-lowest rounded-lg shadow-sm overflow-hidden"
+          >
+            <div
+              class="p-space-md flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-space-sm bg-surface-container-lowest"
+            >
+              <div class="flex flex-wrap items-center gap-space-sm flex-1">
+                <div class="relative w-full sm:w-[300px]">
+                  <span
+                    class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-outline"
+                    >search</span
+                  >
+                  <input
+                    class="w-full h-9 pl-8 pr-3 text-body-sm font-body-sm bg-surface-container-low rounded focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-outline"
+                    id="employeeSearch"
+                    placeholder="Tìm theo Mã NV, Họ tên, SĐT, Email, CCCD..."
+                    type="search"
+                  />
+                </div>
+
+                <div class="relative inline-block">
+                  <select
+                    class="h-9 pl-2.5 pr-8 text-body-sm font-body-sm bg-surface-container-low rounded text-on-surface focus:ring-1 focus:ring-primary outline-none cursor-pointer appearance-none"
+                    id="filterDepartment"
+                  >
+                    <option value="">Phòng ban: Tất cả</option>
+                  </select>
+                  <span
+                    class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant text-[18px]"
+                    >arrow_drop_down</span
+                  >
+                </div>
+
+                <div class="relative inline-block">
+                  <select
+                    class="h-9 pl-2.5 pr-8 text-body-sm font-body-sm bg-surface-container-low rounded text-on-surface focus:ring-1 focus:ring-primary outline-none cursor-pointer appearance-none"
+                    id="filterPosition"
+                  >
+                    <option value="">Chức vụ: Tất cả</option>
+                  </select>
+                  <span
+                    class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant text-[18px]"
+                    >arrow_drop_down</span
+                  >
+                </div>
+
+                <div class="relative inline-block">
+                  <select
+                    class="h-9 pl-2.5 pr-8 text-body-sm font-body-sm bg-surface-container-low rounded text-on-surface focus:ring-1 focus:ring-primary outline-none cursor-pointer appearance-none"
+                    id="filterStatus"
+                  >
+                    <option value="ALL">Trạng thái: Tất cả</option>
+                    <option value="ACTIVE">Đang làm (gồm thai sản)</option>
+                    <option value="WORKING">Đang làm việc</option>
+                    <option value="MATERNITY">Thai sản</option>
+                    <option value="RESIGNED">Đã nghỉ</option>
+                  </select>
+                  <span
+                    class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant text-[18px]"
+                    >arrow_drop_down</span
+                  >
+                </div>
+
+                <div class="relative inline-block">
+                  <select
+                    class="h-9 pl-2.5 pr-8 text-body-sm font-body-sm bg-surface-container-low rounded text-on-surface focus:ring-1 focus:ring-primary outline-none cursor-pointer appearance-none"
+                    id="filterBirthMonth"
+                  >
+                    <option value="">Tháng sinh: Tất cả</option>
+                    <option value="1">Tháng 1</option>
+                    <option value="2">Tháng 2</option>
+                    <option value="3">Tháng 3</option>
+                    <option value="4">Tháng 4</option>
+                    <option value="5">Tháng 5</option>
+                    <option value="6">Tháng 6</option>
+                    <option value="7">Tháng 7</option>
+                    <option value="8">Tháng 8</option>
+                    <option value="9">Tháng 9</option>
+                    <option value="10">Tháng 10</option>
+                    <option value="11">Tháng 11</option>
+                    <option value="12">Tháng 12</option>
+                  </select>
+                  <span
+                    class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant text-[18px]"
+                    >arrow_drop_down</span
+                  >
+                </div>
+
+                <button
+                  class="h-9 px-2 text-primary font-label-md text-label-md hover:bg-surface-container-high rounded transition-colors flex items-center gap-1"
+                  id="btnResetFilters"
+                  title="Xóa toàn bộ bộ lọc"
+                  type="button"
+                >
+                  <span class="material-symbols-outlined text-[16px]"
+                    >filter_alt_off</span
+                  >
+                  <span>Xóa lọc</span>
+                </button>
+              </div>
+
+              <div class="flex items-center gap-space-xs self-end xl:self-auto">
+                <span
+                  class="font-label-sm text-label-sm text-on-surface-variant"
+                  id="employeesUpdatedAt"
+                  >—</span
+                >
+              </div>
+            </div>
+
+            <div
+              class="px-space-md py-space-xs bg-surface-container-low flex items-center gap-space-xs flex-wrap font-label-sm text-label-sm"
+              id="employeesChips"
+            >
+              <span class="text-on-surface-variant">Đang lọc theo:</span>
+              <span class="text-on-surface-variant italic"
+                >Chưa có bộ lọc bổ sung</span
+              >
+            </div>
+
+            <div class="w-full overflow-x-auto">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr
+                    class="bg-surface-container-high text-on-surface font-label-md text-label-md uppercase tracking-wider select-none"
+                  >
+                    <th class="min-w-[110px] px-3 py-2.5">Mã NV</th>
+                    <th class="min-w-[230px] px-3 py-2.5">Họ và tên</th>
+                    <th class="min-w-[90px] px-3 py-2.5">Giới tính</th>
+                    <th class="min-w-[110px] px-3 py-2.5">Ngày sinh</th>
+                    <th class="min-w-[170px] px-3 py-2.5">Phòng ban</th>
+                    <th class="min-w-[190px] px-3 py-2.5">
+                      Chức vụ (Ngạch bậc)
+                    </th>
+                    <th class="min-w-[130px] px-3 py-2.5 text-right">
+                      Lương cơ bản
+                    </th>
+                    <th class="min-w-[120px] px-3 py-2.5 text-center">
+                      Trạng thái
+                    </th>
+                    <th class="min-w-[110px] px-3 py-2.5 text-center">
+                      Thao tác
+                    </th>
+                  </tr>
+                </thead>
+                <tbody
+                  class="font-body-md text-body-md divide-y divide-surface-container-high"
+                  id="employeesBody"
+                >
+                  <tr>
+                    <td
+                      class="px-3 py-6 text-center text-on-surface-variant"
+                      colspan="9"
+                    >
+                      Đang tải danh sách nhân sự...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div
+              class="px-space-md py-space-sm bg-surface-container-low flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs font-label-sm text-label-sm text-on-surface-variant"
+            >
+              <span id="employeesResultInfo">—</span>
+              <span class="inline-flex items-center gap-1">
+                <span class="material-symbols-outlined text-[15px]"
+                  >database</span
+                >
+                Dữ liệu trực tiếp từ hệ thống HRM
+              </span>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <div
+      class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/40 p-4"
+      id="modal-employee-detail"
+    >
+      <div
+        class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-surface-container-lowest shadow-2xl"
+      >
+        <div
+          class="flex items-start justify-between gap-space-md px-space-lg py-space-md border-b border-surface-variant sticky top-0 bg-surface-container-lowest"
+        >
+          <div>
+            <h3
+              class="font-headline-md text-headline-md text-on-surface font-bold"
+              id="employeeDetailTitle"
+            >
+              Thông tin nhân sự
+            </h3>
+            <p
+              class="font-body-sm text-body-sm text-on-surface-variant"
+              id="employeeDetailSubtitle"
+            ></p>
+          </div>
+          <button
+            class="w-8 h-8 rounded hover:bg-surface-container text-on-surface-variant flex items-center justify-center"
+            id="employeeDetailClose"
+            title="Đóng"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+        <div class="p-space-lg" id="employeeDetailBody"></div>
+        <div
+          class="px-space-lg py-space-md border-t border-surface-variant flex items-center justify-end gap-space-sm"
+        >
+          <button
+            class="h-9 px-space-md rounded bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors font-label-lg text-label-lg"
+            id="employeeDetailDismiss"
+            type="button"
+          >
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="../js/employees.js"></script>
+  </body>
+</html>
