@@ -70,7 +70,8 @@ export const recalculateEmployeeMonth = async (connection, employeeId, month) =>
 export const listMonthlyTimesheets = async (month, user) => {
   validateMonth(month);
   const scope = buildEmployeeScope(user);
-  const [rows] = await db.query(`SELECT e.id AS employee_id, e.employee_code, e.full_name, e.department_id, d.name AS department_name,
+  const [rows] = await db.query(`SELECT e.id AS employee_id, e.employee_code, e.full_name, e.department_id,
+    COALESCE(d.department_name, d.name) AS department_name,
     mt.id, mt.standard_days, mt.actual_work_days, mt.paid_leave_days, mt.unpaid_leave_days, mt.total_payable_days,
     mt.late_count, mt.total_late_minutes, mt.ot_hours_150, mt.ot_hours_200, mt.ot_hours_300,
     COALESCE(mt.status, 'OPEN') AS status, mt.locked_at

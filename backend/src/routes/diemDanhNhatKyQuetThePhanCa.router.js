@@ -3,24 +3,37 @@ import { listMonthlyTimesheets, updateMonth } from "../services/tong-hop-chot-co
 import { kioskAttendance } from "../services/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 import {
+  requireAllowedAttendanceDevice,
   requireAllowedAttendanceIp,
   requireAnyPermission,
   requirePermission,
   verifyToken,
 } from "../middlewares/auth.middleware.js";
 import {
+  approveExplanationHandler,
   attendanceCheckIn,
   attendanceCheckOut,
   attendanceList,
   attendanceQuickMark,
   attendanceQuickMarkAll,
   attendanceToday,
+  cancelExplanationHandler,
+  getExplanations,
+  getShiftAssignments,
+  getWorkShifts,
+  postExplanation,
+  postShiftAssignment,
+  postWorkShift,
+  putShiftAssignment,
+  putWorkShift,
+  rejectExplanationHandler,
+  removeShiftAssignment,
 } from "../controllers/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.controller.js";
 
 const router = express.Router();
 
 const kioskAttempts = new Map();
-router.post("/kiosk/:action", requireAllowedAttendanceIp, async (req, res) => {
+router.post("/kiosk/:action", requireAllowedAttendanceIp, requireAllowedAttendanceDevice, async (req, res) => {
   res.set("Cache-Control", "no-store");
   const now = Date.now();
   for (const [key, value] of kioskAttempts) if (value.until < now) kioskAttempts.delete(key);
@@ -40,23 +53,60 @@ router.post("/kiosk/:action", requireAllowedAttendanceIp, async (req, res) => {
 router.use(verifyToken);
 
 router.get("/today", requirePermission("ESS.SELF_PROFILE"), attendanceToday);
-router.post(["/check-in", "/check-out"], (req, res) => res.status(410).json({ success: false, message: "Vui lòng chấm công tại màn hình FaceID bên ngoài: /#/face-id" }));
+
+router.post(
+  "/check-in",
+  requireAllowedAttendanceIp,
+  requireAllowedAttendanceDevice,
+  requirePermission("ESS.SELF_PROFILE"),
+  attendanceCheckIn,
+);
+router.post(
+  "/check-out",
+  requireAllowedAttendanceIp,
+  requireAllowedAttendanceDevice,
+  requirePermission("ESS.SELF_PROFILE"),
+  attendanceCheckOut,
+);
 
 router.get("/logs", requireAnyPermission(["ATT.VIEW", "HR.PROFILE_MANAGE"]), attendanceList);
 router.post("/quick-mark", requirePermission("ATT.SHIFT_OT_MANAGE"), attendanceQuickMark);
 router.post("/quick-mark-all", requirePermission("ATT.SHIFT_OT_MANAGE"), attendanceQuickMarkAll);
 
+// Danh mục ca làm việc
+router.get("/shifts", requireAnyPermission(["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"]), getWorkShifts);
+router.post("/shifts", requirePermission("ATT.SHIFT_OT_MANAGE"), postWorkShift);
+router.put("/shifts/:id", requirePermission("ATT.SHIFT_OT_MANAGE"), putWorkShift);
+
+// Phân ca nhân viên
+router.get("/shift-assignments", requireAnyPermission(["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"]), getShiftAssignments);
+router.post("/shift-assignments", requirePermission("ATT.SHIFT_OT_MANAGE"), postShiftAssignment);
+router.put("/shift-assignments/:id", requirePermission("ATT.SHIFT_OT_MANAGE"), putShiftAssignment);
+router.delete("/shift-assignments/:id", requirePermission("ATT.SHIFT_OT_MANAGE"), removeShiftAssignment);
+
+// Giải trình công
+router.get("/explanations", requirePermission("ESS.SELF_PROFILE"), getExplanations);
+router.post("/explanations", requirePermission("ESS.SELF_PROFILE"), postExplanation);
+router.delete("/explanations/:id", requirePermission("ESS.SELF_PROFILE"), cancelExplanationHandler);
+router.post("/explanations/:id/approve", requirePermission("ESS.SELF_PROFILE"), approveExplanationHandler);
+router.post("/explanations/:id/reject", requirePermission("ESS.SELF_PROFILE"), rejectExplanationHandler);
+
+// Tổng hợp & khóa bảng công tháng
 router.get("/monthly", requirePermission("ATT.VIEW"), async (req, res) => {
   try {
     res.json({ success: true, data: await listMonthlyTimesheets(req.query.month, req.user) });
-  } catch (error) { res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Không thể tải bảng công tháng" }); }
+  } catch (error) {
+    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Không thể tải bảng công tháng" });
+  }
 });
 for (const action of ["recalculate", "lock"]) {
   router.post(`/monthly/${action}`, requirePermission("ATT.SHIFT_OT_MANAGE"), async (req, res) => {
     try {
       const data = await updateMonth(req.body.month, req.user, action === "lock", req.body.department_id || null);
       res.json({ success: true, data, message: action === "lock" ? "Đã khóa bảng công" : "Đã tổng hợp công tháng" });
-    } catch (error) { res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Không thể cập nhật bảng công tháng" }); }
+    } catch (error) {
+      res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Không thể cập nhật bảng công tháng" });
+    }
   });
 }
 

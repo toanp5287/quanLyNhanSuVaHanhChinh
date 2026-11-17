@@ -74,6 +74,25 @@ const normalizeIp = (ip) => {
   return String(ip).replace(/^::ffff:/, "").trim();
 };
 
+export const requireAllowedAttendanceDevice = (req, res, next) => {
+  const allowedDeviceId = String(process.env.ALLOWED_DEVICE_ID || "").trim().toLowerCase();
+  if (!allowedDeviceId) return next();
+
+  const requestDeviceId = String(
+    req.headers["x-device-id"] || req.body?.device_id || "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (requestDeviceId && requestDeviceId === allowedDeviceId) return next();
+
+  return res.status(403).json({
+    success: false,
+    message:
+      "Thiết bị này không được phép chấm công. Chỉ máy đã đăng ký mới có thể điểm danh.",
+  });
+};
+
 export const requireAllowedAttendanceIp = (req, res, next) => {
   if (String(process.env.STRICT_ATTENDANCE_LOCK || "").toLowerCase() !== "true") {
     return next();

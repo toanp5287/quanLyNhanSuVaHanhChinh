@@ -24,6 +24,12 @@ export const initFaceKiosk = () => {
   const video = document.getElementById("kioskVideo");
   const el = id => document.getElementById(`kiosk${id}`);
   let stream = null, busy = false, starting = false, session = 0, resultTimer;
+  const deviceId = (() => {
+    const key = "hrm_kiosk_device_id";
+    let id = localStorage.getItem(key);
+    if (!id) { id = crypto.randomUUID(); localStorage.setItem(key, id); }
+    return id;
+  })();
   const active = () => root.isConnected;
   const status = (title, text, error = false) => {
     if (!active()) return;
@@ -65,7 +71,7 @@ export const initFaceKiosk = () => {
       const samples = await captureFaceSamples(video, (count, total) => status("Đang quét khuôn mặt", `Đã thu ${count}/${total} mẫu. Vui lòng giữ yên.`), () => active() && current === session && Boolean(stream?.active));
       if (!active() || current !== session) return;
       status("Đang xác thực", "Đang đối chiếu khuôn mặt và ghi nhận giờ trên máy chủ...");
-      const response = await api.post(`/attendance/kiosk/${action}`, { face_samples: samples }, { timeout: 30000, headers: { Authorization: undefined } });
+      const response = await api.post(`/attendance/kiosk/${action}`, { face_samples: samples, device_id: deviceId }, { timeout: 30000, headers: { Authorization: undefined, "X-Device-Id": deviceId } });
       if (!active() || current !== session) return;
       const { employee, log } = response.data.data;
       status(response.data.message, action === "check-in" ? "Đã ghi nhận giờ vào ca. Chúc bạn một ngày làm việc hiệu quả." : "Đã ghi nhận giờ tan ca.");
