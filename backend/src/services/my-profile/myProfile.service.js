@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { db } from "../../config/database.js";
 import { verifyPassword } from "../auth/auth.service.js";
+import { attendanceError, parseFaceDescriptor, validateFaceSamples, faceDistance } from "../diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 const EMPLOYEE_QUERY = `
   SELECT
@@ -25,6 +26,7 @@ const EMPLOYEE_QUERY = `
     DATE_FORMAT(e.hire_date, '%Y-%m-%d') AS hire_date,
     DATE_FORMAT(e.resign_date, '%Y-%m-%d') AS resign_date,
     e.work_status,
+    e.face_descriptor,
     d.department_code,
     d.name AS department_name,
     p.position_code,
@@ -177,6 +179,40 @@ export const updateSelfContact = async (employeeId, payload = {}) => {
   );
 
   return rows[0] || null;
+};
+
+export const updateSelfFaceDescriptor = async (employeeId, values, password) => {
+  if (!employeeId) return null;
+  const samples = validateFaceSamples(values);
+  if (typeof password !== "string" || !password) throw attendanceError("Nhập mật khẩu tài khoản để xác nhận đăng ký hoặc thay đổi FaceID.");
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    // Serialize enrollment so concurrent registrations cannot assign the same face twice.
+    const [employees] = await connection.query("SELECT id, face_descriptor FROM employees ORDER BY id FOR UPDATE");
+    if (!employees.some(employee => Number(employee.id) === Number(employeeId))) throw attendanceError("Không tìm thấy hồ sơ nhân viên", 404);
+    const [users] = await connection.query("SELECT password_hash FROM users WHERE employee_id = ? AND is_active = 1 LIMIT 1", [employeeId]);
+    if (!users.length || !await verifyPassword(password, users[0].password_hash)) throw attendanceError("Mật khẩu xác nhận không đúng", 403);
+    for (const employee of employees) {
+      if (Number(employee.id) === Number(employeeId)) continue;
+      const registered = parseFaceDescriptor(employee.face_descriptor);
+      if (registered && samples.some(sample => faceDistance(sample, registered) < 0.50)) throw attendanceError("Khuôn mặt này đã được đăng ký cho nhân viên khác. Không thể sử dụng chung FaceID.", 409);
+    }
+    const average = samples[0].map((_, index) => samples.reduce((sum, sample) => sum + sample[index], 0) / samples.length);
+    const descriptorJson = JSON.stringify(average);
+    await connection.query("UPDATE employees SET face_descriptor = ? WHERE id = ?", [descriptorJson, employeeId]);
+    await connection.commit();
+    return { face_descriptor: descriptorJson, has_face_descriptor: true };
+  } catch (error) { await connection.rollback(); throw error; }
+  finally { connection.release(); }
+};
+
+export const clearSelfFaceDescriptor = async (employeeId) => {
+  if (!employeeId) return null;
+  await db.query("UPDATE employees SET face_descriptor = NULL WHERE id = ?", [
+    employeeId,
+  ]);
+  return { face_descriptor: null, has_face_descriptor: false };
 };
 
 export const changeSelfPassword = async (

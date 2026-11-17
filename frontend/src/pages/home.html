@@ -301,7 +301,16 @@
             <span class="material-symbols-outlined text-on-primary text-[18px]"
               >person</span
             ></button
-          ><button
+          >          <button
+            id="btnFaceEnrollHeader"
+            class="hidden h-8 px-3 rounded bg-amber-400 text-amber-950 hover:bg-amber-300 font-label-md text-label-md items-center gap-1.5 transition-colors"
+            type="button"
+            title="Cập nhật khuôn mặt FaceID"
+          >
+            <span class="material-symbols-outlined text-[18px]">face_retouching_natural</span>
+            <span>Cập nhật khuôn mặt</span>
+          </button>
+          <button
             id="logoutBtn"
             class="p-space-xs text-on-primary hover:bg-white/10 rounded flex items-center justify-center transition-colors"
             type="button"
@@ -2817,9 +2826,52 @@
               </div>
             </section>
           </div>
-          <!-- Interactive Client-side Script -->
-          <script>
-            (function initWorkspace() {
+              <!-- FaceID Enrollment Modal -->
+              <div
+                id="modal-faceid-enroll"
+                class="hidden fixed inset-0 z-[120] bg-on-surface/50 items-center justify-center p-4"
+              >
+                <div class="w-full max-w-lg bg-surface-container-lowest rounded-lg shadow-xl overflow-hidden">
+                  <div class="h-12 px-space-md flex items-center justify-between bg-primary-container text-on-primary">
+                    <div class="flex items-center gap-2">
+                      <span class="material-symbols-outlined">face_retouching_natural</span>
+                      <span class="font-headline-sm text-headline-sm">Cập nhật mẫu khuôn mặt FaceID</span>
+                    </div>
+                    <button id="faceEnrollClose" type="button" class="w-8 h-8 rounded hover:bg-white/10 flex items-center justify-center">
+                      <span class="material-symbols-outlined text-[20px]">close</span>
+                    </button>
+                  </div>
+                  <div class="p-space-md space-y-space-sm">
+                    <div class="relative bg-black rounded overflow-hidden aspect-[4/3] flex items-center justify-center">
+                      <video id="faceEnrollVideo" autoplay muted playsinline class="w-full h-full object-cover"></video>
+                      <canvas id="faceEnrollOverlay" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+                      <div id="faceEnrollFallback" class="hidden absolute inset-0 flex flex-col items-center justify-center text-white bg-surface-dim/80">
+                        <span class="material-symbols-outlined text-5xl mb-2">face</span>
+                        <p class="font-body-sm text-body-sm text-center px-4">Không có camera thật. Đăng ký FaceID cần webcam và không hỗ trợ mẫu mô phỏng.</p>
+                      </div>
+                    </div>
+                    <div class="text-center space-y-1">
+                      <p id="faceEnrollStatus" class="font-body-md text-body-md text-on-surface">Chuẩn bị quét khuôn mặt...</p>
+                      <p id="faceEnrollHint" class="font-label-sm text-label-sm text-on-surface-variant">Giữ khuôn mặt chính diện, đủ ánh sáng trong khung hình.</p>
+                    </div>
+                    <div class="flex justify-end gap-space-xs pt-space-xs">
+                      <button id="faceEnrollCancel" type="button" class="h-9 px-space-md rounded text-on-surface-variant hover:bg-surface-container-high font-label-lg text-label-lg">Hủy</button>
+                      <button id="faceEnrollStart" type="button" class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container font-label-lg text-label-lg flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-[18px]">photo_camera</span>
+                        <span>Bắt đầu quét</span>
+                      </button>
+                      <button id="faceEnrollSave" type="button" disabled class="hidden h-9 px-space-md rounded bg-emerald-600 text-white font-label-lg text-label-lg items-center gap-1.5 disabled:opacity-50">
+                        <span class="material-symbols-outlined text-[18px]">check_circle</span>
+                        <span>Lưu mẫu khuôn mặt</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Interactive Client-side Script -->
+              <script>
+                (function initWorkspace() {
               const categoryBlocks =
                 document.querySelectorAll(".category-block");
               const actionSearch = document.getElementById("actionSearch");

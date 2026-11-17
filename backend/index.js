@@ -7,6 +7,10 @@ import routerEmployees from "./src/routes/employees.router.js";
 import routerOrganization from "./src/routes/organization.router.js";
 import routerContracts from "./src/routes/contracts.router.js";
 import routerRewardsDiscipline from "./src/routes/rewardsDiscipline.router.js";
+import routerTongHopChotCong from "./src/routes/tongHopChotCong.router.js";
+import routerDiemDanhNhatKyQuetThePhanCa from "./src/routes/diemDanhNhatKyQuetThePhanCa.router.js";
+import routerQuanLyLamThemGio from "./src/routes/quanLyLamThemGio.router.js";
+import routerQuanLyNghiPhepVaQuyPhepNam from "./src/routes/quan-ly-nghi-phep-va-quy-phep-nam.service.js";
 import routerMyProfile from "./src/routes/myProfile.router.js";
 import connectMysql from "./src/config/database.js";
 const app = express();
@@ -28,6 +32,7 @@ app.use("/employees", routerEmployees);
 app.use("/organization", routerOrganization);
 app.use("/contracts", routerContracts);
 app.use("/my-profile", routerMyProfile);
+app.use("/attendance", routerDiemDanhNhatKyQuetThePhanCa);
 app.listen(port, async () => {
   await connectMysql();
   console.log(`Server đang chạy ở http://localhost:${port}`);

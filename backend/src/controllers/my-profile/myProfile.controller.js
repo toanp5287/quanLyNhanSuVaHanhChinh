@@ -1,7 +1,9 @@
 import {
   changeSelfPassword,
+  clearSelfFaceDescriptor,
   getSelfProfile,
   updateSelfContact,
+  updateSelfFaceDescriptor,
 } from "../../services/my-profile/myProfile.service.js";
 
 const PHONE_REGEX = /^[0-9+\-().\s]{8,20}$/;
@@ -106,6 +108,34 @@ export const updateMyContact = async (req, res) => {
       success: false,
       message: "Có lỗi xảy ra khi cập nhật thông tin liên hệ",
     });
+  }
+};
+
+export const updateMyFaceDescriptor = async (req, res) => {
+  try {
+    const employeeId = req.user?.employee_id;
+    if (!employeeId) {
+      return res.status(404).json({ success: false, message: "Tai khoan chua duoc lien ket voi ho so nhan su" });
+    }
+    const data = await updateSelfFaceDescriptor(employeeId, req.body?.face_samples, req.body?.current_password);
+    return res.status(200).json({ success: true, message: "Cập nhật mẫu khuôn mặt FaceID thành công", data });
+  } catch (error) {
+    console.error("Loi cap nhat khuon mat:", error);
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Không thể cập nhật mẫu khuôn mặt" });
+  }
+};
+
+export const resetMyFaceDescriptor = async (req, res) => {
+  try {
+    const employeeId = req.user?.employee_id;
+    if (!employeeId) {
+      return res.status(404).json({ success: false, message: "Tai khoan chua duoc lien ket voi ho so nhan su" });
+    }
+    const data = await clearSelfFaceDescriptor(employeeId);
+    return res.status(200).json({ success: true, message: "Da dat lai mau khuon mat FaceID", data });
+  } catch (error) {
+    console.error("Loi dat lai khuon mat:", error);
+    return res.status(500).json({ success: false, message: "Co loi xay ra khi dat lai mau khuon mat" });
   }
 };
 

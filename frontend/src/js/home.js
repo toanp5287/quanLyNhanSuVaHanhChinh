@@ -3,7 +3,9 @@ import {
   hasAnyPermission,
   hasPermission,
   logout,
+  updateCurrentUser,
 } from "../services/auth.service.js";
+import api from "../services/api.js";
 
 const ROLE_LABELS = {
   SUPER_ADMIN: "Quản trị hệ thống (IT Admin)",
@@ -432,18 +434,291 @@ const ensurePermissionsNav = (user) => {
   );
 };
 
-const showToast = (message) => {
-  const oldToast = document.getElementById("hrmToast");
+const showToast = (message, options = {}) => {
+  const oldToast = document.getElementById(options.id || "hrmToast");
   if (oldToast) oldToast.remove();
 
   const toast = document.createElement("div");
-  toast.id = "hrmToast";
+  toast.id = options.id || "hrmToast";
   toast.className =
+    options.className ||
     "fixed bottom-5 right-5 z-[100] max-w-sm rounded-lg bg-inverse-surface text-inverse-on-surface shadow-lg px-4 py-3 font-body-sm text-body-sm";
   toast.textContent = message;
   document.body.appendChild(toast);
 
-  window.setTimeout(() => toast.remove(), 2600);
+  if (options.persistent !== true) {
+    window.setTimeout(() => toast.remove(), options.duration || 2600);
+  }
+  return toast;
+};
+
+const FACE_MODEL_URL =
+  "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/";
+let faceModelsLoaded = false;
+let faceEnrollStream = null;
+let faceEnrollDescriptor = null;
+let faceEnrollTimer = null;
+
+const stopFaceEnrollStream = () => {
+  if (faceEnrollTimer) {
+    clearTimeout(faceEnrollTimer);
+    faceEnrollTimer = null;
+  }
+  if (faceEnrollStream) {
+    faceEnrollStream.getTracks().forEach((t) => t.stop());
+    faceEnrollStream = null;
+  }
+  const video = document.getElementById("faceEnrollVideo");
+  if (video) video.srcObject = null;
+};
+
+const closeFaceEnrollModal = () => {
+  faceEnrollSession++;
+  stopFaceEnrollStream();
+  faceEnrollDescriptor = null;
+  const modal = document.getElementById("modal-faceid-enroll");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+  }
+};
+
+window.addEventListener("hashchange", closeFaceEnrollModal);
+window.addEventListener("pagehide", closeFaceEnrollModal);
+
+const setFaceEnrollStatus = (text, hint) => {
+  const status = document.getElementById("faceEnrollStatus");
+  const hintEl = document.getElementById("faceEnrollHint");
+  if (status && text) status.textContent = text;
+  if (hintEl && hint) hintEl.textContent = hint;
+};
+
+export const ensureFaceModels = async () => {
+  if (!window.faceapi) throw new Error("Không tải được thư viện FaceID. Kiểm tra kết nối mạng và thử lại.");
+  if (faceModelsLoaded) return;
+  await Promise.all([
+    window.faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_URL),
+    window.faceapi.nets.faceLandmark68TinyNet.loadFromUri(FACE_MODEL_URL),
+    window.faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODEL_URL),
+  ]);
+  faceModelsLoaded = true;
+};
+
+const detectFaceDescriptor = async (video) => {
+  if (!video || video.readyState < 2) return null;
+  const options = new window.faceapi.TinyFaceDetectorOptions({
+    inputSize: 224,
+    scoreThreshold: 0.5,
+  });
+  const results = await window.faceapi
+    .detectAllFaces(video, options)
+    .withFaceLandmarks(true)
+    .withFaceDescriptors();
+  if (!Array.isArray(results) || !results.length) return null;
+  if (results.length > 1) throw new Error("Có nhiều người trong khung hình. Chỉ một người đứng trước camera.");
+  const result = results[0];
+  if (!result || !result.detection || result.detection.score < 0.8 || result.detection.box.width < video.videoWidth * 0.18 || result.detection.box.height < video.videoHeight * 0.2) return null;
+  return result.descriptor || null;
+};
+
+export const captureFaceSamples = async (video, onProgress = () => {}, isActive = () => true) => {
+  await ensureFaceModels();
+  const samples = [];
+  for (let attempt = 0; attempt < 30 && samples.length < 5; attempt++) {
+    if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
+    const descriptor = await detectFaceDescriptor(video);
+    if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
+    if (descriptor) {
+      const values = Array.from(descriptor);
+      if (samples.length && window.faceapi.euclideanDistance(values, samples[0]) >= 0.32) throw new Error("Khuôn mặt thay đổi trong lúc quét. Vui lòng quét lại với một người duy nhất.");
+      samples.push(values);
+      onProgress(samples.length, 5);
+    }
+    if (samples.length < 5) await new Promise(resolve => setTimeout(resolve, 220));
+  }
+  if (samples.length < 5) throw new Error("Chưa nhận diện rõ khuôn mặt. Đứng gần hơn, nhìn thẳng và tăng ánh sáng rồi quét lại.");
+  return samples;
+};
+
+let faceEnrollSession = 0;
+const runFaceEnrollScan = async () => {
+  const saveBtn = document.getElementById("faceEnrollSave");
+  const startBtn = document.getElementById("faceEnrollStart");
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.classList.add("hidden");
+    saveBtn.classList.remove("flex");
+  }
+  if (startBtn) startBtn.disabled = true;
+  faceEnrollDescriptor = null;
+
+  const video = document.getElementById("faceEnrollVideo");
+  const session = ++faceEnrollSession;
+  try {
+    if (!faceEnrollStream?.active) throw new Error("Camera chưa sẵn sàng. Vui lòng cho phép camera rồi mở lại cửa sổ.");
+    setFaceEnrollStatus("Đang lấy 5 mẫu khuôn mặt...", "Chỉ một người trong khung hình, nhìn thẳng và giữ yên.");
+    faceEnrollDescriptor = await captureFaceSamples(video, (count, total) => setFaceEnrollStatus(`Đang lấy mẫu khuôn mặt ${count}/${total}...`), () => session === faceEnrollSession && Boolean(faceEnrollStream?.active));
+    setFaceEnrollStatus("Đã lấy đủ 5 mẫu khuôn mặt", "Nhập mật khẩu tài khoản để xác nhận lưu mẫu. Hệ thống sẽ kiểm tra FaceID trùng với nhân viên khác.");
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.classList.remove("hidden"); saveBtn.classList.add("flex"); }
+  } catch (error) {
+    if (session === faceEnrollSession) setFaceEnrollStatus(error.message, "Không lưu mẫu khi camera hoặc nhận diện chưa đạt yêu cầu.");
+  } finally { if (startBtn && session === faceEnrollSession) startBtn.disabled = false; }
+};
+
+export const openFaceEnrollModal = async () => {
+  const modal = document.getElementById("modal-faceid-enroll");
+  if (!modal) return;
+
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+  faceEnrollDescriptor = null;
+  const saveBtn = document.getElementById("faceEnrollSave");
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.classList.add("hidden");
+    saveBtn.classList.remove("flex");
+  }
+  const startBtn = document.getElementById("faceEnrollStart");
+  if (startBtn) startBtn.disabled = false;
+
+  const video = document.getElementById("faceEnrollVideo");
+  const fallback = document.getElementById("faceEnrollFallback");
+  fallback?.classList.add("hidden");
+  video?.classList.remove("hidden");
+  setFaceEnrollStatus("Chuẩn bị quét khuôn mặt...", "Đang yêu cầu quyền truy cập camera.");
+
+  stopFaceEnrollStream();
+  const session = ++faceEnrollSession;
+  let password = document.getElementById("faceEnrollPassword");
+  if (!password) {
+    const label = document.createElement("label");
+    label.className = "block mt-3 text-sm";
+    label.textContent = "Mật khẩu tài khoản để xác nhận FaceID";
+    password = document.createElement("input");
+    password.id = "faceEnrollPassword"; password.type = "password"; password.autocomplete = "current-password";
+    password.className = "block w-full border rounded px-3 py-2 mt-1";
+    label.appendChild(password);
+    document.getElementById("faceEnrollHint")?.parentElement.appendChild(label);
+  }
+  password.value = "";
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("no-media");
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" },
+      audio: false,
+    });
+    if (session !== faceEnrollSession || !modal.isConnected) { stream.getTracks().forEach(track => track.stop()); return; }
+    faceEnrollStream = stream;
+    if (video) {
+      video.srcObject = faceEnrollStream;
+      await video.play();
+    }
+    setFaceEnrollStatus("Camera sẵn sàng", "Nhấn Bắt đầu quét để thu nhận mẫu khuôn mặt.");
+  } catch {
+    if (session !== faceEnrollSession) return;
+    stopFaceEnrollStream();
+    fallback?.classList.remove("hidden");
+    video?.classList.add("hidden");
+    setFaceEnrollStatus(
+      "Không truy cập được Webcam",
+      "Cần webcam thật để đăng ký FaceID. Cho phép camera trong trình duyệt và mở lại cửa sổ.",
+    );
+    if (startBtn) startBtn.disabled = true;
+  }
+};
+
+const saveFaceDescriptor = async () => {
+  if (!faceEnrollDescriptor) {
+    showToast("Chưa có mẫu khuôn mặt, vui lòng quét lại.");
+    return;
+  }
+  const saveBtn = document.getElementById("faceEnrollSave");
+  const original = saveBtn?.innerHTML;
+  try {
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = "<span>Đang lưu...</span>";
+    }
+    await api.put("/my-profile/face-descriptor", {
+      face_samples: faceEnrollDescriptor,
+      current_password: document.getElementById("faceEnrollPassword")?.value,
+    });
+    const average = faceEnrollDescriptor[0].map((_, index) => faceEnrollDescriptor.reduce((sum, sample) => sum + sample[index], 0) / faceEnrollDescriptor.length);
+    const updated = updateCurrentUser({
+      face_descriptor: JSON.stringify(average),
+      has_face_descriptor: true,
+    });
+    closeFaceEnrollModal();
+    showToast("Cập nhật mẫu khuôn mặt FaceID thành công.");
+    const btn = document.getElementById("btnFaceEnrollHeader");
+    if (btn) {
+      btn.classList.add("hidden");
+      btn.classList.remove("flex");
+    }
+    document.getElementById("hrmFaceMissingToast")?.remove();
+    if (updated) setupHeaderUser(updated);
+    window.dispatchEvent(new CustomEvent("hrm:face-updated", { detail: updated }));
+  } catch (error) {
+    showToast(
+      error.response?.data?.message || "Không thể lưu mẫu khuôn mặt, vui lòng thử lại.",
+    );
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      if (original) saveBtn.innerHTML = original;
+    }
+  }
+};
+
+export const bindFaceEnrollModal = () => {
+  const modal = document.getElementById("modal-faceid-enroll");
+  if (!modal || modal.dataset.bound === "1") return;
+  modal.dataset.bound = "1";
+
+  document.getElementById("faceEnrollClose")?.addEventListener("click", closeFaceEnrollModal);
+  document.getElementById("faceEnrollCancel")?.addEventListener("click", closeFaceEnrollModal);
+  document.getElementById("faceEnrollStart")?.addEventListener("click", () => {
+    runFaceEnrollScan();
+  });
+  document.getElementById("faceEnrollSave")?.addEventListener("click", saveFaceDescriptor);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeFaceEnrollModal();
+  });
+};
+
+const promptFaceEnrollmentIfMissing = (user) => {
+  const headerBtn = document.getElementById("btnFaceEnrollHeader");
+  const needsFace = Boolean(user?.employee_id) && !user?.has_face_descriptor;
+
+  if (headerBtn) {
+    if (needsFace) {
+      headerBtn.classList.remove("hidden");
+      headerBtn.classList.add("flex");
+      if (headerBtn.dataset.bound !== "1") {
+        headerBtn.dataset.bound = "1";
+        headerBtn.addEventListener("click", openFaceEnrollModal);
+      }
+    } else {
+      headerBtn.classList.add("hidden");
+      headerBtn.classList.remove("flex");
+    }
+  }
+
+  bindFaceEnrollModal();
+
+  if (!needsFace) return;
+  if (sessionStorage.getItem("hrm_face_prompted") === "1") return;
+  sessionStorage.setItem("hrm_face_prompted", "1");
+
+  showToast(
+    "Tài khoản của bạn chưa có mẫu khuôn mặt FaceID. Vui lòng bấm \"Cập nhật khuôn mặt\" để đăng ký.",
+    {
+      id: "hrmFaceMissingToast",
+      duration: 6000,
+      className:
+        "fixed bottom-5 right-5 z-[100] max-w-sm rounded-lg bg-amber-500 text-white shadow-lg px-4 py-3 font-body-sm text-body-sm flex items-start gap-2",
+    },
+  );
 };
 
 const bindActions = () => {
@@ -467,11 +742,17 @@ export const setupShell = (user = getCurrentUser()) => {
 
   document.getElementById("hrmUserContext")?.remove();
   document.getElementById("hrmActionBar")?.remove();
+  const mountedFaceModal = document.querySelector("#app #modal-faceid-enroll");
+  if (mountedFaceModal) {
+    document.querySelectorAll("body > #modal-faceid-enroll").forEach(modal => modal.remove());
+    document.body.appendChild(mountedFaceModal);
+  }
 
   setupHeaderUser(user);
   ensurePermissionsNav(user);
   applyNavPermissions(user);
   bindActions();
+  promptFaceEnrollmentIfMissing(user);
 };
 
 export const initHome = (user = getCurrentUser()) => {

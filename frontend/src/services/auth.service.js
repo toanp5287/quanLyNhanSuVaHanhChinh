@@ -54,6 +54,14 @@ export const getMe = async () => {
   return response.data.user;
 };
 
+export const updateCurrentUser = (patch = {}) => {
+  const current = getCurrentUser();
+  if (!current) return null;
+  const next = { ...current, ...patch };
+  sessionStorage.setItem(USER_KEY, JSON.stringify(next));
+  return next;
+};
+
 export const getEmployees = async () => {
   const response = await api.get("/auth/employees");
   return response.data;

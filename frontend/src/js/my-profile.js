@@ -3,8 +3,9 @@ import myProfileHtml from "../pages/my-profile.html?raw";
 import {
   getCurrentUser,
   hasPermission,
+  updateCurrentUser,
 } from "../services/auth.service.js";
-import { setupShell } from "./home.js";
+import { bindFaceEnrollModal, openFaceEnrollModal, setupShell } from "./home.js";
 
 const PROFILE_PERMISSION = "ESS.SELF_PROFILE";
 
@@ -343,12 +344,33 @@ const renderRewards = (rows) => {
     : emptyRow(7);
 };
 
+const loadAttendanceStatus = async () => {
+  const el = document.getElementById("attendanceStatus");
+  if (!el) return;
+  try {
+    const res = await api.get("/attendance/today");
+    const log = res.data?.data?.log;
+    if (!log) {
+      el.textContent = "Trạng thái chấm công hôm nay: Chưa chấm công";
+      return;
+    }
+    const checkIn = log.check_in ? String(log.check_in).slice(0, 5) : "—";
+    const checkOut = log.check_out ? String(log.check_out).slice(0, 5) : "—";
+    el.textContent = `Trạng thái chấm công hôm nay: Vào ${checkIn} - Ra ${checkOut} (${log.status || ""})`;
+  } catch {
+    el.textContent = "Trạng thái chấm công hôm nay: —";
+  }
+};
+
 const loadProfile = async () => {
   hideNotice();
 
   try {
     const response = await api.get("/my-profile");
     renderProfile(response.data.data);
+    const hasFace = Boolean(response.data.data?.employee?.face_descriptor);
+    updateCurrentUser({ has_face_descriptor: hasFace, face_descriptor: response.data.data?.employee?.face_descriptor || null });
+    updateFaceButtonState(getCurrentUser());
   } catch (error) {
     const message =
       error.response?.data?.message ||
@@ -438,6 +460,10 @@ const bindModal = () => {
 
   document.getElementById("btnEditContact")?.addEventListener("click", () => openModal("contact"));
   document.getElementById("btnChangePassword")?.addEventListener("click", () => openModal("password"));
+  document.getElementById("btnUpdateFaceId")?.addEventListener("click", () => {
+    bindFaceEnrollModal();
+    openFaceEnrollModal();
+  });
 
   modal.querySelectorAll("[data-close-modal]").forEach((button) => {
     button.addEventListener("click", closeModal);
@@ -548,6 +574,25 @@ const renderRoleBadge = (user) => {
   badge.textContent = roleLabel ? `Vai trò: ${roleLabel}` : "—";
 };
 
+const updateFaceButtonState = (user = getCurrentUser()) => {
+  const btn = document.getElementById("btnUpdateFaceId");
+  const label = document.getElementById("btnUpdateFaceIdLabel");
+  if (!btn) return;
+  const hasFace = Boolean(user?.has_face_descriptor);
+  if (label) label.textContent = hasFace ? "Thay đổi FaceID" : "Đăng ký FaceID";
+  btn.classList.toggle("bg-amber-500", !hasFace);
+  btn.classList.toggle("hover:bg-amber-600", !hasFace);
+  btn.classList.toggle("bg-emerald-600", hasFace);
+  btn.classList.toggle("hover:bg-emerald-700", hasFace);
+  if (!hasFace) {
+    btn.classList.add("ring-2", "ring-amber-300");
+  } else {
+    btn.classList.remove("ring-2", "ring-amber-300");
+  }
+};
+
+window.addEventListener("hrm:face-updated", () => updateFaceButtonState());
+
 const ensureViewMounted = () => {
   if (document.getElementById("myProfileRoot")) return true;
 
@@ -559,6 +604,11 @@ const ensureViewMounted = () => {
   const modal = doc.querySelector("#modal-self-update");
 
   if (!workspace) return false;
+  const faceModal = document.querySelector("#app #modal-faceid-enroll");
+  if (faceModal) {
+    document.querySelectorAll("body > #modal-faceid-enroll").forEach(modal => modal.remove());
+    document.body.appendChild(faceModal);
+  }
 
   main.innerHTML = "";
   main.appendChild(document.importNode(workspace, true));
@@ -594,6 +644,8 @@ export const initMyProfile = (providedUser) => {
   }
 
   bindModal();
+  bindFaceEnrollModal();
+  updateFaceButtonState(user);
   loadProfile();
 };
 

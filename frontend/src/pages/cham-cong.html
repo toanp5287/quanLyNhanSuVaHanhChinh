@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản lý chấm công</title>
+</head>
+<body>
+  <section id="attendanceWorkspace" class="flex flex-col gap-4 pb-6">
+    <div class="flex flex-wrap items-center justify-between gap-3 bg-white rounded-xl p-5 shadow-sm">
+      <div><a href="#/trang-chu" class="text-sm text-primary">Trang chủ / Quản lý chấm công</a><h1 class="text-2xl font-bold text-on-surface mt-1">Bảng quản lý chấm công</h1><p id="attendanceScope" class="text-sm text-on-surface-variant mt-1"></p></div>
+      <div class="flex gap-2"><button data-action="refresh" class="rounded border px-4 py-2 text-sm">Làm mới</button><button data-action="export" class="rounded bg-primary text-white px-4 py-2 text-sm">Xuất CSV</button></div>
+    </div>
+    <div id="attendanceNotice" role="status" aria-live="polite" class="hidden rounded p-3 text-sm"></div>
+    <div class="flex flex-wrap gap-2" role="tablist" aria-label="Chế độ chấm công">
+      <button data-tab="daily" role="tab" class="rounded px-4 py-2 text-sm font-semibold">Điểm danh ngày</button>
+      <button data-tab="monthly" role="tab" class="rounded px-4 py-2 text-sm font-semibold">Bảng công tháng</button>
+    </div>
+    <div class="bg-white rounded-xl p-4 shadow-sm flex flex-wrap gap-3 items-end">
+      <label id="attendanceDateLabel" class="text-sm">Ngày điểm danh<input id="attendanceDate" type="date" class="block rounded border px-3 py-2 mt-1" /></label>
+      <label id="attendanceMonthLabel" class="text-sm hidden">Kỳ công<input id="attendanceMonth" type="month" class="block rounded border px-3 py-2 mt-1" /></label>
+      <label class="text-sm flex-1 min-w-[200px]">Tìm nhân viên<input id="attendanceSearch" type="search" placeholder="Mã nhân viên hoặc họ tên" class="block w-full rounded border px-3 py-2 mt-1" /></label>
+      <label class="text-sm">Phòng ban<select id="attendanceDepartment" class="block rounded border px-3 py-2 mt-1"><option value="">Tất cả phòng ban</option></select></label>
+      <label class="text-sm">Trạng thái<select id="attendanceStatus" class="block rounded border px-3 py-2 mt-1"></select></label>
+      <button data-action="reset" class="rounded border px-3 py-2 text-sm">Xóa bộ lọc</button>
+    </div>
+    <div id="attendanceMetrics" class="grid grid-cols-2 xl:grid-cols-4 gap-3"></div>
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div class="p-4 border-b flex flex-wrap justify-between items-center gap-3"><div><h2 id="attendanceTableTitle" class="font-bold"></h2><p id="attendanceUpdated" class="text-xs text-on-surface-variant mt-1"></p></div><div id="attendanceActions" class="flex flex-wrap gap-2"></div></div>
+      <div class="overflow-x-auto"><table class="w-full text-sm text-left whitespace-nowrap"><thead id="attendanceHead" class="bg-surface-container-low text-on-surface-variant"></thead><tbody id="attendanceBody" class="divide-y"></tbody></table></div>
+      <div class="p-4 border-t flex flex-wrap justify-between items-center gap-3 text-sm"><span id="attendanceCount"></span><div class="flex items-center gap-3"><label>Số dòng <select id="attendancePageSize" class="border rounded p-1"><option>20</option><option>50</option><option>100</option></select></label><button data-action="previous" class="border rounded px-3 py-1" aria-label="Trang trước">‹</button><span id="attendancePage"></span><button data-action="next" class="border rounded px-3 py-1" aria-label="Trang sau">›</button></div></div>
+    </div>
+    <dialog id="attendanceConfirm" class="rounded-xl p-6 shadow-xl max-w-md w-full"><form method="dialog"><h3 class="text-lg font-bold">Xác nhận thao tác</h3><p id="attendanceConfirmText" class="my-4 text-sm"></p><div class="flex justify-end gap-2"><button value="cancel" class="border rounded px-4 py-2">Hủy</button><button value="confirm" class="bg-primary text-white rounded px-4 py-2">Xác nhận</button></div></form></dialog>
+  </section>
+</body>
+<script type="module" src="../js/cham-cong.js"></script>
+</html>
