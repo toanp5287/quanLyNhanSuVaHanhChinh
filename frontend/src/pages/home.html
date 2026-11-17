@@ -2842,12 +2842,17 @@
                     </button>
                   </div>
                   <div class="p-space-md space-y-space-sm">
-                    <div class="relative bg-black rounded overflow-hidden aspect-[4/3] flex items-center justify-center">
+                    <div id="faceEnrollPasswordStep" class="space-y-2">
+                      <label for="faceEnrollPassword" class="block font-label-md text-label-md">Mật khẩu tài khoản</label>
+                      <input id="faceEnrollPassword" type="password" autocomplete="current-password" class="w-full h-10 rounded border border-surface-variant bg-surface-container-lowest px-3 text-on-surface" placeholder="Nhập mật khẩu để tiếp tục">
+                      <p class="text-on-surface-variant text-body-sm">Xác nhận mật khẩu trước khi mở camera và đăng ký FaceID.</p>
+                    </div>
+                    <div id="faceEnrollCameraStep" class="hidden relative bg-black rounded overflow-hidden aspect-[4/3] items-center justify-center">
                       <video id="faceEnrollVideo" autoplay muted playsinline class="w-full h-full object-cover"></video>
                       <canvas id="faceEnrollOverlay" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
                       <div id="faceEnrollFallback" class="hidden absolute inset-0 flex flex-col items-center justify-center text-white bg-surface-dim/80">
                         <span class="material-symbols-outlined text-5xl mb-2">face</span>
-                        <p class="font-body-sm text-body-sm text-center px-4">Không có camera thật. Đăng ký FaceID cần webcam và không hỗ trợ mẫu mô phỏng.</p>
+                        <p id="faceEnrollCameraError" class="font-body-sm text-body-sm text-center px-4"></p>
                       </div>
                     </div>
                     <div class="text-center space-y-1">
@@ -2858,7 +2863,7 @@
                       <button id="faceEnrollCancel" type="button" class="h-9 px-space-md rounded text-on-surface-variant hover:bg-surface-container-high font-label-lg text-label-lg">Hủy</button>
                       <button id="faceEnrollStart" type="button" class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container font-label-lg text-label-lg flex items-center gap-1.5">
                         <span class="material-symbols-outlined text-[18px]">photo_camera</span>
-                        <span>Bắt đầu quét</span>
+                        <span>Xác nhận mật khẩu và bật camera</span>
                       </button>
                       <button id="faceEnrollSave" type="button" disabled class="hidden h-9 px-space-md rounded bg-emerald-600 text-white font-label-lg text-label-lg items-center gap-1.5 disabled:opacity-50">
                         <span class="material-symbols-outlined text-[18px]">check_circle</span>

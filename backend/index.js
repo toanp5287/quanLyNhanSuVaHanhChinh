@@ -25,7 +25,7 @@ app.use(
   }),
 );
 const port = process.env.PORT || 4000;
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use("/auth", routerAuth);
 app.use("/permissions", routerPermissions);
 app.use("/employees", routerEmployees);
@@ -33,6 +33,7 @@ app.use("/organization", routerOrganization);
 app.use("/contracts", routerContracts);
 app.use("/my-profile", routerMyProfile);
 app.use("/attendance", routerDiemDanhNhatKyQuetThePhanCa);
+app.use("/api/attendance", routerDiemDanhNhatKyQuetThePhanCa);
 app.listen(port, async () => {
   await connectMysql();
   console.log(`Server đang chạy ở http://localhost:${port}`);

@@ -17,8 +17,8 @@ export const attendanceCheckIn = async (req, res) => {
     }
 
     const result = await checkIn(employeeId, {
-      source: req.body?.source || "FACE_ID",
-      face_confidence: req.body?.face_confidence,
+      embeddings: req.body?.embeddings,
+      blink_verified: req.body?.blink_verified,
       ip: req.ip,
       note: req.body?.note,
     });
@@ -45,8 +45,8 @@ export const attendanceCheckOut = async (req, res) => {
     }
 
     const result = await checkOut(employeeId, {
-      source: req.body?.source || "FACE_ID",
-      face_confidence: req.body?.face_confidence,
+      embeddings: req.body?.embeddings,
+      blink_verified: req.body?.blink_verified,
       ip: req.ip,
       note: req.body?.note,
     });

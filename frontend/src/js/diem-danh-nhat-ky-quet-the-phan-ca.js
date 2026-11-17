@@ -3,32 +3,77 @@ import { captureFaceSamples, ensureFaceModels } from "./home.js";
 
 export const initFaceKiosk = () => {
   const app = document.getElementById("app");
-  document.body.className = "bg-slate-950 text-white font-body-md";
+  document.body.className = "bg-surface font-body-md text-on-surface";
   app.innerHTML = `
-    <main id="faceKiosk" class="min-h-screen p-5 md:p-10 max-w-6xl mx-auto">
-      <header class="flex flex-wrap items-center justify-between gap-4 mb-8"><div><p class="text-cyan-300 text-sm tracking-widest uppercase">HRM • Trạm điểm danh</p><h1 class="text-3xl font-bold mt-2">Điểm danh bằng FaceID</h1></div><a href="#/dang-nhap" class="border border-slate-600 rounded-lg px-4 py-2 text-sm">Đăng nhập quản lý</a></header>
-      <div class="grid lg:grid-cols-5 gap-6">
-        <section class="lg:col-span-3 rounded-2xl border border-slate-700 bg-slate-900 overflow-hidden">
-          <div class="p-4 flex justify-between text-sm"><span id="kioskCameraLabel">Camera chưa bật</span><time id="kioskClock"></time></div>
-          <div class="relative aspect-[4/3] bg-black flex items-center justify-center"><video id="kioskVideo" autoplay muted playsinline class="w-full h-full object-cover" style="transform:scaleX(-1)"></video><div class="absolute pointer-events-none inset-[14%] border-2 border-cyan-300/70 rounded-[35%]"></div><span id="kioskCameraHint" class="absolute bottom-5 bg-black/70 rounded-lg px-4 py-2 text-sm text-center">Đứng một mình trước camera, nhìn thẳng và đủ ánh sáng</span></div>
-          <div class="p-4 flex gap-3"><button id="kioskCamera" class="rounded-lg bg-slate-700 px-4 py-3 text-sm">Bật camera</button><button id="kioskStop" class="rounded-lg border border-slate-600 px-4 py-3 text-sm">Tắt camera</button></div>
-        </section>
-        <section class="lg:col-span-2 flex flex-col gap-5">
-          <div class="bg-slate-900 border border-slate-700 rounded-2xl p-6"><h2 class="text-xl font-semibold">Chọn thao tác điểm danh</h2><p class="text-slate-300 text-sm mt-2 leading-6">Không cần đăng nhập hoặc nhập mã nhân viên. Hệ thống nhận diện khuôn mặt đã đăng ký để ghi nhận đúng người.</p><div class="grid gap-3 mt-6"><button id="kioskCheckIn" class="rounded-xl bg-emerald-500 text-slate-950 font-bold px-5 py-4 disabled:opacity-40">Quét FaceID • Vào ca</button><button id="kioskCheckOut" class="rounded-xl bg-cyan-300 text-slate-950 font-bold px-5 py-4 disabled:opacity-40">Quét FaceID • Tan ca</button></div></div>
-          <div id="kioskResult" role="status" aria-live="polite" class="rounded-2xl border border-slate-700 bg-slate-900 p-6"><h2 id="kioskResultTitle" class="font-bold text-lg">Sẵn sàng điểm danh</h2><p id="kioskResultText" class="text-slate-300 mt-3 leading-6">Bật camera rồi chọn Vào ca hoặc Tan ca. Mỗi lượt chỉ dành cho một người.</p><div id="kioskIdentity" class="mt-4 text-sm space-y-2"></div></div>
-          <p class="text-slate-400 text-sm leading-6">Chưa có FaceID? Đăng nhập hồ sơ cá nhân để đăng ký mẫu khuôn mặt trước khi điểm danh.</p>
-        </section>
+    <main id="faceKiosk" class="min-h-screen bg-surface">
+      <header class="h-14 bg-primary-container px-space-md flex items-center justify-between shadow-[0_1px_8px_rgba(0,0,0,0.08)]">
+        <div class="flex items-center gap-space-sm">
+          <span class="material-symbols-outlined text-on-primary text-[24px]">face</span>
+          <span class="font-headline-sm text-headline-sm text-on-primary font-bold">HRM • Trạm điểm danh FaceID</span>
+        </div>
+        <a href="#/dang-nhap" class="h-9 px-space-md rounded-lg bg-primary text-on-primary font-label-lg text-label-lg hover:opacity-90 flex items-center gap-1">
+          <span class="material-symbols-outlined text-[18px]">login</span>
+          Đăng nhập quản lý
+        </a>
+      </header>
+      <div class="max-w-5xl mx-auto px-space-lg py-space-md">
+        <div class="mb-space-md">
+          <h1 class="font-headline-lg text-headline-lg text-on-surface">Điểm danh bằng FaceID</h1>
+          <p class="text-on-surface-variant text-body-sm mt-1">Không cần đăng nhập. Hệ thống nhận diện khuôn mặt đã đăng ký để ghi nhận đúng người.</p>
+        </div>
+        <div class="grid lg:grid-cols-[minmax(0,720px)_minmax(300px,1fr)] gap-space-lg items-start">
+          <section class="rounded-lg border border-surface-variant bg-surface-container-lowest shadow-sm overflow-hidden">
+            <div class="px-space-md py-space-sm bg-surface-container-low flex items-center justify-between gap-space-sm border-b border-surface-variant">
+              <span id="kioskCameraLabel" class="font-label-lg text-label-lg text-on-surface">Camera chưa bật</span>
+              <time id="kioskClock" class="font-label-sm text-label-sm text-on-surface-variant"></time>
+            </div>
+            <div class="relative aspect-[4/3] bg-surface-container-high flex items-center justify-center">
+              <video id="kioskVideo" autoplay muted playsinline class="w-full h-full object-cover" style="transform:scaleX(-1)"></video>
+              <div class="absolute pointer-events-none inset-[16%] border-2 border-primary/70 rounded-[32%]"></div>
+              <span id="kioskCameraHint" class="absolute bottom-space-sm left-1/2 -translate-x-1/2 max-w-[90%] rounded-lg bg-inverse-surface text-inverse-on-surface px-space-sm py-1 text-body-sm text-center">Đứng một mình trước camera, nhìn thẳng và đủ ánh sáng</span>
+            </div>
+            <div class="p-space-md flex flex-wrap gap-space-sm">
+              <button id="kioskCamera" class="h-10 px-space-md rounded-lg bg-primary text-on-primary font-label-lg text-label-lg hover:bg-primary-container">Bật camera</button>
+              <button id="kioskStop" class="h-10 px-space-md rounded-lg border border-surface-variant bg-surface-container-lowest text-on-surface font-label-lg text-label-lg hover:bg-surface-container-high">Tắt camera</button>
+            </div>
+          </section>
+          <section class="flex flex-col gap-space-md">
+            <div class="rounded-lg border border-surface-variant bg-surface-container-lowest shadow-sm p-space-md">
+              <h2 class="font-headline-md text-headline-md text-on-surface">Chọn thao tác điểm danh</h2>
+              <p class="text-on-surface-variant text-body-sm mt-1 leading-6">Hệ thống nhận diện khuôn mặt đã đăng ký để ghi nhận đúng người.</p>
+              <dl class="mt-space-sm space-y-1 text-body-sm">
+                <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Chất lượng khuôn mặt</dt><dd id="kioskQuality" class="text-right">Chưa kiểm tra</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Xác minh chớp mắt</dt><dd id="kioskBlink" class="text-right">Chưa thực hiện</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Nhận diện</dt><dd id="kioskRecognition" class="text-right">Chưa quét</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Trạng thái chấm công</dt><dd id="kioskAttendance" class="text-right">Chưa ghi nhận</dd></div>
+              </dl>
+              <div class="grid gap-space-sm mt-space-md">
+                <button id="kioskCheckIn" class="h-12 rounded-lg bg-emerald-600 text-white font-label-lg text-label-lg disabled:opacity-40">Quét FaceID • Vào ca</button>
+                <button id="kioskCheckOut" class="h-12 rounded-lg bg-primary text-on-primary font-label-lg text-label-lg disabled:opacity-40">Quét FaceID • Tan ca</button>
+              </div>
+            </div>
+            <div id="kioskResult" role="status" aria-live="polite" class="rounded-lg border border-surface-variant bg-surface-container-lowest shadow-sm p-space-md">
+              <h2 id="kioskResultTitle" class="font-headline-sm text-headline-sm text-on-surface">Sẵn sàng điểm danh</h2>
+              <p id="kioskResultText" class="text-on-surface-variant text-body-sm mt-2 leading-6">Bật camera rồi chọn Vào ca hoặc Tan ca. Mỗi lượt chỉ dành cho một người.</p>
+              <div id="kioskIdentity" class="mt-space-sm text-body-sm space-y-1"></div>
+            </div>
+            <p class="text-on-surface-variant text-body-sm leading-6">Chưa có FaceID? Đăng nhập hồ sơ cá nhân để đăng ký mẫu khuôn mặt trước khi điểm danh.</p>
+          </section>
+        </div>
       </div>
     </main>`;
   const root = document.getElementById("faceKiosk");
   const video = document.getElementById("kioskVideo");
   const el = id => document.getElementById(`kiosk${id}`);
   let stream = null, busy = false, starting = false, session = 0, resultTimer;
+  const deviceId = localStorage.getItem("hrm_kiosk_device_id") || crypto.randomUUID();
+  localStorage.setItem("hrm_kiosk_device_id", deviceId);
   const active = () => root.isConnected;
   const status = (title, text, error = false) => {
     if (!active()) return;
     el("ResultTitle").textContent = title; el("ResultText").textContent = text;
-    el("ResultTitle").className = `font-bold text-lg ${error ? "text-rose-300" : "text-cyan-300"}`;
+    el("ResultTitle").className = `font-bold text-lg ${error ? "text-error" : "text-primary"}`;
+    el("CameraHint").textContent = text;
   };
   const controls = () => {
     if (!active()) return;
@@ -53,6 +98,7 @@ export const initFaceKiosk = () => {
       await ensureFaceModels();
       if (!active() || current !== session) return;
       el("CameraLabel").textContent = "Camera sẵn sàng";
+      el("Quality").textContent = "Đang chờ khuôn mặt"; el("Blink").textContent = "Chưa thực hiện";
       status("Sẵn sàng điểm danh", "Chọn Vào ca hoặc Tan ca. Chỉ một người đứng trước camera.");
     } catch (error) { if (active() && current === session) { stop(); status("Không thể bật nhận diện", error.name === "NotAllowedError" ? "Camera bị chặn. Cho phép camera trong trình duyệt rồi bấm Bật camera." : error.message, true); } }
     finally { starting = false; controls(); }
@@ -62,17 +108,22 @@ export const initFaceKiosk = () => {
     busy = true; controls(); clearTimeout(resultTimer); el("Identity").replaceChildren(); const current = session;
     try {
       status("Đang quét khuôn mặt", "Giữ khuôn mặt trong khung hình. Hệ thống đang lấy 5 mẫu để đối chiếu.");
-      const samples = await captureFaceSamples(video, (count, total) => status("Đang quét khuôn mặt", `Đã thu ${count}/${total} mẫu. Vui lòng giữ yên.`), () => active() && current === session && Boolean(stream?.active));
+      el("Quality").textContent = "Đang kiểm tra"; el("Blink").textContent = "Chờ chớp mắt hợp lệ";
+      el("Recognition").textContent = "Đang chờ xác minh"; el("Attendance").textContent = "Chưa ghi nhận";
+      const capture = await captureFaceSamples(video, (count, total) => { el("Quality").textContent = `Đạt • ${count}/${total} mẫu`; el("Blink").textContent = "Đã xác minh"; status("Đang quét khuôn mặt", `Đang quét mẫu: ${count}/${total} (${Math.round(count / total * 100)}%)`); }, () => active() && current === session && Boolean(stream?.active), text => { el("Quality").textContent = text; if (text.includes("CHỚP MẮT")) el("Blink").textContent = "Đang chờ thao tác"; if (text.includes("Đã xác thực chớp mắt")) el("Blink").textContent = "Đã xác minh"; status("Xác thực khuôn mặt", text); });
       if (!active() || current !== session) return;
       status("Đang xác thực", "Đang đối chiếu khuôn mặt và ghi nhận giờ trên máy chủ...");
-      const response = await api.post(`/attendance/kiosk/${action}`, { face_samples: samples }, { timeout: 30000, headers: { Authorization: undefined } });
+      el("Recognition").textContent = "Đang đối chiếu hồ sơ";
+      const response = await api.post(`/api/attendance/kiosk/${action}`, capture, { timeout: 30000, headers: { Authorization: undefined, "X-Device-Id": deviceId } });
       if (!active() || current !== session) return;
       const { employee, log } = response.data.data;
+      el("Recognition").textContent = `Đã xác nhận • ${employee.full_name}`; el("Attendance").textContent = "Đã ghi nhận thành công";
       status(response.data.message, action === "check-in" ? "Đã ghi nhận giờ vào ca. Chúc bạn một ngày làm việc hiệu quả." : "Đã ghi nhận giờ tan ca.");
       for (const text of [`${employee.employee_code} • ${employee.full_name}`, employee.department_name || "", `Giờ vào: ${log.check_in || "—"} • Giờ ra: ${log.check_out || "—"}`, `Công: ${Number(log.work_unit).toFixed(2)} • Đi muộn: ${Number(log.late_minutes || 0)} phút`]) {
         const line = document.createElement("p"); line.textContent = text; el("Identity").appendChild(line);
       }
     } catch (error) {
+      if (active() && current === session) { el("Recognition").textContent = "Không nhận diện được"; el("Attendance").textContent = "Không ghi nhận"; }
       if (active() && current === session) status("Chưa ghi nhận điểm danh", error.response?.data?.message || (error.code === "ECONNABORTED" ? "Máy chủ phản hồi chậm. Kiểm tra lại kết quả trước khi quét lại." : error.message || "Không thể kết nối máy chủ."), true);
     } finally {
       busy = false; controls();

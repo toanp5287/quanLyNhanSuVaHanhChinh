@@ -2,6 +2,59 @@ import { db } from "../../config/database.js";
 import { buildEmployeeScope } from "../../utils/helper.js";
 
 export const attendanceError = (message, status = 400) => Object.assign(new Error(message), { status });
+export const l2Normalize = vec => {
+  if (!Array.isArray(vec) || !vec.length || vec.length > 4096 || vec.some(value => typeof value !== "number" || !Number.isFinite(value))) throw attendanceError("Vector sinh trắc học không hợp lệ");
+  const norm = Math.sqrt(vec.reduce((sum, value) => sum + value * value, 0));
+  if (!Number.isFinite(norm) || norm < 1e-10) throw attendanceError("Vector sinh trắc học rỗng");
+  return vec.map(value => value / norm);
+};
+export const cosineSimilarity = (vecA, vecB) => {
+  if (!vecA || !vecB || vecA.length !== vecB.length) return -1;
+  const a = l2Normalize(vecA), b = l2Normalize(vecB);
+  return Math.max(-1, Math.min(1, a.reduce((sum, value, index) => sum + value * b[index], 0)));
+};
+export const computeCentroid = embeddings => {
+  if (!Array.isArray(embeddings) || !embeddings.length) throw attendanceError("Không có mẫu khuôn mặt");
+  const normalized = embeddings.map(l2Normalize);
+  if (normalized.some(vector => vector.length !== normalized[0].length)) throw attendanceError("Các mẫu không cùng mô hình nhận diện");
+  return l2Normalize(normalized[0].map((_, index) => normalized.reduce((sum, vector) => sum + vector[index], 0) / normalized.length));
+};
+export const verifyInternalConsistency = (embeddings, minInternalSim = 0.82) => {
+  const centroid = computeCentroid(embeddings);
+  const valid = embeddings.every(vector => cosineSimilarity(vector, centroid) >= minInternalSim);
+  return { valid, message: valid ? "" : "Khuôn mặt di chuyển quá nhanh hoặc bị nhòe khi quét, vui lòng giữ thẳng mặt và quét lại!" };
+};
+export const parseStoredFaceData = rawJson => {
+  try {
+    const raw = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+    const source = Array.isArray(raw) ? (typeof raw[0] === "number" ? [raw] : raw) : raw?.samples || (raw?.centroid ? [raw.centroid] : []);
+    if (!source.length || source.length > 8) return null;
+    const samples = source.map(l2Normalize);
+    if (samples.some(sample => sample.length !== samples[0].length)) return null;
+    const centroid = raw?.centroid ? l2Normalize(raw.centroid) : computeCentroid(samples);
+    if (centroid.length !== samples[0].length) return null;
+    return { centroid, samples };
+  } catch { return null; }
+};
+export const evaluateFullSetMatch = (liveEmbeddings, storedFaceJson, threshold = 0.76) => {
+  const stored = parseStoredFaceData(storedFaceJson);
+  const empty = { isMatch: false, avgScore: 0, centroidScore: 0, passCount: 0, totalSamples: liveEmbeddings.length };
+  if (!stored || !liveEmbeddings.length || liveEmbeddings.some(vector => vector.length !== stored.centroid.length)) return empty;
+  const scores = liveEmbeddings.map(vector => Math.max(cosineSimilarity(vector, stored.centroid), ...stored.samples.map(sample => cosineSimilarity(vector, sample))));
+  const centroidScore = cosineSimilarity(computeCentroid(liveEmbeddings), stored.centroid);
+  const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length * 0.5 + centroidScore * 0.5;
+  const passCount = scores.filter(score => score >= threshold - 0.02).length;
+  return { isMatch: avgScore >= threshold && passCount >= 4, avgScore, centroidScore, passCount, totalSamples: liveEmbeddings.length };
+};
+export const validateBiometricCapture = (embeddings, blinkVerified, minInternalSim = 0.80) => {
+  if (blinkVerified !== true) throw attendanceError("Vui lòng CHỚP MẮT trước khi quét khuôn mặt chấm công!", 400);
+  if (!Array.isArray(embeddings) || embeddings.length !== 5) throw attendanceError("Cần đúng 5 mẫu khuôn mặt để xác thực", 400);
+  if (embeddings.some(vector => !Array.isArray(vector) || vector.length < 64)) throw attendanceError("Mẫu sinh trắc học không hợp lệ", 400);
+  const samples = embeddings.map(l2Normalize);
+  const consistency = verifyInternalConsistency(samples, minInternalSim);
+  if (!consistency.valid) throw attendanceError(consistency.message, 400);
+  return samples;
+};
 export const faceDistance = (left, right) => Math.sqrt(left.reduce((sum, value, index) => sum + (value - right[index]) ** 2, 0));
 export const parseFaceDescriptor = value => {
   let descriptor = value;
@@ -22,27 +75,37 @@ export const validateFaceSamples = values => {
   return samples;
 };
 
-export const identifyFace = (samples, employees) => {
-  const candidates = employees.map(employee => ({ employee, descriptor: parseFaceDescriptor(employee.face_descriptor) }))
+export const findFaceEnrollmentConflict = (samples, employees, employeeId) => {
+  return employees
+    .filter(employee => Number(employee.id) !== Number(employeeId))
+    .map(employee => ({ employee, descriptor: parseFaceDescriptor(employee.face_descriptor) }))
     .filter(candidate => candidate.descriptor)
-    .map(candidate => ({ ...candidate, distances: samples.map(sample => faceDistance(sample, candidate.descriptor)) }))
-    .map(candidate => ({ ...candidate, distance: Math.max(...candidate.distances) }))
-    .sort((left, right) => left.distance - right.distance);
+    .map(candidate => ({
+      employee: candidate.employee,
+      distance: Math.max(...samples.map(sample => faceDistance(sample, candidate.descriptor))),
+    }))
+    .filter(candidate => candidate.distance < 0.42)
+    .sort((left, right) => left.distance - right.distance)[0] || null;
+};
+
+export const identifyFace = (samples, employees) => {
+  const candidates = employees.map(employee => ({ employee, ...evaluateFullSetMatch(samples, employee.face_descriptor) }))
+    .sort((left, right) => right.avgScore - left.avgScore);
   const best = candidates[0];
-  if (!best || best.distance >= 0.42) throw attendanceError("Không tìm thấy khuôn mặt đã đăng ký phù hợp. Vui lòng quét lại hoặc đăng ký FaceID trong hồ sơ cá nhân.", 403);
-  if (candidates[1] && (candidates[1].distance < 0.50 || candidates[1].distance - best.distance < 0.08)) throw attendanceError("Mẫu khuôn mặt bị trùng hoặc chưa đủ rõ để phân biệt nhân viên. Vui lòng cập nhật lại FaceID.", 409);
+  if (!best?.isMatch) throw attendanceError("Không tìm thấy khuôn mặt đã đăng ký phù hợp. Vui lòng đăng ký lại FaceID bằng Human nếu mẫu cũ dùng mô hình khác.", 403);
+  if (candidates[1]?.isMatch && best.avgScore - candidates[1].avgScore <= 0.02) throw attendanceError("Bộ mẫu khớp với nhiều hồ sơ và chưa đủ rõ để phân biệt. Vui lòng cập nhật lại FaceID.", 409);
   return best;
 };
 
-export const kioskAttendance = async (action, values, ip) => {
+export const kioskAttendance = async (action, values, ip, blinkVerified) => {
   if (!["check-in", "check-out"].includes(action)) throw attendanceError("Thao tác chấm công không hợp lệ");
-  const samples = validateFaceSamples(values);
+  const samples = validateBiometricCapture(values, blinkVerified);
   const [employees] = await db.query(`SELECT e.id, e.employee_code, e.full_name, e.face_descriptor, d.name AS department_name
     FROM employees e LEFT JOIN departments d ON d.id = e.department_id
     WHERE e.work_status = 'WORKING' AND e.face_descriptor IS NOT NULL`);
   const match = identifyFace(samples, employees);
-  const result = await recordSelfAttendance(match.employee.id, { ip, face_samples: samples,
-    note: `FaceID camera; distance=${match.distance.toFixed(4)}` }, action === "check-in" ? checkInInternal : checkOutInternal);
+  const result = await recordSelfAttendance(match.employee.id, { ip, embeddings: samples, blink_verified: blinkVerified,
+    note: `Human FaceID; similarity=${(match.avgScore * 100).toFixed(1)}%; samples=${match.passCount}/5` }, action === "check-in" ? checkInInternal : checkOutInternal);
   const errors = { ALREADY_CHECKED_IN: "Bạn đã vào ca hôm nay. Chọn Tan ca khi kết thúc làm việc.", ALREADY_CHECKED_OUT: "Bạn đã hoàn thành chấm công hôm nay.", NO_CHECK_IN: "Bạn chưa chấm công vào ca hôm nay.", NO_SHIFT: "Chưa cấu hình ca làm việc cho nhân viên." };
   if (result.error) throw attendanceError(errors[result.error] || "Không thể chấm công", 409);
   return { employee: { employee_code: match.employee.employee_code, full_name: match.employee.full_name, department_name: match.employee.department_name }, log: result.log, shift: result.shift, action };
@@ -217,19 +280,21 @@ const checkOutInternal = async (employeeId, meta = {}, connection) => {
 
 const recordSelfAttendance = async (employeeId, meta, operation) => {
   if (!employeeId) return { error: "NO_EMPLOYEE" };
+  const samples = validateBiometricCapture(meta.embeddings, meta.blink_verified);
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
     await connection.query("SELECT id FROM employees WHERE id = ? FOR UPDATE", [employeeId]);
-    if (meta.face_samples) {
-      const [current] = await connection.query("SELECT face_descriptor, work_status FROM employees WHERE id = ?", [employeeId]);
-      const descriptor = parseFaceDescriptor(current[0]?.face_descriptor);
-      if (current[0]?.work_status !== "WORKING" || !descriptor || meta.face_samples.some(sample => faceDistance(sample, descriptor) >= 0.42)) {
-        throw attendanceError("FaceID đã thay đổi. Vui lòng quét lại.", 409);
-      }
-    }
+    const [current] = await connection.query("SELECT face_descriptor, work_status FROM employees WHERE id = ?", [employeeId]);
+    if (current[0]?.work_status !== "WORKING") throw attendanceError("Hồ sơ nhân viên không hoạt động", 403);
+    const selfMatch = evaluateFullSetMatch(samples, current[0].face_descriptor);
+    const [others] = await connection.query("SELECT id, employee_code, full_name, face_descriptor FROM employees WHERE id <> ? AND face_descriptor IS NOT NULL AND LENGTH(face_descriptor) > 20", [employeeId]);
+    const other = others.map(employee => ({ employee, ...evaluateFullSetMatch(samples, employee.face_descriptor) }))
+      .filter(match => match.isMatch && match.avgScore > selfMatch.avgScore + 0.02).sort((a, b) => b.avgScore - a.avgScore)[0];
+    if (other) throw attendanceError(`CẢNH BÁO NHẬN DIỆN: Khuôn mặt trước Camera khớp với hồ sơ [${other.employee.employee_code} - ${other.employee.full_name}] (${(other.avgScore * 100).toFixed(1)}%), không phải tài khoản đang đăng nhập!`, 403);
+    if (!selfMatch.isMatch) throw attendanceError(`Khuôn mặt không khớp với hồ sơ đăng ký! Độ khớp trung bình bộ mẫu: ${(selfMatch.avgScore * 100).toFixed(1)}% (${selfMatch.passCount}/5 mẫu đạt ngưỡng, yêu cầu >= 76% và >= 4/5 mẫu).`, 403);
     await assertMonthOpen(connection, employeeId, await serverDate(connection));
-    const result = await operation(employeeId, meta, connection);
+    const result = await operation(employeeId, { ...meta, source: "FACE_ID" }, connection);
     await connection.commit();
     return result;
   } catch (error) { await connection.rollback(); throw error; }

@@ -1,9 +1,11 @@
 import {
   changeSelfPassword,
+  checkRegisteredFaceOwner,
   clearSelfFaceDescriptor,
   getSelfProfile,
   updateSelfContact,
   updateSelfFaceDescriptor,
+  verifySelfFacePassword,
 } from "../../services/my-profile/myProfile.service.js";
 
 const PHONE_REGEX = /^[0-9+\-().\s]{8,20}$/;
@@ -117,11 +119,35 @@ export const updateMyFaceDescriptor = async (req, res) => {
     if (!employeeId) {
       return res.status(404).json({ success: false, message: "Tai khoan chua duoc lien ket voi ho so nhan su" });
     }
-    const data = await updateSelfFaceDescriptor(employeeId, req.body?.face_samples, req.body?.current_password);
+    const data = await updateSelfFaceDescriptor(employeeId, req.body?.embeddings, req.body?.current_password, req.body?.blink_verified);
     return res.status(200).json({ success: true, message: "Cập nhật mẫu khuôn mặt FaceID thành công", data });
   } catch (error) {
-    console.error("Loi cap nhat khuon mat:", error);
-    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Không thể cập nhật mẫu khuôn mặt" });
+    if (!error.status) console.error("Loi cap nhat khuon mat:", error);
+    return res.status(error.status || 500).json({ success: false, error_code: error.error_code, conflict_employee: error.conflict_employee, message: error.status ? error.message : "Không thể cập nhật mẫu khuôn mặt" });
+  }
+};
+
+export const verifyMyFacePassword = async (req, res) => {
+  try {
+    const employeeId = req.user?.employee_id;
+    const password = req.body?.current_password;
+    if (!employeeId) return res.status(404).json({ success: false, message: "Tài khoản chưa được liên kết với hồ sơ nhân sự" });
+    if (typeof password !== "string" || !password) return res.status(400).json({ success: false, message: "Nhập mật khẩu tài khoản để tiếp tục" });
+    await verifySelfFacePassword(employeeId, password);
+    return res.status(200).json({ success: true, message: "Mật khẩu hợp lệ" });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Không thể xác nhận mật khẩu" });
+  }
+};
+
+export const checkMyFaceOwner = async (req, res) => {
+  try {
+    const employeeId = req.user?.employee_id;
+    if (!employeeId) return res.status(404).json({ success: false, message: "Tài khoản chưa được liên kết với hồ sơ nhân sự" });
+    const data = await checkRegisteredFaceOwner(employeeId, req.body?.embedding);
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error_code: error.error_code, conflict_employee: error.conflict_employee, message: error.status ? error.message : "Không thể kiểm tra khuôn mặt đã đăng ký" });
   }
 };
 

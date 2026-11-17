@@ -6,6 +6,7 @@ import {
   updateCurrentUser,
 } from "../services/auth.service.js";
 import api from "../services/api.js";
+import { Human } from "@vladmandic/human";
 
 const ROLE_LABELS = {
   SUPER_ADMIN: "Quản trị hệ thống (IT Admin)",
@@ -452,9 +453,15 @@ const showToast = (message, options = {}) => {
   return toast;
 };
 
-const FACE_MODEL_URL =
-  "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/";
-let faceModelsLoaded = false;
+const human = new Human({
+  modelBasePath: "https://cdn.jsdelivr.net/npm/@vladmandic/human/models/",
+  cacheSensitivity: 0,
+  face: { enabled: true, detector: { maxDetected: 2, rotation: true }, mesh: { enabled: true },
+    iris: { enabled: true }, description: { enabled: true, skipFrames: 0, skipTime: 0 }, antispoof: { enabled: true, skipFrames: 0, skipTime: 0 }, liveness: { enabled: true, skipFrames: 0, skipTime: 0 },
+    emotion: { enabled: false } },
+  body: { enabled: false }, hand: { enabled: false }, object: { enabled: false }, gesture: { enabled: true },
+});
+let faceModelPromise;
 let faceEnrollStream = null;
 let faceEnrollDescriptor = null;
 let faceEnrollTimer = null;
@@ -476,6 +483,8 @@ const closeFaceEnrollModal = () => {
   faceEnrollSession++;
   stopFaceEnrollStream();
   faceEnrollDescriptor = null;
+  const password = document.getElementById("faceEnrollPassword");
+  if (password) password.value = "";
   const modal = document.getElementById("modal-faceid-enroll");
   if (modal) {
     modal.classList.add("hidden");
@@ -494,53 +503,171 @@ const setFaceEnrollStatus = (text, hint) => {
 };
 
 export const ensureFaceModels = async () => {
-  if (!window.faceapi) throw new Error("Không tải được thư viện FaceID. Kiểm tra kết nối mạng và thử lại.");
-  if (faceModelsLoaded) return;
-  await Promise.all([
-    window.faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_URL),
-    window.faceapi.nets.faceLandmark68TinyNet.loadFromUri(FACE_MODEL_URL),
-    window.faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODEL_URL),
-  ]);
-  faceModelsLoaded = true;
+  if (!faceModelPromise) faceModelPromise = (async () => { await human.load(); await human.warmup(); })().catch(error => { faceModelPromise = null; throw error; });
+  await faceModelPromise;
 };
 
-const detectFaceDescriptor = async (video) => {
-  if (!video || video.readyState < 2) return null;
-  const options = new window.faceapi.TinyFaceDetectorOptions({
-    inputSize: 224,
-    scoreThreshold: 0.5,
+const vectorSimilarity = (a, b) => {
+  if (!a || !b || a.length !== b.length) return -1;
+  const norm = Math.hypot(...a) * Math.hypot(...b);
+  return norm ? a.reduce((sum, value, index) => sum + value * b[index], 0) / norm : -1;
+};
+const eyeRatio = face => {
+  const distance = (a, b) => a && b ? Math.hypot(a[0] - b[0], a[1] - b[1]) : NaN;
+  const mesh = face.mesh || [];
+  const eye = indices => {
+    const [a, b, c, d, e, f] = indices.map(index => mesh[index]);
+    return (distance(b, f) + distance(c, e)) / (2 * distance(a, d));
+  };
+  const meshRatios = [eye([33, 160, 158, 133, 153, 144]), eye([362, 385, 387, 263, 373, 380])];
+  if (meshRatios.every(Number.isFinite)) return (meshRatios[0] + meshRatios[1]) / 2;
+  const ratios = ["left", "right"].map(side => {
+    const upper = face.annotations?.[`${side}EyeUpper0`], lower = face.annotations?.[`${side}EyeLower0`];
+    if (!upper?.length || !lower?.length) return NaN;
+    const width = Math.max(...[...upper, ...lower].map(p => p[0])) - Math.min(...[...upper, ...lower].map(p => p[0]));
+    return Math.abs(upper.reduce((sum, p) => sum + p[1], 0) / upper.length - lower.reduce((sum, p) => sum + p[1], 0) / lower.length) / width;
   });
-  const results = await window.faceapi
-    .detectAllFaces(video, options)
-    .withFaceLandmarks(true)
-    .withFaceDescriptors();
-  if (!Array.isArray(results) || !results.length) return null;
-  if (results.length > 1) throw new Error("Có nhiều người trong khung hình. Chỉ một người đứng trước camera.");
-  const result = results[0];
-  if (!result || !result.detection || result.detection.score < 0.8 || result.detection.box.width < video.videoWidth * 0.18 || result.detection.box.height < video.videoHeight * 0.2) return null;
-  return result.descriptor || null;
+  return ratios.every(Number.isFinite) ? (ratios[0] + ratios[1]) / 2 : NaN;
+};
+export const detectEyeBlink = (face, gestures, state = {}, now = performance.now()) => {
+  const ear = eyeRatio(face);
+  const blinkGesture = (gestures || []).some(item => /blink (left|right) eye/i.test(typeof item === "string" ? item : item.gesture || ""));
+  if (ear > 0.23 && !state.closedAt) state.open = true;
+  if (state.open && (ear < 0.175 || blinkGesture) && !state.closedAt) state.closedAt = now;
+  if (state.closedAt && now - state.closedAt > 900) { state.closedAt = null; state.open = false; }
+  if (state.closedAt && ear > 0.22 && !blinkGesture) {
+    const duration = now - state.closedAt;
+    state.closedAt = null; state.open = true;
+    return duration >= 60 && duration <= 900;
+  }
+  return false;
 };
 
-export const captureFaceSamples = async (video, onProgress = () => {}, isActive = () => true) => {
+const faceBrightness = (video, box) => {
+  if (!video.videoWidth || !video.videoHeight) return 0;
+  const canvas = document.createElement("canvas");
+  canvas.width = 32; canvas.height = 32;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(video, box[0], box[1], box[2], box[3], 0, 0, 32, 32);
+  const pixels = context.getImageData(0, 0, 32, 32).data;
+  let luminance = 0;
+  for (let index = 0; index < pixels.length; index += 4) luminance += 0.2126 * pixels[index] + 0.7152 * pixels[index + 1] + 0.0722 * pixels[index + 2];
+  return luminance / (pixels.length / 4);
+};
+
+export const captureFaceSamples = async (video, onProgress = () => {}, isActive = () => true, onStage = () => {}) => {
   await ensureFaceModels();
+  const frame = video.parentElement;
+  frame.style.position = "relative";
+  const overlay = document.createElement("div");
+  overlay.className = "absolute inset-x-2 top-1/2 z-20 rounded-lg bg-black/80 px-3 py-3 text-center text-sm font-semibold text-white pointer-events-none";
+  const instruction = document.createElement("p");
+  const progress = document.createElement("progress");
+  const faceOutline = document.createElement("div");
+  faceOutline.className = "absolute z-10 border-2 border-emerald-400 rounded-lg pointer-events-none hidden";
+  faceOutline.style.transform = "scaleX(-1)";
+  progress.max = 5; progress.value = 0; progress.className = "mt-2 w-full h-2";
+  overlay.append(instruction, progress); frame.append(faceOutline, overlay);
+  const stageMessage = text => { instruction.textContent = text; onStage(text); };
+  try {
   const samples = [];
-  for (let attempt = 0; attempt < 30 && samples.length < 5; attempt++) {
+  let stage = "ALIGN_FACE", stable = 0, lastCapture = 0, previousBox = null;
+  const blinkState = {};
+  const deadline = performance.now() + 60000;
+  stageMessage("Căn chỉnh khuôn mặt: nhìn thẳng, đủ sáng và giữ yên.");
+  while (performance.now() < deadline && samples.length < 5) {
     if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
-    const descriptor = await detectFaceDescriptor(video);
+    const result = await human.detect(video);
     if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
-    if (descriptor) {
-      const values = Array.from(descriptor);
-      if (samples.length && window.faceapi.euclideanDistance(values, samples[0]) >= 0.32) throw new Error("Khuôn mặt thay đổi trong lúc quét. Vui lòng quét lại với một người duy nhất.");
-      samples.push(values);
+    const face = result.face?.length === 1 ? result.face[0] : null;
+    const angle = face?.rotation?.angle;
+    const center = angle && Math.abs(angle.yaw) < 0.25 && Math.abs(angle.pitch) < 0.25 && Math.abs(angle.roll) < 0.25;
+    if (face?.box && video.videoWidth && video.videoHeight) {
+      const [x, y, width, height] = face.box;
+      const bounds = video.getBoundingClientRect();
+      const scale = Math.max(bounds.width / video.videoWidth, bounds.height / video.videoHeight);
+      const left = (bounds.width - video.videoWidth * scale) / 2 + x * scale;
+      const top = (bounds.height - video.videoHeight * scale) / 2 + y * scale;
+      Object.assign(faceOutline.style, { display: "block", left: `${left}px`, top: `${top}px`, width: `${width * scale}px`, height: `${height * scale}px` });
+    } else faceOutline.style.display = "none";
+    const box = face?.box;
+    const inFrame = box && box[0] >= 0 && box[1] >= 0 && box[0] + box[2] <= video.videoWidth && box[1] + box[3] <= video.videoHeight;
+    const brightness = face && inFrame ? faceBrightness(video, box) : 0;
+    const quality = face && center && inFrame && face.box[2] >= 130 && face.score >= 0.80 && face.real >= 0.62 && face.live >= 0.62 && brightness >= 45;
+    if (!quality) {
+      stage = "ALIGN_FACE"; stable = 0; samples.length = 0; previousBox = null;
+      blinkState.open = false; blinkState.closedAt = null;
+      progress.value = 0;
+      stageMessage(result.face?.length > 1 ? "Chỉ một người đứng trước camera." : !face ? "Đưa khuôn mặt vào giữa khung hình." : !inFrame ? "Đưa toàn bộ khuôn mặt vào trong khung hình." : brightness < 45 ? "Khuôn mặt thiếu sáng. Hãy hướng về phía nguồn sáng hoặc tăng ánh sáng." : face.box[2] < 130 ? "Đến gần camera hơn để khuôn mặt rõ nét." : "Nhìn thẳng vào camera và giữ khuôn mặt ổn định.");
+    } else if (stage === "ALIGN_FACE") {
+      const moved = previousBox && Math.hypot(face.box[0] - previousBox[0], face.box[1] - previousBox[1]) > face.box[2] * 0.12;
+      stable = moved ? 1 : stable + 1; previousBox = [...face.box];
+      if (stable >= 4) { stage = "WAIT_FOR_BLINK"; stageMessage("👁️ HÃY CHỚP MẮT 1 LẦN ĐỂ BẮT ĐẦU QUÉT KHUÔN MẶT"); }
+    } else if (stage === "WAIT_FOR_BLINK") {
+      if (detectEyeBlink(face, result.gesture, blinkState)) { stage = "CAPTURE_5_SAMPLES"; stageMessage("✅ Đã xác thực chớp mắt! Đang thu thập 5 mẫu sinh trắc học..."); }
+    } else if (eyeRatio(face) > 0.22 && face.score >= 0.82 && face.embedding?.length && performance.now() - lastCapture >= 160) {
+      const values = Array.from(face.embedding);
+      if (samples.length && vectorSimilarity(values, samples[0]) < 0.83) throw new Error("Mẫu khuôn mặt không ổn định. Vui lòng giữ thẳng mặt và quét lại!");
+      samples.push(values); lastCapture = performance.now(); progress.value = samples.length;
+      instruction.textContent = `Đang quét mẫu: ${samples.length}/5 (${samples.length * 20}%)`;
       onProgress(samples.length, 5);
     }
-    if (samples.length < 5) await new Promise(resolve => setTimeout(resolve, 220));
+    if (samples.length < 5) await new Promise(resolve => setTimeout(resolve, 60));
   }
   if (samples.length < 5) throw new Error("Chưa nhận diện rõ khuôn mặt. Đứng gần hơn, nhìn thẳng và tăng ánh sáng rồi quét lại.");
-  return samples;
+  return { embeddings: samples, blink_verified: true };
+  } finally { overlay.remove(); faceOutline.remove(); }
+};
+
+const captureFaceProbe = async (video, isActive = () => true, onStage = () => {}) => {
+  await ensureFaceModels();
+  const deadline = performance.now() + 12000;
+  onStage("Nhìn thẳng vào camera để kiểm tra khuôn mặt đã được kích hoạt.");
+  while (performance.now() < deadline) {
+    if (!isActive()) throw new Error("Đã dừng kiểm tra khuôn mặt.");
+    const result = await human.detect(video);
+    if (!isActive()) throw new Error("Đã dừng kiểm tra khuôn mặt.");
+    const face = result.face?.length === 1 ? result.face[0] : null;
+    const box = face?.box;
+    const angle = face?.rotation?.angle;
+    const center = angle && Math.abs(angle.yaw) < 0.25 && Math.abs(angle.pitch) < 0.25 && Math.abs(angle.roll) < 0.25;
+    const inFrame = box && box[0] >= 0 && box[1] >= 0 && box[0] + box[2] <= video.videoWidth && box[1] + box[3] <= video.videoHeight;
+    const brightness = face && inFrame ? faceBrightness(video, box) : 0;
+    if (face && center && inFrame && box[2] >= 130 && face.score >= 0.80 && face.real >= 0.62 && face.live >= 0.62 && brightness >= 45 && face.embedding?.length) {
+      onStage("Đã thấy khuôn mặt rõ. Đang kiểm tra tài khoản đã kích hoạt.");
+      return Array.from(face.embedding);
+    }
+    onStage(result.face?.length > 1 ? "Chỉ một người đứng trước camera." : !face ? "Đưa khuôn mặt vào giữa khung hình." : !inFrame ? "Đưa toàn bộ khuôn mặt vào trong khung hình." : brightness < 45 ? "Khuôn mặt thiếu sáng. Tăng ánh sáng rồi thử lại." : "Nhìn thẳng vào camera và giữ yên.");
+    await new Promise(resolve => setTimeout(resolve, 80));
+  }
+  throw new Error("Không kiểm tra được khuôn mặt. Hãy nhìn thẳng, đủ sáng và thử lại.");
+};
+
+const showFaceEnrollConflict = (error, retryLabel = "Quét lại khuôn mặt") => {
+  const conflict = error.response?.data?.conflict_employee;
+  const code = error.response?.data?.error_code;
+  if (!conflict || !["FACE_DUPLICATE_CONFLICT", "FACE_ALREADY_ACTIVATED"].includes(code)) return false;
+  document.getElementById("faceEnrollConflict")?.remove();
+  const warning = document.createElement("div");
+  warning.id = "faceEnrollConflict";
+  warning.className = "mt-3 rounded-lg border border-red-400 bg-red-50 p-3 text-sm text-red-900";
+  warning.setAttribute("role", "alert");
+  const title = document.createElement("p"); title.className = "font-bold"; title.textContent = "KHUÔN MẶT ĐÃ ĐƯỢC KÍCH HOẠT CHO TÀI KHOẢN KHÁC";
+  warning.appendChild(title);
+  for (const text of [`Mã hồ sơ: ${conflict.employee_code}`, `Họ tên: ${conflict.full_name}`, `Độ khớp: ${conflict.similarity_percent}%`, ...(conflict.matched_samples ? [`Mẫu đạt ngưỡng: ${conflict.matched_samples}`] : []), "Một khuôn mặt chỉ được dùng cho một tài khoản. Không cho phép quét hoặc gán cho tài khoản này."]) {
+    const line = document.createElement("p"); line.textContent = text; warning.appendChild(line);
+  }
+  const retry = document.createElement("button"); retry.type = "button"; retry.textContent = retryLabel;
+  retry.className = "mt-2 rounded border px-3 py-2 font-semibold"; retry.addEventListener("click", runFaceEnrollScan);
+  warning.appendChild(retry);
+  document.getElementById("faceEnrollHint")?.parentElement.appendChild(warning);
+  setFaceEnrollStatus("Không cho phép kích hoạt khuôn mặt", error.response.data.message);
+  showToast(error.response.data.message, { duration: 6000 });
+  return true;
 };
 
 let faceEnrollSession = 0;
+const activeSession = session => session === faceEnrollSession && Boolean(document.getElementById("modal-faceid-enroll")?.isConnected);
 const runFaceEnrollScan = async () => {
   const saveBtn = document.getElementById("faceEnrollSave");
   const startBtn = document.getElementById("faceEnrollStart");
@@ -551,18 +678,77 @@ const runFaceEnrollScan = async () => {
   }
   if (startBtn) startBtn.disabled = true;
   faceEnrollDescriptor = null;
+  document.getElementById("faceEnrollConflict")?.remove();
 
   const video = document.getElementById("faceEnrollVideo");
   const session = ++faceEnrollSession;
   try {
     if (!faceEnrollStream?.active) throw new Error("Camera chưa sẵn sàng. Vui lòng cho phép camera rồi mở lại cửa sổ.");
+    setFaceEnrollStatus("Đang kiểm tra khuôn mặt đã đăng ký", "Chỉ một người trước camera. Đang xác nhận khuôn mặt chưa được dùng cho tài khoản khác.");
+    const embedding = await captureFaceProbe(video, () => session === faceEnrollSession && Boolean(faceEnrollStream?.active), text => setFaceEnrollStatus("Kiểm tra FaceID đã kích hoạt", text));
+    if (session !== faceEnrollSession || !document.getElementById("modal-faceid-enroll")?.isConnected) return;
+    await api.post("/api/attendance/check-face-owner", { embedding });
+    if (session !== faceEnrollSession || !document.getElementById("modal-faceid-enroll")?.isConnected) return;
+    if (startBtn) startBtn.querySelector("span:last-child").textContent = "Bắt đầu quét";
     setFaceEnrollStatus("Đang lấy 5 mẫu khuôn mặt...", "Chỉ một người trong khung hình, nhìn thẳng và giữ yên.");
-    faceEnrollDescriptor = await captureFaceSamples(video, (count, total) => setFaceEnrollStatus(`Đang lấy mẫu khuôn mặt ${count}/${total}...`), () => session === faceEnrollSession && Boolean(faceEnrollStream?.active));
-    setFaceEnrollStatus("Đã lấy đủ 5 mẫu khuôn mặt", "Nhập mật khẩu tài khoản để xác nhận lưu mẫu. Hệ thống sẽ kiểm tra FaceID trùng với nhân viên khác.");
+    faceEnrollDescriptor = await captureFaceSamples(video, (count, total) => setFaceEnrollStatus(`Đang quét mẫu: ${count}/${total} (${Math.round(count / total * 100)}%)`), () => session === faceEnrollSession && Boolean(faceEnrollStream?.active), text => setFaceEnrollStatus(text));
+    if (!activeSession(session)) return;
+    setFaceEnrollStatus("Đã lấy đủ 5 mẫu khuôn mặt", "Bấm Lưu mẫu khuôn mặt để cập nhật FaceID. Hệ thống sẽ kiểm tra trùng với nhân viên khác.");
     if (saveBtn) { saveBtn.disabled = false; saveBtn.classList.remove("hidden"); saveBtn.classList.add("flex"); }
   } catch (error) {
-    if (session === faceEnrollSession) setFaceEnrollStatus(error.message, "Không lưu mẫu khi camera hoặc nhận diện chưa đạt yêu cầu.");
+    if (session !== faceEnrollSession) return;
+    if (showFaceEnrollConflict(error, "Thử khuôn mặt khác")) {
+      if (startBtn) startBtn.querySelector("span:last-child").textContent = "Thử khuôn mặt khác";
+      return;
+    }
+    setFaceEnrollStatus(error.message, "Không lưu mẫu khi camera hoặc nhận diện chưa đạt yêu cầu.");
   } finally { if (startBtn && session === faceEnrollSession) startBtn.disabled = false; }
+};
+
+const enableFaceEnrollCamera = async () => {
+  const video = document.getElementById("faceEnrollVideo");
+  const fallback = document.getElementById("faceEnrollFallback");
+  const cameraError = document.getElementById("faceEnrollCameraError");
+  const startBtn = document.getElementById("faceEnrollStart");
+  const session = faceEnrollSession;
+  stopFaceEnrollStream();
+  fallback?.classList.add("hidden");
+  video?.classList.remove("hidden");
+  setFaceEnrollStatus("Đang mở camera...", "Cho phép trình duyệt sử dụng webcam nếu được hỏi.");
+  if (startBtn) startBtn.disabled = true;
+  try {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Camera cần trang HTTPS hoặc localhost và trình duyệt hỗ trợ webcam.");
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+    if (session !== faceEnrollSession || !document.getElementById("modal-faceid-enroll")?.isConnected) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+    faceEnrollStream = stream;
+    if (!video) throw new Error("Không tìm thấy vùng hiển thị camera.");
+    video.srcObject = stream;
+    await video.play();
+    if (session !== faceEnrollSession) return;
+    setFaceEnrollStatus("Camera sẵn sàng", "Nhấn Bắt đầu quét để thu nhận mẫu khuôn mặt.");
+    if (startBtn) { startBtn.disabled = false; startBtn.querySelector("span:last-child").textContent = "Bắt đầu quét"; }
+  } catch (error) {
+    if (session !== faceEnrollSession) return;
+    stopFaceEnrollStream();
+    const messages = {
+      NotAllowedError: "Trình duyệt đang chặn quyền camera. Hãy cho phép camera trong biểu tượng quyền trang web rồi thử lại.",
+      NotFoundError: "Không tìm thấy webcam được kết nối với thiết bị.",
+      NotReadableError: "Webcam đang được ứng dụng khác sử dụng hoặc không thể khởi động.",
+      OverconstrainedError: "Webcam không hỗ trợ cấu hình yêu cầu. Hãy thử lại với camera mặc định.",
+      SecurityError: "Camera chỉ hoạt động trên HTTPS hoặc localhost.",
+    };
+    const message = messages[error.name] || error.message || "Không thể mở webcam. Kiểm tra kết nối và quyền camera rồi thử lại.";
+    if (cameraError) cameraError.textContent = message;
+    fallback?.classList.remove("hidden");
+    video?.classList.add("hidden");
+    setFaceEnrollStatus("Không thể bật camera", message);
+    if (startBtn) { startBtn.disabled = false; startBtn.querySelector("span:last-child").textContent = "Thử bật camera lại"; }
+  }
 };
 
 export const openFaceEnrollModal = async () => {
@@ -579,52 +765,23 @@ export const openFaceEnrollModal = async () => {
     saveBtn.classList.remove("flex");
   }
   const startBtn = document.getElementById("faceEnrollStart");
-  if (startBtn) startBtn.disabled = false;
+  if (startBtn) { startBtn.disabled = false; startBtn.querySelector("span:last-child").textContent = "Xác nhận mật khẩu"; }
+  document.getElementById("faceEnrollConflict")?.remove();
 
+  document.getElementById("faceEnrollPasswordStep")?.classList.remove("hidden");
+  const cameraStep = document.getElementById("faceEnrollCameraStep");
+  cameraStep?.classList.add("hidden");
+  cameraStep?.classList.remove("flex");
+  document.getElementById("faceEnrollCameraError").textContent = "";
   const video = document.getElementById("faceEnrollVideo");
   const fallback = document.getElementById("faceEnrollFallback");
   fallback?.classList.add("hidden");
   video?.classList.remove("hidden");
-  setFaceEnrollStatus("Chuẩn bị quét khuôn mặt...", "Đang yêu cầu quyền truy cập camera.");
+  setFaceEnrollStatus("Xác nhận mật khẩu để tiếp tục", "Camera sẽ chỉ được bật sau khi mật khẩu được xác nhận.");
 
   stopFaceEnrollStream();
-  const session = ++faceEnrollSession;
-  let password = document.getElementById("faceEnrollPassword");
-  if (!password) {
-    const label = document.createElement("label");
-    label.className = "block mt-3 text-sm";
-    label.textContent = "Mật khẩu tài khoản để xác nhận FaceID";
-    password = document.createElement("input");
-    password.id = "faceEnrollPassword"; password.type = "password"; password.autocomplete = "current-password";
-    password.className = "block w-full border rounded px-3 py-2 mt-1";
-    label.appendChild(password);
-    document.getElementById("faceEnrollHint")?.parentElement.appendChild(label);
-  }
-  password.value = "";
-  try {
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error("no-media");
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user" },
-      audio: false,
-    });
-    if (session !== faceEnrollSession || !modal.isConnected) { stream.getTracks().forEach(track => track.stop()); return; }
-    faceEnrollStream = stream;
-    if (video) {
-      video.srcObject = faceEnrollStream;
-      await video.play();
-    }
-    setFaceEnrollStatus("Camera sẵn sàng", "Nhấn Bắt đầu quét để thu nhận mẫu khuôn mặt.");
-  } catch {
-    if (session !== faceEnrollSession) return;
-    stopFaceEnrollStream();
-    fallback?.classList.remove("hidden");
-    video?.classList.add("hidden");
-    setFaceEnrollStatus(
-      "Không truy cập được Webcam",
-      "Cần webcam thật để đăng ký FaceID. Cho phép camera trong trình duyệt và mở lại cửa sổ.",
-    );
-    if (startBtn) startBtn.disabled = true;
-  }
+  document.getElementById("faceEnrollPassword").value = "";
+  ++faceEnrollSession;
 };
 
 const saveFaceDescriptor = async () => {
@@ -639,13 +796,12 @@ const saveFaceDescriptor = async () => {
       saveBtn.disabled = true;
       saveBtn.innerHTML = "<span>Đang lưu...</span>";
     }
-    await api.put("/my-profile/face-descriptor", {
-      face_samples: faceEnrollDescriptor,
+    const response = await api.post("/api/attendance/register-face", {
+      ...faceEnrollDescriptor,
       current_password: document.getElementById("faceEnrollPassword")?.value,
     });
-    const average = faceEnrollDescriptor[0].map((_, index) => faceEnrollDescriptor.reduce((sum, sample) => sum + sample[index], 0) / faceEnrollDescriptor.length);
     const updated = updateCurrentUser({
-      face_descriptor: JSON.stringify(average),
+      face_descriptor: response.data.data.face_descriptor,
       has_face_descriptor: true,
     });
     closeFaceEnrollModal();
@@ -659,9 +815,9 @@ const saveFaceDescriptor = async () => {
     if (updated) setupHeaderUser(updated);
     window.dispatchEvent(new CustomEvent("hrm:face-updated", { detail: updated }));
   } catch (error) {
-    showToast(
-      error.response?.data?.message || "Không thể lưu mẫu khuôn mặt, vui lòng thử lại.",
-    );
+    if (!showFaceEnrollConflict(error)) {
+      showToast(error.response?.data?.message || "Không thể lưu mẫu khuôn mặt, vui lòng thử lại.");
+    }
   } finally {
     if (saveBtn) {
       saveBtn.disabled = false;
@@ -677,10 +833,36 @@ export const bindFaceEnrollModal = () => {
 
   document.getElementById("faceEnrollClose")?.addEventListener("click", closeFaceEnrollModal);
   document.getElementById("faceEnrollCancel")?.addEventListener("click", closeFaceEnrollModal);
-  document.getElementById("faceEnrollStart")?.addEventListener("click", () => {
+  document.getElementById("faceEnrollStart")?.addEventListener("click", async () => {
+    const password = document.getElementById("faceEnrollPassword").value;
+    if (!password) { setFaceEnrollStatus("Cần nhập mật khẩu", "Nhập mật khẩu tài khoản để xác nhận FaceID."); document.getElementById("faceEnrollPassword").focus(); return; }
+    const cameraStep = document.getElementById("faceEnrollCameraStep");
+    if (cameraStep.classList.contains("hidden")) {
+      const startBtn = document.getElementById("faceEnrollStart");
+      const session = faceEnrollSession;
+      startBtn.disabled = true;
+      try {
+        await api.post("/api/attendance/verify-face-password", { current_password: password });
+        if (session !== faceEnrollSession) return;
+        document.getElementById("faceEnrollPasswordStep").classList.add("hidden");
+        cameraStep.classList.remove("hidden"); cameraStep.classList.add("flex");
+        startBtn.disabled = false;
+        startBtn.querySelector("span:last-child").textContent = "Bật camera";
+        setFaceEnrollStatus("Đã xác nhận mật khẩu", "Bấm Bật camera để cho phép webcam và tiếp tục đăng ký.");
+      } catch (error) {
+        if (session !== faceEnrollSession) return;
+        startBtn.disabled = false;
+        setFaceEnrollStatus(error.response?.data?.message || "Không xác nhận được mật khẩu", "Kiểm tra mật khẩu tài khoản rồi thử lại.");
+      }
+      return;
+    }
+    if (!faceEnrollStream?.active) { enableFaceEnrollCamera(); return; }
     runFaceEnrollScan();
   });
   document.getElementById("faceEnrollSave")?.addEventListener("click", saveFaceDescriptor);
+  document.getElementById("faceEnrollPassword")?.addEventListener("keydown", event => {
+    if (event.key === "Enter") document.getElementById("faceEnrollStart")?.click();
+  });
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeFaceEnrollModal();
   });
@@ -706,12 +888,13 @@ const promptFaceEnrollmentIfMissing = (user) => {
 
   bindFaceEnrollModal();
 
-  if (!needsFace) return;
-  if (sessionStorage.getItem("hrm_face_prompted") === "1") return;
-  sessionStorage.setItem("hrm_face_prompted", "1");
+  if (!needsFace) {
+    document.getElementById("hrmFaceMissingToast")?.remove();
+    return;
+  }
 
   showToast(
-    "Tài khoản của bạn chưa có mẫu khuôn mặt FaceID. Vui lòng bấm \"Cập nhật khuôn mặt\" để đăng ký.",
+    "Tài khoản chưa kích hoạt điểm danh khuôn mặt. Bấm vào đây để đăng ký FaceID.",
     {
       id: "hrmFaceMissingToast",
       duration: 6000,
@@ -719,6 +902,18 @@ const promptFaceEnrollmentIfMissing = (user) => {
         "fixed bottom-5 right-5 z-[100] max-w-sm rounded-lg bg-amber-500 text-white shadow-lg px-4 py-3 font-body-sm text-body-sm flex items-start gap-2",
     },
   );
+  const toast = document.getElementById("hrmFaceMissingToast");
+  if (toast) {
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+    toast.tabIndex = 0;
+    toast.style.cursor = "pointer";
+    toast.title = "Mở đăng ký FaceID";
+    toast.addEventListener("click", openFaceEnrollModal, { once: true });
+    toast.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") openFaceEnrollModal();
+    });
+  }
 };
 
 const bindActions = () => {

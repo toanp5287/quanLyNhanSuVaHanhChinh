@@ -1,9 +1,11 @@
 import express from "express";
+import { checkMyFaceOwner, updateMyFaceDescriptor, verifyMyFacePassword } from "../controllers/my-profile/myProfile.controller.js";
 import { listMonthlyTimesheets, updateMonth } from "../services/tong-hop-chot-cong/tongHopChotCong.service.js";
 import { kioskAttendance } from "../services/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 import {
   requireAllowedAttendanceIp,
+  requireAllowedAttendanceDevice,
   requireAnyPermission,
   requirePermission,
   verifyToken,
@@ -20,7 +22,7 @@ import {
 const router = express.Router();
 
 const kioskAttempts = new Map();
-router.post("/kiosk/:action", requireAllowedAttendanceIp, async (req, res) => {
+router.post("/kiosk/:action", requireAllowedAttendanceIp, requireAllowedAttendanceDevice, async (req, res) => {
   res.set("Cache-Control", "no-store");
   const now = Date.now();
   for (const [key, value] of kioskAttempts) if (value.until < now) kioskAttempts.delete(key);
@@ -29,7 +31,7 @@ router.post("/kiosk/:action", requireAllowedAttendanceIp, async (req, res) => {
   if (++attempts.count > 20) return res.status(429).json({ success: false, message: "Quá nhiều lần quét. Vui lòng chờ một phút rồi thử lại." });
   kioskAttempts.set(key, attempts);
   try {
-    const data = await kioskAttendance(req.params.action, req.body?.face_samples, req.ip);
+    const data = await kioskAttendance(req.params.action, req.body?.embeddings, req.ip, req.body?.blink_verified);
     res.json({ success: true, message: req.params.action === "check-in" ? "Điểm danh vào ca thành công" : "Điểm danh tan ca thành công", data });
   } catch (error) {
     if (!error.status) console.error("Lỗi FaceID kiosk:", error);
@@ -40,7 +42,11 @@ router.post("/kiosk/:action", requireAllowedAttendanceIp, async (req, res) => {
 router.use(verifyToken);
 
 router.get("/today", requirePermission("ESS.SELF_PROFILE"), attendanceToday);
-router.post(["/check-in", "/check-out"], (req, res) => res.status(410).json({ success: false, message: "Vui lòng chấm công tại màn hình FaceID bên ngoài: /#/face-id" }));
+router.post("/verify-face-password", requirePermission("ESS.SELF_PROFILE"), verifyMyFacePassword);
+router.post("/check-face-owner", requirePermission("ESS.SELF_PROFILE"), checkMyFaceOwner);
+router.post("/register-face", requirePermission("ESS.SELF_PROFILE"), updateMyFaceDescriptor);
+router.post("/check-in", requirePermission("ESS.SELF_PROFILE"), requireAllowedAttendanceIp, requireAllowedAttendanceDevice, attendanceCheckIn);
+router.post("/check-out", requirePermission("ESS.SELF_PROFILE"), requireAllowedAttendanceIp, requireAllowedAttendanceDevice, attendanceCheckOut);
 
 router.get("/logs", requireAnyPermission(["ATT.VIEW", "HR.PROFILE_MANAGE"]), attendanceList);
 router.post("/quick-mark", requirePermission("ATT.SHIFT_OT_MANAGE"), attendanceQuickMark);

@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { db } from "../../config/database.js";
 import { verifyPassword } from "../auth/auth.service.js";
-import { attendanceError, parseFaceDescriptor, validateFaceSamples, faceDistance } from "../diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
+import { attendanceError, validateBiometricCapture, evaluateFullSetMatch, computeCentroid, l2Normalize } from "../diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 const EMPLOYEE_QUERY = `
   SELECT
@@ -181,30 +181,66 @@ export const updateSelfContact = async (employeeId, payload = {}) => {
   return rows[0] || null;
 };
 
-export const updateSelfFaceDescriptor = async (employeeId, values, password) => {
+export const updateSelfFaceDescriptor = async (employeeId, values, password, blinkVerified) => {
   if (!employeeId) return null;
-  const samples = validateFaceSamples(values);
+  const samples = validateBiometricCapture(values, blinkVerified, 0.82);
   if (typeof password !== "string" || !password) throw attendanceError("Nhập mật khẩu tài khoản để xác nhận đăng ký hoặc thay đổi FaceID.");
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
     // Serialize enrollment so concurrent registrations cannot assign the same face twice.
-    const [employees] = await connection.query("SELECT id, face_descriptor FROM employees ORDER BY id FOR UPDATE");
+    const [employees] = await connection.query("SELECT id, employee_code, full_name, face_descriptor FROM employees ORDER BY id FOR UPDATE");
     if (!employees.some(employee => Number(employee.id) === Number(employeeId))) throw attendanceError("Không tìm thấy hồ sơ nhân viên", 404);
     const [users] = await connection.query("SELECT password_hash FROM users WHERE employee_id = ? AND is_active = 1 LIMIT 1", [employeeId]);
     if (!users.length || !await verifyPassword(password, users[0].password_hash)) throw attendanceError("Mật khẩu xác nhận không đúng", 403);
-    for (const employee of employees) {
-      if (Number(employee.id) === Number(employeeId)) continue;
-      const registered = parseFaceDescriptor(employee.face_descriptor);
-      if (registered && samples.some(sample => faceDistance(sample, registered) < 0.50)) throw attendanceError("Khuôn mặt này đã được đăng ký cho nhân viên khác. Không thể sử dụng chung FaceID.", 409);
+    const conflict = employees.filter(employee => Number(employee.id) !== Number(employeeId) && employee.face_descriptor)
+      .map(employee => ({ employee, ...evaluateFullSetMatch(samples, employee.face_descriptor, 0.76) }))
+      .filter(match => match.isMatch).sort((a, b) => b.avgScore - a.avgScore)[0];
+    if (conflict) {
+      const employee = conflict.employee;
+      throw Object.assign(attendanceError(`PHÁT HIỆN TRÙNG HỒ SƠ SINH TRẮC HỌC: Cả bộ mẫu khuôn mặt vừa quét trùng khớp ${(conflict.avgScore * 100).toFixed(1)}% (${conflict.passCount}/5 mẫu) với hồ sơ [${employee.employee_code} - ${employee.full_name}]. Nếu trước đó đăng ký nhầm vào mã ${employee.employee_code}, vui lòng Reset khuôn mặt của mã đó trước!`, 409), {
+        error_code: "FACE_DUPLICATE_CONFLICT",
+        conflict_employee: { id: employee.id, employee_code: employee.employee_code, full_name: employee.full_name, similarity_percent: Number((conflict.avgScore * 100).toFixed(1)), matched_samples: `${conflict.passCount}/5` },
+      });
     }
-    const average = samples[0].map((_, index) => samples.reduce((sum, sample) => sum + sample[index], 0) / samples.length);
-    const descriptorJson = JSON.stringify(average);
+    // The face_descriptor column is TEXT (64 KB); Human embeddings need compact decimal precision.
+    const compact = vector => vector.map(value => Number(value.toFixed(5)));
+    const descriptorJson = JSON.stringify({ centroid: compact(computeCentroid(samples)), samples: samples.map(sample => compact(l2Normalize(sample))) });
+    if (Buffer.byteLength(descriptorJson, "utf8") > 60000) {
+      throw attendanceError("Bộ mẫu khuôn mặt vượt giới hạn lưu trữ. Vui lòng quét lại để tạo mẫu gọn hơn.", 413);
+    }
     await connection.query("UPDATE employees SET face_descriptor = ? WHERE id = ?", [descriptorJson, employeeId]);
     await connection.commit();
     return { face_descriptor: descriptorJson, has_face_descriptor: true };
   } catch (error) { await connection.rollback(); throw error; }
   finally { connection.release(); }
+};
+
+export const verifySelfFacePassword = async (employeeId, password) => {
+  if (!employeeId) throw attendanceError("Không tìm thấy hồ sơ nhân viên", 404);
+  const [users] = await db.query("SELECT password_hash FROM users WHERE employee_id = ? AND is_active = 1 LIMIT 1", [employeeId]);
+  if (!users.length || !await verifyPassword(password, users[0].password_hash)) {
+    throw attendanceError("Mật khẩu xác nhận không đúng", 403);
+  }
+  return true;
+};
+
+export const checkRegisteredFaceOwner = async (employeeId, embedding) => {
+  if (!employeeId) throw attendanceError("Không tìm thấy hồ sơ nhân viên", 404);
+  const sample = l2Normalize(embedding);
+  const [employees] = await db.query("SELECT id, employee_code, full_name, face_descriptor FROM employees WHERE id <> ? AND face_descriptor IS NOT NULL", [employeeId]);
+  const probe = Array.from({ length: 5 }, () => sample);
+  const conflict = employees.map(employee => ({ employee, ...evaluateFullSetMatch(probe, employee.face_descriptor, 0.72) }))
+    .filter(match => match.isMatch)
+    .sort((left, right) => right.avgScore - left.avgScore)[0];
+  if (conflict) {
+    const employee = conflict.employee;
+    throw Object.assign(attendanceError(`Khuôn mặt này đã được kích hoạt cho tài khoản [${employee.employee_code} - ${employee.full_name}] (${(conflict.avgScore * 100).toFixed(1)}%). Một khuôn mặt chỉ được dùng cho một tài khoản, vui lòng không quét lại.`, 409), {
+      error_code: "FACE_ALREADY_ACTIVATED",
+      conflict_employee: { id: employee.id, employee_code: employee.employee_code, full_name: employee.full_name, similarity_percent: Number((conflict.avgScore * 100).toFixed(1)) },
+    });
+  }
+  return { allowed: true };
 };
 
 export const clearSelfFaceDescriptor = async (employeeId) => {
