@@ -27,10 +27,13 @@ const EMPLOYEE_QUERY = `
     DATE_FORMAT(e.resign_date, '%Y-%m-%d') AS resign_date,
     e.work_status,
     e.face_descriptor,
-    d.department_code,
-    d.name AS department_name,
-    p.position_code,
-    p.title AS position_title,
+    e.manager_id,
+    e.data_scope,
+    COALESCE(d.department_code, d.dept_code) AS department_code,
+    COALESCE(d.department_name, d.name) AS department_name,
+    COALESCE(p.position_code, p.pos_code) AS position_code,
+    COALESCE(p.position_name, p.name, p.title) AS position_name,
+    COALESCE(p.position_name, p.name, p.title) AS position_title,
     p.grade_level,
     p.job_description,
     p.job_requirements,
@@ -69,10 +72,10 @@ const WORK_HISTORIES_QUERY = `
     wh.new_salary,
     DATE_FORMAT(wh.effective_date, '%Y-%m-%d') AS effective_date,
     wh.note,
-    fd.name AS from_department_name,
-    td.name AS to_department_name,
-    fp.title AS from_position_title,
-    tp.title AS to_position_title
+    COALESCE(fd.department_name, fd.name) AS from_department_name,
+    COALESCE(td.department_name, td.name) AS to_department_name,
+    COALESCE(fp.position_name, fp.name, fp.title) AS from_position_title,
+    COALESCE(tp.position_name, tp.name, tp.title) AS to_position_title
   FROM work_histories wh
   LEFT JOIN departments fd ON fd.id = wh.from_department_id
   LEFT JOIN departments td ON td.id = wh.to_department_id
@@ -193,6 +196,10 @@ export const updateSelfFaceDescriptor = async (employeeId, values, password) => 
     if (!employees.some(employee => Number(employee.id) === Number(employeeId))) throw attendanceError("Không tìm thấy hồ sơ nhân viên", 404);
     const [users] = await connection.query("SELECT password_hash FROM users WHERE employee_id = ? AND is_active = 1 LIMIT 1", [employeeId]);
     if (!users.length || !await verifyPassword(password, users[0].password_hash)) throw attendanceError("Mật khẩu xác nhận không đúng", 403);
+    const self = employees.find(employee => Number(employee.id) === Number(employeeId));
+    if (self?.face_descriptor) {
+      throw attendanceError("FaceID đã được đăng ký cho tài khoản này. Vui lòng Đặt lại mẫu FaceID trước khi đăng ký lại.", 409);
+    }
     for (const employee of employees) {
       if (Number(employee.id) === Number(employeeId)) continue;
       const registered = parseFaceDescriptor(employee.face_descriptor);

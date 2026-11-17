@@ -1,7 +1,6 @@
 import express from "express";
 
 import {
-  requireAllowedAttendanceIp,
   requirePermission,
   verifyToken,
 } from "../middlewares/auth.middleware.js";
@@ -20,7 +19,7 @@ routerMyProfile.use(verifyToken, requirePermission("ESS.SELF_PROFILE"));
 routerMyProfile.get("/", getMyProfile);
 routerMyProfile.put("/contact", updateMyContact);
 routerMyProfile.put("/password", updateMyPassword);
-routerMyProfile.put("/face-descriptor", requireAllowedAttendanceIp, updateMyFaceDescriptor);
-routerMyProfile.delete("/face-descriptor", requireAllowedAttendanceIp, resetMyFaceDescriptor);
+routerMyProfile.put("/face-descriptor", updateMyFaceDescriptor);
+routerMyProfile.delete("/face-descriptor", resetMyFaceDescriptor);
 
 export default routerMyProfile;

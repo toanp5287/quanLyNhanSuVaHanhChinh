@@ -16,6 +16,7 @@ const buildTokenPayload = (user) => ({
   employee_code: user.employee_code,
   full_name: user.full_name,
   department_id: user.department_id,
+  manager_id: user.manager_id ?? null,
   role_id: user.role_id,
   data_scope: user.data_scope,
   permissions: user.permissions,

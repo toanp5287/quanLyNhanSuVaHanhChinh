@@ -1,5 +1,5 @@
 import { db } from "../../config/database.js";
-import { hasPermission } from "../../utils/helper.js";
+import { hasPermission, canViewSalary } from "../../utils/helper.js";
 
 const GRADE_LEVELS = ["C-LEVEL", "M1", "M2", "S1", "S2", "S3"];
 const CODE_PATTERN = /^[A-Z0-9_-]{2,20}$/;
@@ -23,20 +23,28 @@ const getDepartmentRows = async () => {
     `SELECT
       d.id,
       d.parent_id,
-      d.department_code,
-      d.name,
+      d.manager_id,
+      COALESCE(d.department_code, d.dept_code) AS department_code,
+      COALESCE(d.department_name, d.name) AS name,
+      COALESCE(d.department_name, d.name) AS department_name,
       d.headcount_limit,
       COUNT(DISTINCT CASE WHEN e.work_status IN ('WORKING', 'MATERNITY') THEN e.id END) AS active_count,
       COUNT(DISTINCT p.id) AS position_count
     FROM departments d
     LEFT JOIN employees e ON e.department_id = d.id
     LEFT JOIN positions p ON p.department_id = d.id
-    GROUP BY d.id, d.parent_id, d.department_code, d.name, d.headcount_limit
+    GROUP BY d.id, d.parent_id, d.manager_id, d.department_code, d.dept_code, d.name, d.department_name, d.headcount_limit
     ORDER BY d.id ASC`,
   );
 
+  const [managers] = await db.query(`SELECT e.id, e.full_name, e.manager_id, e.data_scope,
+    COALESCE(p.position_name, p.name, p.title) AS position_title
+    FROM employees e LEFT JOIN positions p ON p.id = e.position_id
+    WHERE e.id IN (SELECT manager_id FROM departments WHERE manager_id IS NOT NULL)`);
+  const managerMap = new Map(managers.map(manager => [Number(manager.id), manager]));
   return rows.map((row) => ({
     ...row,
+    manager: managerMap.get(Number(row.manager_id)) || null,
     id: Number(row.id),
     parent_id: row.parent_id === null ? null : Number(row.parent_id),
     headcount_limit: Number(row.headcount_limit || 0),
@@ -50,10 +58,11 @@ const getPositionRows = async () => {
     `SELECT
       p.id,
       p.department_id,
-      d.department_code,
-      d.name AS department_name,
-      p.position_code,
-      p.title,
+      COALESCE(d.department_code, d.dept_code) AS department_code,
+      COALESCE(d.department_name, d.name) AS department_name,
+      COALESCE(p.position_code, p.pos_code) AS position_code,
+      COALESCE(p.position_name, p.name, p.title) AS position_name,
+      COALESCE(p.position_name, p.name, p.title) AS title,
       p.grade_level,
       p.job_description,
       p.job_requirements,
@@ -76,7 +85,8 @@ const getPositionRows = async () => {
 };
 
 const filterDepartmentsByScope = (user, departments) => {
-  if (user.data_scope !== "DEPARTMENT") return departments;
+  if (user?.data_scope === "ALL") return departments;
+  if (user?.data_scope !== "DEPARTMENT") return [];
 
   const ownDepartmentId = Number(user.department_id);
   if (!ownDepartmentId) return [];
@@ -102,19 +112,55 @@ const filterDepartmentsByScope = (user, departments) => {
   return departments.filter((department) => allowedIds.has(department.id));
 };
 
+// Preorder keeps each parent immediately before its children in every view.
+export const orderDepartments = (departments) => {
+  const ids = new Set(departments.map(item => item.id));
+  const visited = new Set();
+  const result = [];
+  const compare = (a, b) => a.id - b.id;
+  const visit = (department, depth, path) => {
+    if (visited.has(department.id)) return;
+    visited.add(department.id);
+    const orderPath = [...path, department.name];
+    result.push({ ...department, depth, order_index: result.length, hierarchy_path: orderPath.join(" / ") });
+    departments.filter(item => item.parent_id === department.id).sort(compare).forEach(item => visit(item, depth + 1, orderPath));
+  };
+  departments.filter(item => !ids.has(item.parent_id)).sort(compare).forEach(item => visit(item, 0, []));
+  departments.slice().sort(compare).forEach(item => visit(item, 0, []));
+  return result;
+};
+
+const canManageOrganization = user => hasPermission(user?.permissions, "HR.PROFILE_MANAGE") && ["ALL", "DEPARTMENT"].includes(user?.data_scope);
+const publicPositions = (user, positions) => positions.map(position => {
+  if (canViewSalary(user)) return position;
+  const { min_salary, max_salary, position_allowance, ...publicPosition } = position;
+  return publicPosition;
+});
+
 export const getOrganizationData = async (user) => {
-  const canManage = hasPermission(user?.permissions, "HR.PROFILE_MANAGE");
+  const canManage = canManageOrganization(user);
 
   const [allDepartments, allPositions] = await Promise.all([
     getDepartmentRows(),
     getPositionRows(),
   ]);
 
-  const departments = filterDepartmentsByScope(user, allDepartments);
+  const ordered = orderDepartments(allDepartments);
+  const departments = filterDepartmentsByScope(user, ordered).map(department => ({
+    ...department,
+    can_manage: canManage,
+    can_reparent: canManage && (user.data_scope === "ALL" || department.id !== Number(user.department_id)),
+    parent_name: allDepartments.find(item => item.id === department.parent_id)?.name || null,
+  }));
   const departmentIds = new Set(departments.map((department) => department.id));
-  const positions = allPositions.filter((position) =>
+  const positions = publicPositions(user, allPositions.filter((position) =>
     departmentIds.has(position.department_id),
-  );
+  )).sort((a, b) => departments.findIndex(item => item.id === a.department_id) - departments.findIndex(item => item.id === b.department_id)
+    || GRADE_LEVELS.indexOf(a.grade_level) - GRADE_LEVELS.indexOf(b.grade_level) || a.id - b.id);
+  const [leadership] = user.data_scope === "ALL" ? await db.query(`SELECT e.id, e.full_name,
+    COALESCE(p.position_name, p.name, p.title) AS position_title
+    FROM employees e LEFT JOIN positions p ON p.id = e.position_id
+    WHERE e.manager_id IS NULL AND e.data_scope = 'ALL' AND e.work_status = 'WORKING' ORDER BY e.id`) : [[]];
 
   const summary = {
     departments: departments.length,
@@ -136,6 +182,8 @@ export const getOrganizationData = async (user) => {
 
   return {
     can_manage: canManage,
+    can_view_salary: canViewSalary(user),
+    leadership,
     data_scope: user.data_scope,
     summary,
     departments,
@@ -145,6 +193,7 @@ export const getOrganizationData = async (user) => {
         id: department.id,
         department_code: department.department_code,
         name: department.name,
+        depth: department.depth,
       })),
       grade_levels: GRADE_LEVELS,
     },
@@ -174,38 +223,45 @@ export const getDepartmentDetail = async (user, departmentId) => {
 
   const children = allDepartments
     .filter((item) => item.parent_id === departmentId)
-    .sort((a, b) => a.department_code.localeCompare(b.department_code));
+    .sort((a, b) => a.id - b.id);
 
-  const positions = allPositions
+  const positions = publicPositions(user, allPositions
     .filter((item) => item.department_id === departmentId)
-    .sort((a, b) => a.position_code.localeCompare(b.position_code));
+    .sort((a, b) => GRADE_LEVELS.indexOf(a.grade_level) - GRADE_LEVELS.indexOf(b.grade_level) || a.id - b.id));
 
   const [members] = await db.query(
     `SELECT
       e.id,
       e.employee_code,
       e.full_name,
+      e.manager_id,
+      e.data_scope,
+      manager.full_name AS manager_name,
       e.gender,
       DATE_FORMAT(e.dob, '%Y-%m-%d') AS dob,
       e.phone,
       e.email,
       e.position_id,
-      p.position_code,
-      p.title AS position_title,
+      COALESCE(p.position_code, p.pos_code) AS position_code,
+      COALESCE(p.position_name, p.name, p.title) AS position_name,
+      COALESCE(p.position_name, p.name, p.title) AS position_title,
       p.grade_level,
       e.work_status,
       DATE_FORMAT(e.hire_date, '%Y-%m-%d') AS hire_date
     FROM employees e
     LEFT JOIN positions p ON p.id = e.position_id
+    LEFT JOIN employees manager ON manager.id = e.manager_id
     WHERE e.department_id = ?
       AND e.work_status IN ('WORKING', 'MATERNITY')
-    ORDER BY e.employee_code ASC`,
-    [departmentId],
+    ORDER BY CASE WHEN e.id = ? THEN 0 WHEN e.data_scope = 'ALL' THEN 1 WHEN e.data_scope = 'DEPARTMENT' THEN 2 ELSE 3 END,
+      FIELD(p.grade_level, 'C-LEVEL', 'M1', 'M2', 'S1', 'S2', 'S3'), e.id`,
+    [departmentId, department.manager_id],
   );
 
   return {
     department: {
       ...department,
+      can_manage: canManageOrganization(user),
       parent_code: parent?.department_code || null,
       parent_name: parent?.name || null,
     },
@@ -372,6 +428,8 @@ const getDescendantIds = (departments, departmentId) => {
 };
 
 export const createDepartment = async (user, payload) => {
+  if (!canManageOrganization(user)) return { notFound: true };
+  if (user.data_scope !== "ALL" && !payload.parent_id) return { invalidParent: true };
   const visibleIds = await getVisibleDepartmentIds(user);
   if (!visibleIds.size) return { notFound: true };
 
@@ -395,11 +453,13 @@ export const createDepartment = async (user, payload) => {
 
   try {
     const [result] = await db.query(
-      `INSERT INTO departments (parent_id, department_code, name, headcount_limit)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO departments (parent_id, department_code, dept_code, name, department_name, headcount_limit)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [
         payload.parent_id,
         payload.department_code,
+        payload.department_code,
+        payload.name,
         payload.name,
         payload.headcount_limit,
       ],
@@ -413,17 +473,19 @@ export const createDepartment = async (user, payload) => {
 };
 
 export const updateDepartment = async (user, departmentId, payload) => {
+  if (!canManageOrganization(user)) return { notFound: true };
   const visibleIds = await getVisibleDepartmentIds(user);
   if (!visibleIds.size || !visibleIds.has(departmentId)) {
     return { notFound: true };
   }
 
   const [existingRows] = await db.query(
-    "SELECT id FROM departments WHERE id = ? LIMIT 1",
+    "SELECT id, parent_id FROM departments WHERE id = ? LIMIT 1",
     [departmentId],
   );
 
   if (!existingRows.length) return { notFound: true };
+  if (user.data_scope !== "ALL" && (!payload.parent_id || (departmentId === Number(user.department_id) && payload.parent_id !== Number(existingRows[0].parent_id)))) return { invalidParent: true };
 
   const [duplicateRows] = await db.query(
     "SELECT id FROM departments WHERE department_code = ? AND id <> ? LIMIT 1",
@@ -453,11 +515,13 @@ export const updateDepartment = async (user, departmentId, payload) => {
   try {
     await db.query(
       `UPDATE departments
-       SET parent_id = ?, department_code = ?, name = ?, headcount_limit = ?
+       SET parent_id = ?, department_code = ?, dept_code = ?, name = ?, department_name = ?, headcount_limit = ?
        WHERE id = ?`,
       [
         payload.parent_id,
         payload.department_code,
+        payload.department_code,
+        payload.name,
         payload.name,
         payload.headcount_limit,
         departmentId,
@@ -472,6 +536,7 @@ export const updateDepartment = async (user, departmentId, payload) => {
 };
 
 export const createPosition = async (user, payload) => {
+  if (!canManageOrganization(user)) return { invalidDepartment: true };
   const visibleIds = await getVisibleDepartmentIds(user);
   if (!visibleIds.size || !visibleIds.has(payload.department_id)) {
     return { invalidDepartment: true };
@@ -487,12 +552,15 @@ export const createPosition = async (user, payload) => {
   try {
     const [result] = await db.query(
       `INSERT INTO positions
-        (department_id, position_code, title, grade_level, job_description,
+        (department_id, position_code, pos_code, title, position_name, name, grade_level, job_description,
          job_requirements, min_salary, max_salary, position_allowance)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         payload.department_id,
         payload.position_code,
+        payload.position_code,
+        payload.title,
+        payload.title,
         payload.title,
         payload.grade_level,
         payload.job_description,
@@ -511,6 +579,7 @@ export const createPosition = async (user, payload) => {
 };
 
 export const updatePosition = async (user, positionId, payload) => {
+  if (!canManageOrganization(user)) return { notFound: true };
   const visibleIds = await getVisibleDepartmentIds(user);
   if (!visibleIds.size) return { notFound: true };
 
@@ -540,13 +609,16 @@ export const updatePosition = async (user, positionId, payload) => {
   try {
     await db.query(
       `UPDATE positions
-       SET department_id = ?, position_code = ?, title = ?, grade_level = ?,
+       SET department_id = ?, position_code = ?, pos_code = ?, title = ?, position_name = ?, name = ?, grade_level = ?,
            job_description = ?, job_requirements = ?, min_salary = ?,
            max_salary = ?, position_allowance = ?
        WHERE id = ?`,
       [
         payload.department_id,
         payload.position_code,
+        payload.position_code,
+        payload.title,
+        payload.title,
         payload.title,
         payload.grade_level,
         payload.job_description,

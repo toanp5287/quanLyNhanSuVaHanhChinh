@@ -11,8 +11,9 @@ const USER_QUERY = `
     u.last_login,
     r.id AS role_id,
     r.name AS role_name,
-    r.data_scope,
+    CASE WHEN r.id = 'SUPER_ADMIN' THEN 'ALL' ELSE COALESCE(e.data_scope, r.data_scope) END AS data_scope,
     e.id AS employee_id,
+    e.manager_id,
     e.employee_code,
     e.full_name,
     e.gender,
@@ -33,11 +34,12 @@ const USER_QUERY = `
     e.work_status,
     e.face_descriptor,
     d.id AS department_id,
-    d.department_code,
-    d.name AS department_name,
+    COALESCE(d.department_code, d.dept_code) AS department_code,
+    COALESCE(d.department_name, d.name) AS department_name,
     p.id AS position_id,
-    p.position_code,
-    p.title AS position_title,
+    COALESCE(p.position_code, p.pos_code) AS position_code,
+    COALESCE(p.position_name, p.name, p.title) AS position_name,
+    COALESCE(p.position_name, p.name, p.title) AS position_title,
     p.grade_level
   FROM users u
   LEFT JOIN employees e ON e.id = u.employee_id
