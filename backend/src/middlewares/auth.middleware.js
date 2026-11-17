@@ -68,3 +68,30 @@ export const requireAnyPermission = (permissionCodes = []) => {
     next();
   };
 };
+
+const normalizeIp = (ip) => {
+  if (!ip) return "";
+  return String(ip).replace(/^::ffff:/, "").trim();
+};
+
+export const requireAllowedAttendanceIp = (req, res, next) => {
+  if (String(process.env.STRICT_ATTENDANCE_LOCK || "").toLowerCase() !== "true") {
+    return next();
+  }
+
+  const allowed = String(process.env.ALLOWED_ATTENDANCE_IPS || "")
+    .split(",")
+    .map((value) => normalizeIp(value))
+    .filter(Boolean);
+
+  if (!allowed.length) return next();
+
+  const clientIp = normalizeIp(req.ip || req.socket?.remoteAddress || "");
+
+  if (allowed.includes(clientIp)) return next();
+
+  return res.status(403).json({
+    success: false,
+    message: "IP máy không được phép chấm công hoặc cập nhật khuôn mặt",
+  });
+};

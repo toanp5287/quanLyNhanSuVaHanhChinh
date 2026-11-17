@@ -31,6 +31,7 @@ const USER_QUERY = `
     e.hire_date,
     e.resign_date,
     e.work_status,
+    e.face_descriptor,
     d.id AS department_id,
     d.department_code,
     d.name AS department_name,

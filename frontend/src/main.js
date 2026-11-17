@@ -4,6 +4,8 @@ import { initLogin } from "./js/login.js";
 import { initHome, setupShell } from "./js/home.js";
 import { initPermissions } from "./js/permissions.js";
 import { initMyProfile } from "./js/my-profile.js";
+import { initChamCong } from "./js/cham-cong.js";
+import { initFaceKiosk } from "./js/diem-danh-nhat-ky-quet-the-phan-ca.js";
 import { getEmployeeModeFromHash, initEmployees } from "./js/employees.js";
 import {
   getContractStatusFromHash,
@@ -57,6 +59,11 @@ function mountPage(html) {
 function showLogin() {
   mountPage(loginHtml);
   initLogin();
+  const link = document.createElement("a");
+  link.href = "#/face-id";
+  link.className = "fixed bottom-6 right-6 z-50 rounded-xl bg-primary text-white px-5 py-3 shadow-lg font-semibold";
+  link.textContent = "Điểm danh FaceID • Không cần đăng nhập";
+  app.appendChild(link);
 }
 
 function showHome(user) {
@@ -104,6 +111,18 @@ function showMyProfile(user) {
   mountPage(homeHtml);
   app.classList.add("hrm-fade-in");
   initMyProfile(user);
+}
+
+function showDiemDanh(user, tab = "daily") {
+  if (!user || !hasPermission("ATT.VIEW", user)) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+  mountPage(homeHtml);
+  setupShell(user);
+  app.classList.add("hrm-fade-in");
+  initChamCong(user, tab);
 }
 
 function showEmployees(user, mode = "all") {
@@ -158,7 +177,9 @@ function showContracts(user, status = "ALL") {
 function renderRoute(user) {
   const hash = window.location.hash;
 
-  if (hash === "#/phan-quyen") {
+  if (hash === "#/face-id") {
+    initFaceKiosk();
+  } else if (hash === "#/phan-quyen") {
     showPermissions(user);
   } else if (
     hash === "#/so-do-phong-ban" ||
@@ -171,6 +192,10 @@ function renderRoute(user) {
     showEmployees(user, getEmployeeModeFromHash(hash));
   } else if (hash === "#/ho-so-ca-nhan") {
     showMyProfile(user);
+  } else if (hash === "#/diem-danh") {
+    showDiemDanh(user);
+  } else if (hash === "#/cham-cong" || hash === "#/cham-cong/thang") {
+    showDiemDanh(user, "monthly");
   } else if (hash === "#/trang-chu") {
     showHome(user);
   } else if (!hash && user?.role_id === "EMPLOYEE") {
@@ -186,8 +211,10 @@ document.addEventListener("click", (event) => {
   if (card && !event.target.closest("button")) {
     const title = card.getAttribute("data-title") || "";
     const cardRoutes = {
-      "Cổng thông tin cá nhân": "#/ho-so-ca-nhan",
-      "Hồ sơ cá nhân & JD": "#/ho-so-ca-nhan",
+       "Cổng thông tin cá nhân": "#/ho-so-ca-nhan",
+       "Hồ sơ cá nhân & JD": "#/ho-so-ca-nhan",
+       "Dữ liệu máy chấm công": "#/diem-danh",
+        "Bảng chấm công tháng": "#/cham-cong/thang",
       "Tất cả nhân viên": "#/nhan-vien",
       "Nhân viên đang làm": "#/nhan-vien/dang-lam",
       "Nhân viên đã nghỉ": "#/nhan-vien/da-nghi",
@@ -228,6 +255,8 @@ document.addEventListener("click", (event) => {
 
 window.addEventListener("hashchange", () => {
   const user = getCurrentUser();
+
+  if (window.location.hash === "#/face-id") { initFaceKiosk(); return; }
 
   if (!user) {
     showLogin();
@@ -295,6 +324,7 @@ window.addEventListener("hrm:logout-request", () => {
 });
 
 async function bootstrap() {
+  if (window.location.hash === "#/face-id") { initFaceKiosk(); return; }
   if (!getToken()) {
     showLogin();
     return;

@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+
+<html lang="vi"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"surface":"#faf9fd","secondary-fixed-dim":"#a5c8ff","surface-container":"#efedf1","outline-variant":"#c2c6d3","on-error-container":"#93000a","inverse-on-surface":"#f1f0f4","on-error":"#ffffff","outline":"#737783","background":"#faf9fd","on-primary-fixed":"#001b3f","tertiary-container":"#004ea6","surface-variant":"#e3e2e6","on-secondary-fixed-variant":"#004786","on-primary-fixed-variant":"#00458f","primary-fixed":"#d7e3ff","on-primary-container":"#a6c4ff","on-tertiary":"#ffffff","inverse-surface":"#2f3033","surface-container-low":"#f4f3f7","surface-dim":"#dbd9dd","inverse-primary":"#abc7ff","on-secondary-container":"#004683","surface-container-highest":"#e3e2e6","primary":"#003877","tertiary-fixed-dim":"#adc7ff","primary-container":"#0b4f9e","on-background":"#1a1b1e","secondary":"#225fa4","tertiary-fixed":"#d8e2ff","error-container":"#ffdad6","on-primary":"#ffffff","tertiary":"#00387b","surface-container-high":"#e9e7eb","surface-tint":"#245dad","surface-container-lowest":"#ffffff","error":"#ba1a1a","on-tertiary-fixed":"#001a41","on-tertiary-fixed-variant":"#004493","on-secondary":"#ffffff","secondary-container":"#82b5ff","on-secondary-fixed":"#001c3a","on-tertiary-container":"#a9c4ff","on-surface":"#1a1b1e","primary-fixed-dim":"#abc7ff","on-surface-variant":"#424751","secondary-fixed":"#d4e3ff","surface-bright":"#faf9fd"},"borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},"spacing":{"gutter":"1rem","space-xl":"1.5rem","margin":"1.5rem","space-md":"0.75rem","margin-mobile":"1rem","space-xs":"0.25rem","gutter-compact":"0.75rem","space-lg":"1rem","space-sm":"0.5rem"},"fontFamily":{"body-lg":["Inter"],"headline-lg":["Inter"],"headline-sm":["Inter"],"body-md":["Inter"],"body-sm":["Inter"],"headline-md":["Inter"],"label-sm":["Inter"],"display-lg":["Inter"],"label-lg":["Inter"],"label-md":["Inter"]},"fontSize":{"body-lg":["14px",{"lineHeight":"22px","letterSpacing":"0em","fontWeight":"400"}],"headline-lg":["22px",{"lineHeight":"30px","letterSpacing":"-0.01em","fontWeight":"600"}],"headline-sm":["15px",{"lineHeight":"22px","letterSpacing":"0em","fontWeight":"600"}],"body-md":["13px",{"lineHeight":"20px","letterSpacing":"0em","fontWeight":"400"}],"body-sm":["12px",{"lineHeight":"18px","letterSpacing":"0.01em","fontWeight":"400"}],"headline-md":["18px",{"lineHeight":"26px","letterSpacing":"0em","fontWeight":"600"}],"label-sm":["11px",{"lineHeight":"14px","letterSpacing":"0.02em","fontWeight":"500"}],"display-lg":["28px",{"lineHeight":"36px","letterSpacing":"-0.01em","fontWeight":"600"}],"label-lg":["13px",{"lineHeight":"18px","letterSpacing":"0.01em","fontWeight":"500"}],"label-md":["12px",{"lineHeight":"16px","letterSpacing":"0.01em","fontWeight":"500"}]}}}}</script></head><body class="bg-surface font-body-md text-body-md text-on-surface"><header class="fixed top-0 left-0 right-0 z-50 flex flex-col"><div class="h-14 bg-primary-container px-space-md flex items-center justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex items-center gap-space-sm"><button class="p-space-xs text-on-primary hover:bg-white/10 rounded flex items-center justify-center transition-colors" type="button"><span class="material-symbols-outlined text-[22px]">menu</span></button><div class="w-8 h-8 rounded bg-white/10 flex items-center justify-center text-on-primary"><span class="material-symbols-outlined text-[20px]">apps</span></div><span class="font-headline-sm text-headline-sm text-on-primary whitespace-nowrap hidden sm:inline-block">Quản lý nhân sự HRM</span></div><div class="flex-1 max-w-xl mx-space-md"><div class="relative flex items-center w-full"><span class="material-symbols-outlined absolute left-3 text-secondary-fixed-dim text-[18px]">search</span><input class="w-full h-9 pl-9 pr-4 rounded bg-secondary text-on-secondary placeholder:text-secondary-fixed-dim text-body-md font-body-md focus:outline-none focus:bg-secondary focus:ring-1 focus:ring-white transition-all" placeholder="Tìm kiếm Menu..." type="text"/></div></div><div class="flex items-center gap-space-xs"><button class="p-space-xs text-on-primary hover:bg-white/10 rounded flex items-center justify-center transition-colors" title="Đồng bộ" type="button"><span class="material-symbols-outlined text-[20px]">sync</span></button><button class="p-space-xs text-on-primary hover:bg-white/10 rounded flex items-center justify-center transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">arrow_drop_down</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><div class="h-11 bg-surface-container-lowest px-space-md flex items-center justify-between border-b border-surface-variant"><div class="flex items-center gap-space-sm pl-14"><span class="font-headline-sm text-headline-sm text-on-surface">Menu</span></div><div class="flex items-center gap-space-xs"><button class="p-space-xs text-on-surface-variant hover:bg-surface-container-high rounded flex items-center justify-center transition-colors" title="Bộ lọc" type="button"><span class="material-symbols-outlined text-[20px]">filter_list</span></button></div></div></header><aside class="fixed left-0 top-14 bottom-0 w-14 bg-surface-container-lowest z-40 flex flex-col items-center py-space-sm border-r border-surface-variant overflow-y-auto"><nav class="flex flex-col items-center gap-space-xs w-full px-space-xs" data-active-classes="bg-secondary-fixed text-on-secondary-fixed font-bold"><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="menu-launcher" href="#" title="Trang chủ"><span class="material-symbols-outlined text-[20px]">home</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="nhan-su" href="#" title="Nhân sự"><span class="material-symbols-outlined text-[20px]">group</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="lich-bieu" href="#" title="Lịch biểu"><span class="material-symbols-outlined text-[20px]">calendar_month</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="tong-hop-cong-thang" href="#" title="Bảng Tổng hợp Công Tháng &amp; Chốt công"><span class="material-symbols-outlined text-[20px]">fact_check</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="nghi-phep" href="#" title="Nghỉ phép"><span class="material-symbols-outlined text-[20px]">beach_access</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="bao-hiem" href="#" title="Bảo hiểm"><span class="material-symbols-outlined text-[20px]">shield</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="khen-thuong" href="#" title="Khen thưởng"><span class="material-symbols-outlined text-[20px]">military_tech</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="tien-luong" href="#" title="Tiền lương"><span class="material-symbols-outlined text-[20px]">payments</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="tuyen-dung" href="#" title="Tuyển dụng"><span class="material-symbols-outlined text-[20px]">person_search</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="dao-tao" href="#" title="Đào tạo"><span class="material-symbols-outlined text-[20px]">school</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="danh-gia" href="#" title="Đánh giá"><span class="material-symbols-outlined text-[20px]">rate_review</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="tai-san" href="#" title="Tài sản"><span class="material-symbols-outlined text-[20px]">inventory_2</span></a><a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="bao-cao" href="#" title="Báo cáo"><span class="material-symbols-outlined text-[20px]">summarize</span></a></nav></aside><div class="pl-14"><main class="relative pt-[100px] w-full min-h-screen bg-surface px-space-lg py-space-md"><div class="flex flex-col w-full">
+<!-- Sub-header & Action Ribbon -->
+<div class="bg-surface-container-lowest rounded-lg p-space-md shadow-sm mb-space-md">
+<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-space-sm mb-space-sm pb-space-sm bg-surface-container-low/50 px-space-sm py-space-xs rounded">
+<div class="flex items-center gap-space-xs text-on-surface-variant text-label-md font-label-md flex-wrap">
+<span class="hover:text-primary cursor-pointer transition-colors">Quản lý nhân sự</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="hover:text-primary cursor-pointer transition-colors">Quản lý chấm công</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="text-on-surface font-semibold">Bảng Tổng hợp Công Tháng &amp; Chốt công</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<span class="flex items-center gap-1.5 px-2.5 py-1 bg-secondary-fixed text-on-secondary-fixed text-label-sm font-label-sm rounded uppercase tracking-wide">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+          KỲ CÔNG: THÁNG 05/2026 (01/05 - 31/05/2026)
+        </span>
+<span class="flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-900 text-label-sm font-label-sm rounded uppercase tracking-wide font-medium">
+<span class="material-symbols-outlined text-[14px]">edit_calendar</span>
+          ĐANG MỞ CHỐT CÔNG (DỰ THẢO V2)
+        </span>
+</div>
+</div>
+<!-- Enterprise Actions Bar -->
+<div class="flex flex-wrap items-center justify-between gap-space-md pt-space-xs">
+<div class="flex items-center gap-space-sm">
+<div class="w-10 h-10 rounded bg-primary/10 text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]">fact_check</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md text-on-surface tracking-tight">Tổng Hợp Ngày Công &amp; Khóa Số Liệu C&amp;B</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Hệ thống đồng bộ dữ liệu thời gian thực từ 16 máy chấm công ZKTeco và 540 đơn giải trình hợp lệ</p>
+</div>
+</div>
+<div class="flex items-center gap-space-xs flex-wrap">
+<button class="h-8 px-3 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-label-md font-label-md flex items-center gap-1.5 transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">filter_alt</span>
+          Bộ lọc nâng cao
+        </button>
+<button class="h-8 px-3 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-label-md font-label-md flex items-center gap-1.5 transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">sync</span>
+          Tổng hợp lại tự động
+        </button>
+<button class="h-8 px-3 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-label-md font-label-md flex items-center gap-1.5 transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">table_view</span>
+          Xuất Excel chi tiết
+        </button>
+<button class="h-8 px-3 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-label-md font-label-md flex items-center gap-1.5 transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">history</span>
+          Lịch sử chốt công
+        </button>
+<button class="h-9 px-4 rounded bg-primary-container text-on-primary text-label-lg font-label-lg flex items-center gap-2 hover:bg-primary shadow-sm active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[18px]">lock</span>
+<span>Khóa &amp; Chốt bảng công (Chuyển C&amp;B)</span>
+</button>
+</div>
+</div>
+</div>
+<!-- 4 KPI Metrics Bento -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-space-md mb-space-md">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg shadow-sm flex flex-col justify-between relative overflow-hidden group hover:bg-surface-container-low transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider">Tổng nhân sự tính công</span>
+<span class="w-7 h-7 rounded bg-secondary-fixed flex items-center justify-center text-on-secondary-fixed">
+<span class="material-symbols-outlined text-[16px]">groups</span>
+</span>
+</div>
+<div class="my-space-xs flex items-baseline gap-2">
+<span class="font-display-lg text-display-lg text-on-surface font-bold">248</span>
+<span class="text-label-md text-on-surface-variant font-label-md">nhân viên</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm pt-space-xs bg-surface-container-low/40 rounded px-2 py-1">
+<span class="text-emerald-700 font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> 245 đủ điều kiện
+        </span>
+<span class="text-error font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">error</span> 3 vi phạm
+        </span>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg shadow-sm flex flex-col justify-between relative overflow-hidden group hover:bg-surface-container-low transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider">Công chuẩn &amp; Bình quân</span>
+<span class="w-7 h-7 rounded bg-tertiary-fixed flex items-center justify-center text-on-tertiary-fixed">
+<span class="material-symbols-outlined text-[16px]">calendar_month</span>
+</span>
+</div>
+<div class="my-space-xs flex items-baseline gap-2">
+<span class="font-display-lg text-display-lg text-primary font-bold">22.0</span>
+<span class="text-label-md text-on-surface-variant font-label-md">công chuẩn</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm pt-space-xs bg-surface-container-low/40 rounded px-2 py-1">
+<span class="text-on-surface">Đạt bình quân: <strong class="font-semibold text-primary">21.4 công</strong></span>
+<span class="text-emerald-700 font-medium">97.3% định mức</span>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg shadow-sm flex flex-col justify-between relative overflow-hidden group hover:bg-surface-container-low transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider">Làm thêm giờ (OT Tổng)</span>
+<span class="w-7 h-7 rounded bg-amber-100 flex items-center justify-center text-amber-900">
+<span class="material-symbols-outlined text-[16px]">more_time</span>
+</span>
+</div>
+<div class="my-space-xs flex items-baseline gap-2">
+<span class="font-display-lg text-display-lg text-on-surface font-bold">1,420</span>
+<span class="text-label-md text-on-surface-variant font-label-md">giờ OT</span>
+</div>
+<div class="text-body-sm font-body-sm text-on-surface-variant truncate pt-space-xs bg-surface-container-low/40 rounded px-2 py-1 flex items-center justify-between">
+<span>Thường: <strong>860h</strong> (150%)</span>
+<span>Tuần: <strong>420h</strong> (200%)</span>
+<span>Đêm: <strong>140h</strong></span>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg shadow-sm flex flex-col justify-between relative overflow-hidden group hover:bg-surface-container-low transition-colors">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider">Nghỉ phép &amp; Ngày lễ</span>
+<span class="w-7 h-7 rounded bg-rose-100 flex items-center justify-center text-rose-900">
+<span class="material-symbols-outlined text-[16px]">beach_access</span>
+</span>
+</div>
+<div class="my-space-xs flex items-baseline gap-2">
+<span class="font-display-lg text-display-lg text-on-surface font-bold">312</span>
+<span class="text-label-md text-on-surface-variant font-label-md">ngày phép (AL)</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm pt-space-xs bg-surface-container-low/40 rounded px-2 py-1">
+<span class="text-on-surface-variant">Không lương (UP): <strong class="text-error">12</strong> vụ</span>
+<span class="text-secondary font-medium">Lễ 30/4-1/5: 2 ngày</span>
+</div>
+</div>
+</div>
+<!-- Matrix Control Toolbar & Quick Filters -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg shadow-sm mb-space-sm space-y-space-md">
+<!-- Month Navigation & Tabs -->
+<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-space-sm pb-space-xs border-b border-surface-container">
+<div class="flex items-center gap-space-sm">
+<div class="flex items-center bg-surface-container-high rounded p-0.5">
+<button class="w-7 h-7 flex items-center justify-center hover:bg-surface-container-lowest rounded transition-colors" title="Tháng trước" type="button">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+</button>
+<div class="px-space-sm font-headline-sm text-headline-sm text-primary flex items-center gap-1 cursor-pointer">
+<span class="material-symbols-outlined text-[18px]">calendar_month</span>
+<span>Tháng 05/2026</span>
+</div>
+<button class="w-7 h-7 flex items-center justify-center hover:bg-surface-container-lowest rounded transition-colors" title="Tháng sau" type="button">
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+</div>
+<div class="h-6 w-[1px] bg-surface-container-highest hidden sm:block"></div>
+<!-- Filter Status Tabs -->
+<div class="flex items-center gap-1 overflow-x-auto">
+<button class="px-2.5 py-1 text-label-md font-label-md rounded bg-primary text-on-primary whitespace-nowrap" type="button">
+            Tất cả (248)
+          </button>
+<button class="px-2.5 py-1 text-label-md font-label-md rounded bg-surface-container text-on-surface hover:bg-surface-container-high whitespace-nowrap transition-colors" type="button">
+            Chuẩn hóa &amp; Khớp công (235)
+          </button>
+<button class="px-2.5 py-1 text-label-md font-label-md rounded bg-surface-container text-on-surface hover:bg-surface-container-high whitespace-nowrap transition-colors" type="button">
+            Có giải trình chờ duyệt (10)
+          </button>
+<button class="px-2.5 py-1 text-label-md font-label-md rounded bg-error-container text-on-error-container whitespace-nowrap" type="button">
+            Bất thường chưa giải trình (3)
+          </button>
+<button class="px-2.5 py-1 text-label-md font-label-md rounded bg-surface-container text-on-surface hover:bg-surface-container-high whitespace-nowrap transition-colors" type="button">
+            Chốt trước hạn (2)
+          </button>
+</div>
+</div>
+<!-- Quick Search & Dropdown Filters -->
+<div class="flex items-center gap-space-sm">
+<div class="relative w-64">
+<span class="material-symbols-outlined absolute left-2.5 top-2 text-outline text-[18px]">search</span>
+<input class="w-full h-8 pl-8 pr-3 text-body-md font-body-md rounded bg-surface-container-low border-0 focus:ring-1 focus:ring-primary focus:bg-surface-container-lowest text-on-surface outline-none" placeholder="Tìm theo Mã NV, Họ tên..." type="text"/>
+</div>
+<select class="h-8 px-2.5 bg-surface-container-low rounded text-label-md font-label-md text-on-surface outline-none focus:ring-1 focus:ring-primary cursor-pointer border-0">
+<option>Tất cả Khối &amp; Phòng ban</option>
+<option>Khối Công nghệ &amp; Kỹ thuật</option>
+<option>Khối Kinh doanh &amp; Tiếp thị</option>
+<option>Khối Vận hành &amp; Chuỗi cung ứng</option>
+<option>Khối Tài chính &amp; Kế toán</option>
+<option>Phòng Nhân sự &amp; Hành chính</option>
+</select>
+<select class="h-8 px-2.5 bg-surface-container-low rounded text-label-md font-label-md text-on-surface outline-none focus:ring-1 focus:ring-primary cursor-pointer border-0">
+<option>Tất cả hình thức</option>
+<option>Toàn thời gian (Full-time)</option>
+<option>Thử việc (Probation)</option>
+<option>Ca kíp 3 ca (Shift)</option>
+</select>
+</div>
+</div>
+<!-- Workcode Legend Ribbon -->
+<div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-label-sm font-label-sm text-on-surface-variant">
+<div class="flex items-center gap-1 font-semibold text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-primary">info</span>
+<span>Ký hiệu chấm công:</span>
+</div>
+<div class="flex flex-wrap items-center gap-3">
+<span class="flex items-center gap-1"><span class="w-4 h-4 rounded bg-emerald-600 text-white font-bold flex items-center justify-center text-[10px]">X</span> Đủ công (1.0)</span>
+<span class="flex items-center gap-1"><span class="w-4 h-4 rounded bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px]">1/2</span> Nửa công (0.5)</span>
+<span class="flex items-center gap-1"><span class="w-4 h-4 rounded bg-amber-500 text-white font-bold flex items-center justify-center text-[10px]">P</span> Nghỉ phép (AL)</span>
+<span class="flex items-center gap-1"><span class="w-4 h-4 rounded bg-rose-600 text-white font-bold flex items-center justify-center text-[10px]">V</span> Vắng không phép</span>
+<span class="flex items-center gap-1"><span class="w-4 h-4 rounded bg-surface-container-highest text-on-surface font-bold flex items-center justify-center text-[10px]">KL</span> Nghỉ không lương</span>
+<span class="flex items-center gap-1"><span class="w-4 h-4 rounded bg-blue-600 text-white font-bold flex items-center justify-center text-[10px]">CT</span> Đi công tác</span>
+<span class="flex items-center gap-1"><span class="w-4 h-4 rounded bg-purple-600 text-white font-bold flex items-center justify-center text-[10px]">WFH</span> Làm từ xa</span>
+<span class="flex items-center gap-1"><span class="w-4 h-4 rounded bg-cyan-600 text-white font-bold flex items-center justify-center text-[10px]">Ô</span> Nghỉ ốm (BHXH)</span>
+<span class="flex items-center gap-1"><span class="w-4 h-4 rounded bg-red-100 text-red-700 font-bold flex items-center justify-center text-[10px]">L</span> Nghỉ lễ hưởng lương</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-xs bg-surface-container px-2 py-0.5 rounded text-on-surface-variant font-medium">Cuối tuần: T7, CN nền xám</span>
+</div>
+</div>
+</div>
+<!-- Main Timesheet Matrix Data Grid -->
+<div class="bg-surface-container-lowest rounded-lg shadow-sm overflow-hidden mb-space-md">
+<div class="overflow-x-auto w-full max-h-[580px] relative select-none">
+<table class="w-full text-left border-collapse text-body-sm font-body-sm whitespace-nowrap">
+<!-- Table Head -->
+<thead class="sticky top-0 z-30 bg-surface-container-low text-on-surface font-label-md text-label-md shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+<tr class="h-10">
+<!-- Sticky Columns Header -->
+<th class="sticky left-0 z-40 bg-surface-container-low px-3 py-2 w-10 text-center">
+<input class="w-4 h-4 accent-primary rounded cursor-pointer" type="checkbox"/>
+</th>
+<th class="sticky left-10 z-40 bg-surface-container-low px-3 py-2 min-w-[200px] text-left">
+              Mã NV &amp; Họ và tên
+            </th>
+<th class="sticky left-[240px] z-40 bg-surface-container-low px-3 py-2 min-w-[130px] text-left shadow-[2px_0_5px_rgba(0,0,0,0.06)]">
+              Phòng ban &amp; Khối
+            </th>
+<!-- Daily Calendar Columns (Days 01 to 31) -->
+<th class="px-1 py-2 text-center w-7 bg-red-50 text-red-800">01<br/><span class="text-[10px] font-normal">T6(Lễ)</span></th>
+<th class="px-1 py-2 text-center w-7 bg-surface-container-high text-on-surface-variant">02<br/><span class="text-[10px] font-normal">T7</span></th>
+<th class="px-1 py-2 text-center w-7 bg-surface-container-high text-on-surface-variant">03<br/><span class="text-[10px] font-normal">CN</span></th>
+<th class="px-1 py-2 text-center w-7">04<br/><span class="text-[10px] font-normal">T2</span></th>
+<th class="px-1 py-2 text-center w-7">05<br/><span class="text-[10px] font-normal">T3</span></th>
+<th class="px-1 py-2 text-center w-7">06<br/><span class="text-[10px] font-normal">T4</span></th>
+<th class="px-1 py-2 text-center w-7">07<br/><span class="text-[10px] font-normal">T5</span></th>
+<th class="px-1 py-2 text-center w-7">08<br/><span class="text-[10px] font-normal">T6</span></th>
+<th class="px-1 py-2 text-center w-7 bg-surface-container-high text-on-surface-variant">09<br/><span class="text-[10px] font-normal">T7</span></th>
+<th class="px-1 py-2 text-center w-7 bg-surface-container-high text-on-surface-variant">10<br/><span class="text-[10px] font-normal">CN</span></th>
+<th class="px-1 py-2 text-center w-7">11<br/><span class="text-[10px] font-normal">T2</span></th>
+<th class="px-1 py-2 text-center w-7">12<br/><span class="text-[10px] font-normal">T3</span></th>
+<th class="px-1 py-2 text-center w-7">13<br/><span class="text-[10px] font-normal">T4</span></th>
+<th class="px-1 py-2 text-center w-7">14<br/><span class="text-[10px] font-normal">T5</span></th>
+<th class="px-1 py-2 text-center w-7">15<br/><span class="text-[10px] font-normal">T6</span></th>
+<th class="px-1 py-2 text-center w-7 bg-surface-container-high text-on-surface-variant">16<br/><span class="text-[10px] font-normal">T7</span></th>
+<th class="px-1 py-2 text-center w-7 bg-surface-container-high text-on-surface-variant">17<br/><span class="text-[10px] font-normal">CN</span></th>
+<th class="px-1 py-2 text-center w-7">18<br/><span class="text-[10px] font-normal">T2</span></th>
+<th class="px-1 py-2 text-center w-7">19<br/><span class="text-[10px] font-normal">T3</span></th>
+<th class="px-1 py-2 text-center w-7">20<br/><span class="text-[10px] font-normal">T4</span></th>
+<th class="px-1 py-2 text-center w-7">21<br/><span class="text-[10px] font-normal">T5</span></th>
+<th class="px-1 py-2 text-center w-7">22<br/><span class="text-[10px] font-normal">T6</span></th>
+<th class="px-1 py-2 text-center w-7 bg-surface-container-high text-on-surface-variant">23<br/><span class="text-[10px] font-normal">T7</span></th>
+<th class="px-1 py-2 text-center w-7 bg-surface-container-high text-on-surface-variant">24<br/><span class="text-[10px] font-normal">CN</span></th>
+<th class="px-1 py-2 text-center w-7">25<br/><span class="text-[10px] font-normal">T2</span></th>
+<th class="px-1 py-2 text-center w-7">26<br/><span class="text-[10px] font-normal">T3</span></th>
+<th class="px-1 py-2 text-center w-7">27<br/><span class="text-[10px] font-normal">T4</span></th>
+<th class="px-1 py-2 text-center w-7">28<br/><span class="text-[10px] font-normal">T5</span></th>
+<th class="px-1 py-2 text-center w-7">29<br/><span class="text-[10px] font-normal">T6</span></th>
+<th class="px-1 py-2 text-center w-7 bg-surface-container-high text-on-surface-variant">30<br/><span class="text-[10px] font-normal">T7</span></th>
+<th class="px-1 py-2 text-center w-7 bg-surface-container-high text-on-surface-variant">31<br/><span class="text-[10px] font-normal">CN</span></th>
+<!-- Aggregated Calculations & Payroll Columns -->
+<th class="px-3 py-2 text-right bg-primary-fixed/30 text-on-primary-fixed font-semibold">Công TT</th>
+<th class="px-2 py-2 text-center bg-amber-50 text-amber-900">Phép (P)</th>
+<th class="px-2 py-2 text-center bg-red-50 text-red-900">Lễ (L)</th>
+<th class="px-2 py-2 text-center bg-surface-container-high">Nghỉ KL</th>
+<th class="px-3 py-2 text-right bg-primary/10 text-primary font-bold">Tổng Công</th>
+<th class="px-3 py-2 text-right bg-amber-50 text-amber-900 font-semibold">Giờ OT</th>
+<th class="px-3 py-2 text-center">Trễ/Sớm</th>
+<th class="px-3 py-2 text-center">Trạng thái</th>
+<th class="sticky right-0 z-40 bg-surface-container-low px-3 py-2 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.06)]">Thao tác</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-high">
+<!-- Row 1: Typical standard full work -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="sticky left-0 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 text-center">
+<input checked="" class="w-4 h-4 accent-primary rounded cursor-pointer" type="checkbox"/>
+</td>
+<td class="sticky left-10 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded bg-primary text-on-primary text-[11px] font-bold flex items-center justify-center">
+                  TM
+                </div>
+<div>
+<div class="font-headline-sm text-[13px] text-on-surface font-semibold">Trần Minh Quân</div>
+<div class="text-[11px] text-on-surface-variant">NV-8821 • Tech Lead</div>
+</div>
+</div>
+</td>
+<td class="sticky left-[240px] z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 shadow-[2px_0_5px_rgba(0,0,0,0.06)]">
+<div class="font-medium text-on-surface">Kỹ thuật Phần mềm</div>
+<div class="text-[11px] text-on-surface-variant">Khối Công nghệ</div>
+</td>
+<!-- Days 01-31 -->
+<td class="px-0.5 py-1 text-center bg-red-50/60"><span class="w-6 h-6 rounded bg-red-100 text-red-800 text-[11px] font-bold inline-flex items-center justify-center">L</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-purple-600 text-white text-[10px] font-bold inline-flex items-center justify-center">WFH</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<!-- Aggregates -->
+<td class="px-3 py-2 text-right font-medium text-on-surface bg-primary-fixed/20">21.0</td>
+<td class="px-2 py-2 text-center font-medium text-on-surface">0.0</td>
+<td class="px-2 py-2 text-center font-medium text-red-700">1.0</td>
+<td class="px-2 py-2 text-center text-outline">0.0</td>
+<td class="px-3 py-2 text-right font-bold text-primary bg-primary/10">22.0</td>
+<td class="px-3 py-2 text-right font-semibold text-amber-800">14.5h</td>
+<td class="px-3 py-2 text-center text-on-surface-variant">0 lần</td>
+<td class="px-3 py-2 text-center">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800">
+<span class="material-symbols-outlined text-[13px]">check</span> Hợp lệ
+              </span>
+</td>
+<td class="sticky right-0 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.06)]">
+<div class="flex items-center justify-center gap-1">
+<button class="w-6 h-6 rounded hover:bg-surface-container-highest flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" title="Xem chi tiết chấm công" type="button">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+<button class="w-6 h-6 rounded hover:bg-surface-container-highest flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" title="Hiệu chỉnh công" type="button">
+<span class="material-symbols-outlined text-[16px]">edit</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 2: Annual Leave & Business Trip -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="sticky left-0 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 text-center">
+<input checked="" class="w-4 h-4 accent-primary rounded cursor-pointer" type="checkbox"/>
+</td>
+<td class="sticky left-10 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded bg-secondary text-on-secondary text-[11px] font-bold flex items-center justify-center">
+                  HL
+                </div>
+<div>
+<div class="font-headline-sm text-[13px] text-on-surface font-semibold">Lê Hoàng Lan</div>
+<div class="text-[11px] text-on-surface-variant">NV-9104 • Senior HR Officer</div>
+</div>
+</div>
+</td>
+<td class="sticky left-[240px] z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 shadow-[2px_0_5px_rgba(0,0,0,0.06)]">
+<div class="font-medium text-on-surface">Nhân sự &amp; C&amp;B</div>
+<div class="text-[11px] text-on-surface-variant">Khối QT &amp; Nhân sự</div>
+</td>
+<!-- Days 01-31 -->
+<td class="px-0.5 py-1 text-center bg-red-50/60"><span class="w-6 h-6 rounded bg-red-100 text-red-800 text-[11px] font-bold inline-flex items-center justify-center">L</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-amber-500 text-white text-[11px] font-bold inline-flex items-center justify-center">P</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-amber-500 text-white text-[11px] font-bold inline-flex items-center justify-center">P</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-blue-600 text-white text-[10px] font-bold inline-flex items-center justify-center">CT</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-blue-600 text-white text-[10px] font-bold inline-flex items-center justify-center">CT</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<!-- Aggregates -->
+<td class="px-3 py-2 text-right font-medium text-on-surface bg-primary-fixed/20">19.0</td>
+<td class="px-2 py-2 text-center font-medium text-amber-700 font-semibold">2.0</td>
+<td class="px-2 py-2 text-center font-medium text-red-700">1.0</td>
+<td class="px-2 py-2 text-center text-outline">0.0</td>
+<td class="px-3 py-2 text-right font-bold text-primary bg-primary/10">22.0</td>
+<td class="px-3 py-2 text-right font-semibold text-amber-800">4.0h</td>
+<td class="px-3 py-2 text-center text-on-surface-variant">1 lần (12p)</td>
+<td class="px-3 py-2 text-center">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800">
+<span class="material-symbols-outlined text-[13px]">check</span> Hợp lệ
+              </span>
+</td>
+<td class="sticky right-0 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.06)]">
+<div class="flex items-center justify-center gap-1">
+<button class="w-6 h-6 rounded hover:bg-surface-container-highest flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" title="Xem chi tiết chấm công" type="button">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+<button class="w-6 h-6 rounded hover:bg-surface-container-highest flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" title="Hiệu chỉnh công" type="button">
+<span class="material-symbols-outlined text-[16px]">edit</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 3: Anomaly / Unjustified absence (Needs review) -->
+<tr class="hover:bg-error-container/20 transition-colors group bg-rose-50/20">
+<td class="sticky left-0 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 text-center">
+<input class="w-4 h-4 accent-primary rounded cursor-pointer" type="checkbox"/>
+</td>
+<td class="sticky left-10 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded bg-error text-on-error text-[11px] font-bold flex items-center justify-center">
+                  NA
+                </div>
+<div>
+<div class="font-headline-sm text-[13px] text-on-surface font-semibold flex items-center gap-1">
+                    Nguyễn Tuấn Anh
+                    <span class="material-symbols-outlined text-error text-[14px]" title="Chưa giải trình vắng">warning</span>
+</div>
+<div class="text-[11px] text-on-surface-variant">NV-7719 • Nhân viên Kinh doanh</div>
+</div>
+</div>
+</td>
+<td class="sticky left-[240px] z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 shadow-[2px_0_5px_rgba(0,0,0,0.06)]">
+<div class="font-medium text-on-surface">Kinh doanh B2B</div>
+<div class="text-[11px] text-on-surface-variant">Khối Thương mại</div>
+</td>
+<!-- Days 01-31 -->
+<td class="px-0.5 py-1 text-center bg-red-50/60"><span class="w-6 h-6 rounded bg-red-100 text-red-800 text-[11px] font-bold inline-flex items-center justify-center">L</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-rose-600 text-white text-[11px] font-bold inline-flex items-center justify-center animate-pulse" title="Vắng không phép">V</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<!-- Aggregates -->
+<td class="px-3 py-2 text-right font-medium text-on-surface bg-primary-fixed/20">20.0</td>
+<td class="px-2 py-2 text-center text-outline">0.0</td>
+<td class="px-2 py-2 text-center font-medium text-red-700">1.0</td>
+<td class="px-2 py-2 text-center font-semibold text-rose-700">1.0</td>
+<td class="px-3 py-2 text-right font-bold text-amber-700 bg-amber-50">21.0</td>
+<td class="px-3 py-2 text-right font-medium text-outline">0.0h</td>
+<td class="px-3 py-2 text-center text-error font-semibold">3 lần (48p)</td>
+<td class="px-3 py-2 text-center">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-800">
+<span class="material-symbols-outlined text-[13px]">warning</span> Bất thường
+              </span>
+</td>
+<td class="sticky right-0 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.06)]">
+<div class="flex items-center justify-center gap-1">
+<button class="w-6 h-6 rounded bg-amber-100 hover:bg-amber-200 flex items-center justify-center text-amber-900 transition-colors" title="Gửi nhắc nhở giải trình" type="button">
+<span class="material-symbols-outlined text-[16px]">notifications_active</span>
+</button>
+<button class="w-6 h-6 rounded hover:bg-surface-container-highest flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" title="Hiệu chỉnh công" type="button">
+<span class="material-symbols-outlined text-[16px]">edit</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 4: Half day work + Sick leave (BHXH) -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="sticky left-0 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 text-center">
+<input checked="" class="w-4 h-4 accent-primary rounded cursor-pointer" type="checkbox"/>
+</td>
+<td class="sticky left-10 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded bg-teal-700 text-white text-[11px] font-bold flex items-center justify-center">
+                  VT
+                </div>
+<div>
+<div class="font-headline-sm text-[13px] text-on-surface font-semibold">Vũ Thúy Hằng</div>
+<div class="text-[11px] text-on-surface-variant">NV-6530 • UI/UX Designer</div>
+</div>
+</div>
+</td>
+<td class="sticky left-[240px] z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 shadow-[2px_0_5px_rgba(0,0,0,0.06)]">
+<div class="font-medium text-on-surface">Thiết kế Sản phẩm</div>
+<div class="text-[11px] text-on-surface-variant">Khối Công nghệ</div>
+</td>
+<!-- Days 01-31 -->
+<td class="px-0.5 py-1 text-center bg-red-50/60"><span class="w-6 h-6 rounded bg-red-100 text-red-800 text-[11px] font-bold inline-flex items-center justify-center">L</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-cyan-600 text-white text-[11px] font-bold inline-flex items-center justify-center" title="Nghỉ ốm BHXH">Ô</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-cyan-600 text-white text-[11px] font-bold inline-flex items-center justify-center" title="Nghỉ ốm BHXH">Ô</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold inline-flex items-center justify-center">1/2</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-amber-500 text-white text-[11px] font-bold inline-flex items-center justify-center">P</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-purple-600 text-white text-[10px] font-bold inline-flex items-center justify-center">WFH</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<!-- Aggregates -->
+<td class="px-3 py-2 text-right font-medium text-on-surface bg-primary-fixed/20">18.5</td>
+<td class="px-2 py-2 text-center font-medium text-amber-700">1.0</td>
+<td class="px-2 py-2 text-center font-medium text-red-700">1.0</td>
+<td class="px-2 py-2 text-center text-outline">0.0</td>
+<td class="px-3 py-2 text-right font-bold text-primary bg-primary/10">20.5</td>
+<td class="px-3 py-2 text-right font-semibold text-amber-800">6.0h</td>
+<td class="px-3 py-2 text-center text-on-surface-variant">0 lần</td>
+<td class="px-3 py-2 text-center">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-100 text-blue-800">
+<span class="material-symbols-outlined text-[13px]">pending</span> Chờ duyệt BHXH
+              </span>
+</td>
+<td class="sticky right-0 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.06)]">
+<div class="flex items-center justify-center gap-1">
+<button class="w-6 h-6 rounded hover:bg-surface-container-highest flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" title="Xem chi tiết chấm công" type="button">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+<button class="w-6 h-6 rounded hover:bg-surface-container-highest flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" title="Hiệu chỉnh công" type="button">
+<span class="material-symbols-outlined text-[16px]">edit</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 5: Operations High OT -->
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="sticky left-0 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 text-center">
+<input checked="" class="w-4 h-4 accent-primary rounded cursor-pointer" type="checkbox"/>
+</td>
+<td class="sticky left-10 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded bg-indigo-700 text-white text-[11px] font-bold flex items-center justify-center">
+                  ĐH
+                </div>
+<div>
+<div class="font-headline-sm text-[13px] text-on-surface font-semibold">Đỗ Hữu Nghĩa</div>
+<div class="text-[11px] text-on-surface-variant">NV-4209 • Kỹ sư Vận hành DC</div>
+</div>
+</div>
+</td>
+<td class="sticky left-[240px] z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 shadow-[2px_0_5px_rgba(0,0,0,0.06)]">
+<div class="font-medium text-on-surface">Trung tâm Dữ liệu</div>
+<div class="text-[11px] text-on-surface-variant">Khối Vận hành</div>
+</td>
+<!-- Days 01-31 -->
+<td class="px-0.5 py-1 text-center bg-red-50/60"><span class="w-6 h-6 rounded bg-red-100 text-red-800 text-[11px] font-bold inline-flex items-center justify-center">L</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center"><span class="w-6 h-6 rounded bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center justify-center">X</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<td class="px-0.5 py-1 text-center bg-surface-container-low"><span class="text-[11px] text-outline">-</span></td>
+<!-- Aggregates -->
+<td class="px-3 py-2 text-right font-medium text-on-surface bg-primary-fixed/20">23.0</td>
+<td class="px-2 py-2 text-center text-outline">0.0</td>
+<td class="px-2 py-2 text-center font-medium text-red-700">1.0</td>
+<td class="px-2 py-2 text-center text-outline">0.0</td>
+<td class="px-3 py-2 text-right font-bold text-primary bg-primary/10">24.0</td>
+<td class="px-3 py-2 text-right font-bold text-rose-700">32.0h</td>
+<td class="px-3 py-2 text-center text-on-surface-variant">0 lần</td>
+<td class="px-3 py-2 text-center">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800">
+<span class="material-symbols-outlined text-[13px]">check_circle</span> Đã duyệt chốt
+              </span>
+</td>
+<td class="sticky right-0 z-20 bg-surface-container-lowest group-hover:bg-surface-container-low px-3 py-2 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.06)]">
+<div class="flex items-center justify-center gap-1">
+<button class="w-6 h-6 rounded hover:bg-surface-container-highest flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" title="Xem chi tiết chấm công" type="button">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+</button>
+<button class="w-6 h-6 rounded hover:bg-surface-container-highest flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" title="Hiệu chỉnh công" type="button">
+<span class="material-symbols-outlined text-[16px]">edit</span>
+</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Pagination Footer -->
+<div class="px-space-md py-space-sm bg-surface-container-low flex flex-col sm:flex-row items-center justify-between gap-space-sm">
+<div class="flex items-center gap-2 text-body-sm font-body-sm text-on-surface-variant">
+<span>Hiển thị</span>
+<select class="h-7 px-2 bg-surface-container-lowest rounded text-body-sm text-on-surface border-0 focus:ring-1 focus:ring-primary">
+<option>20 hàng</option>
+<option>50 hàng</option>
+<option>100 hàng</option>
+</select>
+<span>trên tổng số <strong>248</strong> nhân sự kỳ công Tháng 05/2026</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="w-7 h-7 rounded bg-surface-container-lowest hover:bg-surface-container-high text-on-surface flex items-center justify-center text-sm disabled:opacity-40" disabled="" type="button">
+<span class="material-symbols-outlined text-[16px]">first_page</span>
+</button>
+<button class="w-7 h-7 rounded bg-surface-container-lowest hover:bg-surface-container-high text-on-surface flex items-center justify-center text-sm disabled:opacity-40" disabled="" type="button">
+<span class="material-symbols-outlined text-[16px]">chevron_left</span>
+</button>
+<button class="w-7 h-7 rounded bg-primary text-on-primary font-bold text-xs" type="button">1</button>
+<button class="w-7 h-7 rounded bg-surface-container-lowest hover:bg-surface-container-high text-on-surface text-xs font-medium" type="button">2</button>
+<button class="w-7 h-7 rounded bg-surface-container-lowest hover:bg-surface-container-high text-on-surface text-xs font-medium" type="button">3</button>
+<span class="px-1 text-on-surface-variant text-xs">...</span>
+<button class="w-7 h-7 rounded bg-surface-container-lowest hover:bg-surface-container-high text-on-surface text-xs font-medium" type="button">13</button>
+<button class="w-7 h-7 rounded bg-surface-container-lowest hover:bg-surface-container-high text-on-surface flex items-center justify-center text-sm" type="button">
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</button>
+<button class="w-7 h-7 rounded bg-surface-container-lowest hover:bg-surface-container-high text-on-surface flex items-center justify-center text-sm" type="button">
+<span class="material-symbols-outlined text-[16px]">last_page</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Bottom Lock & Audit Control Panel -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-md bg-surface-container-lowest rounded-lg p-space-md shadow-sm">
+<!-- 3-Step Payroll Lock Flow -->
+<div class="lg:col-span-7 flex flex-col justify-between space-y-space-sm pr-0 lg:pr-space-md border-b lg:border-b-0 lg:border-r border-surface-container pb-space-sm lg:pb-0">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-sm text-headline-sm text-on-surface flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary text-[20px]">assignment_turned_in</span>
+          Quy trình Đối soát &amp; Khóa sổ kỳ công (3 Bước)
+        </h3>
+<span class="text-label-sm font-label-sm text-primary font-semibold">Tiến độ: 95%</span>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-space-sm">
+<!-- Step 1 -->
+<div class="bg-surface-container-low/70 p-space-sm rounded border-l-4 border-emerald-600">
+<div class="flex items-center justify-between mb-1">
+<span class="font-label-sm text-label-sm uppercase text-on-surface-variant">Bước 1</span>
+<span class="material-symbols-outlined text-emerald-600 text-[18px]">verified</span>
+</div>
+<div class="font-label-md text-label-md text-on-surface font-semibold">Trưởng bộ phận ký</div>
+<p class="text-body-sm text-on-surface-variant text-[11px] mt-0.5">18/18 phòng ban đã rà soát và xác nhận công nội bộ</p>
+</div>
+<!-- Step 2 -->
+<div class="bg-surface-container-low/70 p-space-sm rounded border-l-4 border-primary">
+<div class="flex items-center justify-between mb-1">
+<span class="font-label-sm text-label-sm uppercase text-on-surface-variant">Bước 2</span>
+<span class="text-primary font-bold text-xs">98.8%</span>
+</div>
+<div class="font-label-md text-label-md text-on-surface font-semibold">C&amp;B Đối soát hồ sơ</div>
+<p class="text-body-sm text-on-surface-variant text-[11px] mt-0.5">Khớp 540 đơn phép, làm thêm giờ và xác nhận đi lại</p>
+</div>
+<!-- Step 3 -->
+<div class="bg-surface-container-low/70 p-space-sm rounded border-l-4 border-amber-500">
+<div class="flex items-center justify-between mb-1">
+<span class="font-label-sm text-label-sm uppercase text-on-surface-variant">Bước 3</span>
+<span class="material-symbols-outlined text-amber-600 text-[18px]">lock_clock</span>
+</div>
+<div class="font-label-md text-label-md text-on-surface font-semibold">Khóa &amp; Bàn giao Lương</div>
+<p class="text-body-sm text-on-surface-variant text-[11px] mt-0.5">Chuyển dữ liệu sang Kế toán tiền lương sau khi xử lý 3 vi phạm</p>
+</div>
+</div>
+<div class="flex items-center gap-space-sm pt-space-xs">
+<div class="w-full bg-surface-container-high h-2 rounded-full overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 95%;"></div>
+</div>
+</div>
+</div>
+<!-- Audit Warnings & Quick Execution Actions -->
+<div class="lg:col-span-5 flex flex-col justify-between space-y-space-sm">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-sm text-headline-sm text-on-surface flex items-center gap-1.5">
+<span class="material-symbols-outlined text-amber-600 text-[20px]">warning</span>
+          Biên bản kiểm soát rủi ro
+        </h3>
+<span class="text-label-sm font-label-sm bg-rose-100 text-rose-800 px-2 py-0.5 rounded font-semibold">2 điểm cần lưu ý</span>
+</div>
+<div class="space-y-1.5">
+<div class="p-2 rounded bg-error-container/40 text-on-surface flex items-start gap-2 text-body-sm font-body-sm">
+<span class="material-symbols-outlined text-error text-[18px] shrink-0 mt-0.5">error</span>
+<span><strong>3 nhân sự</strong> còn thiếu giờ quẹt thẻ chưa nộp đơn giải trình trước hạn chót 17:00 ngày 05/06.</span>
+</div>
+<div class="p-2 rounded bg-amber-50 text-amber-900 flex items-start gap-2 text-body-sm font-body-sm">
+<span class="material-symbols-outlined text-amber-700 text-[18px] shrink-0 mt-0.5">info</span>
+<span>Phòng Hạ tầng IT vượt định mức 200h OT tháng, đã có <strong>Quyết định phê duyệt số 89/QĐ-TGĐ</strong> đính kèm.</span>
+</div>
+</div>
+<div class="flex items-center justify-end gap-space-xs pt-space-xs">
+<button class="h-8 px-3 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-label-md font-label-md transition-colors" type="button">
+          Xem báo cáo vi phạm
+        </button>
+<button class="h-8 px-3 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 text-label-md font-label-md flex items-center gap-1 transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">send</span>
+          Gửi email nhắc nhở (3 NV)
+        </button>
+<button class="h-8 px-3 rounded bg-primary text-on-primary text-label-md font-label-md flex items-center gap-1 hover:bg-primary-container transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">check</span>
+          Xác nhận khóa kỳ công
+        </button>
+</div>
+</div>
+</div>
+</div></main></div></body>
+
+<script type="module" src="../js/tong-hop-chot-cong.js"> </script></html>
