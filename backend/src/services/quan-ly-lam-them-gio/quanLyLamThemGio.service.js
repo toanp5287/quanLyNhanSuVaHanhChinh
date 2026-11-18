@@ -1,5 +1,6 @@
 import { db } from "../../config/database.js";
 import { assertCanApprove, buildEmployeeScope } from "../../utils/helper.js";
+import { recalculateDailyAttendance } from "../diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 
@@ -8,9 +9,14 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 const OT_TYPES = {
-  WEEKDAY_150: 1.5,
-  WEEKEND_200: 2.0,
-  HOLIDAY_300: 3.0,
+  WEEKDAY: 1.5,
+  WEEKEND: 2.0,
+  HOLIDAY: 3.0,
+};
+const LEGACY_OT_TYPES = {
+  WEEKDAY_150: "WEEKDAY",
+  WEEKEND_200: "WEEKEND",
+  HOLIDAY_300: "HOLIDAY",
 };
 
 const parseDate = (value) => {
@@ -71,7 +77,7 @@ export const listOvertimeRequests = async (user, filters = {}) => {
 
   if (filters.month) {
     if (!MONTH_PATTERN.test(String(filters.month))) throw fail("Kỳ OT không hợp lệ (YYYY-MM)");
-    conditions.push("DATE_FORMAT(o.ot_date, '%Y-%m') = ?");
+    conditions.push("DATE_FORMAT(o.work_date, '%Y-%m') = ?");
     params.push(filters.month);
   }
   if (filters.status) {
@@ -86,19 +92,22 @@ export const listOvertimeRequests = async (user, filters = {}) => {
   }
 
   const [rows] = await db.query(
-    `SELECT o.id, o.ot_code, o.employee_id, e.employee_code, e.full_name,
+    `SELECT o.id,
+            CONCAT('OT', DATE_FORMAT(o.work_date, '%Y%m%d'), '-', o.employee_id, '-', LPAD(o.id, 4, '0')) AS ot_code,
+            o.employee_id, e.employee_code, e.full_name,
             e.department_id, COALESCE(d.department_name, d.name) AS department_name,
-            DATE_FORMAT(o.ot_date, '%Y-%m-%d') AS ot_date, o.start_time, o.end_time,
-            o.ot_hours, o.ot_type, o.multiplier, o.reason, o.status,
-            o.approved_by, o.approved_at, o.reject_reason, o.created_at,
+            DATE_FORMAT(o.work_date, '%Y-%m-%d') AS ot_date, o.start_time, o.end_time,
+            ROUND(TIME_TO_SEC(TIMEDIFF(o.end_time, o.start_time)) / 3600, 2) AS ot_hours,
+            o.ot_type, o.ot_rate AS multiplier, o.reason, o.status,
+            o.approved_by, o.approved_at, NULL AS reject_reason, o.created_at,
             COALESCE(mt.status, 'OPEN') AS month_status
        FROM overtime_requests o
        INNER JOIN employees e ON e.id = o.employee_id
        LEFT JOIN departments d ON d.id = e.department_id
        LEFT JOIN monthly_timesheets mt ON mt.employee_id = o.employee_id
-            AND mt.month_year = DATE_FORMAT(o.ot_date, '%Y-%m')
-      WHERE ${conditions.join(" AND ")}
-      ORDER BY o.ot_date DESC, o.id DESC`,
+             AND mt.month_year = DATE_FORMAT(o.work_date, '%Y-%m')
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY o.work_date DESC, o.id DESC`,
     params,
   );
 
@@ -127,11 +136,12 @@ export const createOvertimeRequest = async (user, payload = {}) => {
   const otHours = Math.round((overtimeMinutes / 60) * 100) / 100;
 
   let otType = payload.ot_type ? String(payload.ot_type).toUpperCase() : null;
+  otType = LEGACY_OT_TYPES[otType] || otType;
   if (!otType) {
     const day = new Date(`${otDate}T00:00:00Z`).getUTCDay();
-    otType = day === 0 || day === 6 ? "WEEKEND_200" : "WEEKDAY_150";
+    otType = day === 0 || day === 6 ? "WEEKEND" : "WEEKDAY";
   }
-  if (!OT_TYPES[otType]) throw fail("Loại OT không hợp lệ (WEEKDAY_150, WEEKEND_200, HOLIDAY_300)");
+  if (!OT_TYPES[otType]) throw fail("Loại OT không hợp lệ (WEEKDAY, WEEKEND, HOLIDAY)");
   const multiplier = OT_TYPES[otType];
 
   const reason = String(payload.reason ?? "").trim();
@@ -148,21 +158,20 @@ export const createOvertimeRequest = async (user, payload = {}) => {
 
     const [overlap] = await connection.query(
       `SELECT id FROM overtime_requests
-        WHERE employee_id = ? AND ot_date = ? AND status IN ('PENDING', 'APPROVED')
+        WHERE employee_id = ? AND work_date = ? AND status IN ('PENDING', 'APPROVED')
           AND start_time < ? AND end_time > ?
         LIMIT 1`,
       [employeeId, otDate, endTime, startTime],
     );
     if (overlap.length) throw fail("Đã có đơn OT trùng khung giờ này", 409);
 
-    const otCode = generateOvertimeCode(otDate, employeeId);
     const [result] = await connection.query(
       `INSERT INTO overtime_requests
-        (ot_code, employee_id, ot_date, start_time, end_time, ot_hours, ot_type, multiplier,
-         reason, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', NOW())`,
-      [otCode, employeeId, otDate, startTime, endTime, otHours, otType, multiplier, reason],
+        (employee_id, work_date, start_time, end_time, ot_type, ot_rate, reason, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', NOW())`,
+      [employeeId, otDate, startTime, endTime, otType, multiplier, reason],
     );
+    const otCode = `OT${otDate.replace(/-/g, "")}-${employeeId}-${String(result.insertId).padStart(4, "0")}`;
     await connection.commit();
     return { id: result.insertId, ot_code: otCode, employee_id: employeeId, ot_hours: otHours, ot_type: otType, status: "PENDING" };
   } catch (error) {
@@ -177,7 +186,7 @@ const loadOvertime = async (connection, id) => {
   const overtimeId = Number(id);
   if (!Number.isSafeInteger(overtimeId) || overtimeId <= 0) throw fail("Đơn OT không hợp lệ");
   const [rows] = await connection.query(
-    `SELECT o.*, DATE_FORMAT(o.ot_date, '%Y-%m-%d') AS ot_date_str
+    `SELECT o.*, DATE_FORMAT(o.work_date, '%Y-%m-%d') AS ot_date_str
        FROM overtime_requests o
       WHERE o.id = ?
       FOR UPDATE`,
@@ -197,8 +206,13 @@ export const approveOvertimeRequest = async (user, id, payload = {}) => {
     await assertMonthOpen(connection, overtime.employee_id, overtime.ot_date_str);
 
     await connection.query(
-      "UPDATE overtime_requests SET status = 'APPROVED', approved_by = ?, approved_at = NOW(), reject_reason = NULL WHERE id = ?",
+      "UPDATE overtime_requests SET status = 'APPROVED', approved_by = ?, approved_at = NOW() WHERE id = ?",
       [Number(user.employee_id), overtime.id],
+    );
+    await recalculateDailyAttendance(
+      connection,
+      overtime.employee_id,
+      overtime.ot_date_str,
     );
     await recalcMonth(connection, overtime.employee_id, monthOf(overtime.ot_date_str));
     await connection.commit();
@@ -223,8 +237,13 @@ export const rejectOvertimeRequest = async (user, id, payload = {}) => {
     await assertMonthOpen(connection, overtime.employee_id, overtime.ot_date_str);
 
     await connection.query(
-      "UPDATE overtime_requests SET status = 'REJECTED', approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?",
+      "UPDATE overtime_requests SET status = 'REJECTED', approved_by = ?, approved_at = NOW(), reason = CONCAT(reason, ' | Từ chối: ', ?) WHERE id = ?",
       [Number(user.employee_id), rejectReason.slice(0, 255), overtime.id],
+    );
+    await recalculateDailyAttendance(
+      connection,
+      overtime.employee_id,
+      overtime.ot_date_str,
     );
     await recalcMonth(connection, overtime.employee_id, monthOf(overtime.ot_date_str));
     await connection.commit();

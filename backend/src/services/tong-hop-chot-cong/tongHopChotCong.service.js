@@ -19,41 +19,40 @@ export const recalculateEmployeeMonth = async (connection, employeeId, month) =>
   validateMonth(month);
   const [existing] = await connection.query("SELECT status FROM monthly_timesheets WHERE employee_id = ? AND month_year = ? FOR UPDATE", [employeeId, month]);
   if (existing[0]?.status === "LOCKED") throw fail("Bảng công tháng này đã khóa", 409);
-  const [logs] = await connection.query(`SELECT DATE_FORMAT(work_date, '%Y-%m-%d') AS work_date, work_unit, source, late_minutes
-    FROM attendance_logs WHERE employee_id = ? AND work_date >= CONCAT(?, '-01') AND work_date <= LAST_DAY(CONCAT(?, '-01'))`, [employeeId, month, month]);
-  const [leaves] = await connection.query(`SELECT DATE_FORMAT(from_date, '%Y-%m-%d') AS from_date,
-    DATE_FORMAT(to_date, '%Y-%m-%d') AS to_date, total_days, is_paid FROM leave_requests
-    WHERE employee_id = ? AND status = 'APPROVED' AND DATE(from_date) <= LAST_DAY(CONCAT(?, '-01')) AND DATE(to_date) >= CONCAT(?, '-01')`, [employeeId, month, month]);
-  // Allocate partial leave proportionally across weekdays; count only the days in this month.
+  const [logs] = await connection.query(`SELECT DATE_FORMAT(work_date, '%Y-%m-%d') AS work_date,
+    base_workday, total_workday, paid_leave_workday, late_minutes
+    FROM attendances WHERE employee_id = ? AND work_date >= CONCAT(?, '-01') AND work_date <= LAST_DAY(CONCAT(?, '-01'))`, [employeeId, month, month]);
+  const [leaves] = await connection.query(`SELECT DATE_FORMAT(work_date, '%Y-%m-%d') AS work_date, leave_type, paid_workday, paid_workday > 0 AS is_paid
+    FROM leave_requests
+    WHERE employee_id = ? AND status = 'APPROVED' AND work_date >= CONCAT(?, '-01') AND work_date <= LAST_DAY(CONCAT(?, '-01'))`, [employeeId, month, month]);
   const leaveDays = new Map();
   for (const leave of leaves) {
-    const dates = [];
-    for (let day = new Date(`${leave.from_date}T00:00:00Z`); day <= new Date(`${leave.to_date}T00:00:00Z`); day.setUTCDate(day.getUTCDate() + 1)) {
-      if (![0, 6].includes(day.getUTCDay())) dates.push(day.toISOString().slice(0, 10));
-    }
-    const unit = dates.length ? Math.min(1, Number(leave.total_days) / dates.length) : 0;
-    for (const date of dates.filter(date => date.startsWith(month))) {
-      const entry = leaveDays.get(date) || { paid: 0, unpaid: 0 };
-      if (Number(leave.is_paid)) entry.paid = Math.min(1, entry.paid + unit);
-      else entry.unpaid = Math.min(1, entry.unpaid + unit);
-      leaveDays.set(date, entry);
-    }
+    const entry = leaveDays.get(leave.work_date) || { paid: 0, unpaid: 0 };
+    const unit = leave.leave_type === "FULL_DAY"
+      ? 1
+      : leave.leave_type === "MORNING" || leave.leave_type === "AFTERNOON"
+        ? 0.5
+        : 0;
+    if (Number(leave.is_paid)) entry.paid = Math.min(1, entry.paid + unit);
+    else entry.unpaid = Math.min(1, entry.unpaid + unit);
+    leaveDays.set(leave.work_date, entry);
   }
   let actual = 0, paid = 0, unpaid = 0, lateCount = 0, lateMinutes = 0;
   for (const log of logs) {
-    if (log.source !== "LEAVE_SYNC") actual += Number(log.work_unit || 0);
+    actual += Number(log.base_workday || 0);
+    paid += Number(log.paid_leave_workday || 0);
     if (Number(log.late_minutes) > 0) lateCount++;
     lateMinutes += Number(log.late_minutes || 0);
   }
   for (const [date, leave] of leaveDays) {
-    const work = logs.find(log => log.work_date === date && log.source !== "LEAVE_SYNC");
-    const available = Math.max(0, 1 - Number(work?.work_unit || 0));
+    const work = logs.find(log => log.work_date === date);
+    const available = Math.max(0, 1 - Number(work?.base_workday || 0) - Number(work?.paid_leave_workday || 0));
     const paidUnit = Math.min(available, leave.paid);
     paid += paidUnit;
     unpaid += Math.min(available - paidUnit, leave.unpaid);
   }
-  const [overtime] = await connection.query(`SELECT ot_type, COALESCE(SUM(ot_hours), 0) AS hours FROM overtime_requests
-    WHERE employee_id = ? AND status = 'APPROVED' AND ot_date >= CONCAT(?, '-01') AND ot_date <= LAST_DAY(CONCAT(?, '-01')) GROUP BY ot_type`, [employeeId, month, month]);
+  const [overtime] = await connection.query(`SELECT ot_type, COALESCE(SUM(TIME_TO_SEC(TIMEDIFF(end_time, start_time)) / 3600 * ot_rate), 0) AS hours FROM overtime_requests
+    WHERE employee_id = ? AND status = 'APPROVED' AND work_date >= CONCAT(?, '-01') AND work_date <= LAST_DAY(CONCAT(?, '-01')) GROUP BY ot_type`, [employeeId, month, month]);
   const ot = Object.fromEntries(overtime.map(row => [row.ot_type, Number(row.hours)]));
   await connection.query(`INSERT INTO monthly_timesheets
     (employee_id, month_year, standard_days, actual_work_days, paid_leave_days, unpaid_leave_days, total_payable_days,
@@ -64,7 +63,7 @@ export const recalculateEmployeeMonth = async (connection, employeeId, month) =>
       late_count = VALUES(late_count), total_late_minutes = VALUES(total_late_minutes), ot_hours_150 = VALUES(ot_hours_150),
       ot_hours_200 = VALUES(ot_hours_200), ot_hours_300 = VALUES(ot_hours_300)`,
   [employeeId, month, standardDays(month), actual, paid, unpaid, actual + paid, lateCount, lateMinutes,
-    ot.WEEKDAY_150 || 0, ot.WEEKEND_200 || 0, ot.HOLIDAY_300 || 0]);
+    ot.WEEKDAY || 0, ot.WEEKEND || 0, ot.HOLIDAY || 0]);
 };
 
 export const listMonthlyTimesheets = async (month, user) => {

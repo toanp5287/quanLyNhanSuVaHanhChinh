@@ -205,7 +205,7 @@ export const initFaceKiosk = () => {
         },
       );
       if (!active() || current !== session) return;
-      const { employee, log } = response.data.data;
+      const { employee, log, account } = response.data.data;
       el("Recognition").textContent = `Đã xác nhận • ${employee.full_name}`;
       el("Attendance").textContent = "Đã ghi nhận thành công";
       status(
@@ -216,6 +216,7 @@ export const initFaceKiosk = () => {
       );
       for (const text of [
         `${employee.employee_code} • ${employee.full_name}`,
+        `Tài khoản: ${account?.username || employee.username || "—"}`,
         employee.department_name || "",
         `Giờ vào: ${log.check_in || "—"} • Giờ ra: ${log.check_out || "—"}`,
         `Công: ${Number(log.work_unit).toFixed(2)} • Đi muộn: ${Number(log.late_minutes || 0)} phút`,

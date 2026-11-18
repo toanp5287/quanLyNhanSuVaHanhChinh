@@ -1,21 +1,25 @@
 import { db } from "../../config/database.js";
 import { assertCanApprove, buildEmployeeScope } from "../../utils/helper.js";
 import { recalculateEmployeeMonth } from "../tong-hop-chot-cong/tongHopChotCong.service.js";
+import { recalculateDailyAttendance } from "../diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
-const types = ["ANNUAL_LEAVE", "SICK_LEAVE", "UNPAID_LEAVE", "WEDDING_FUNERAL", "MATERNITY_LEAVE"];
+const LEGACY_REASONS = {
+  ANNUAL_LEAVE: "ANNUAL_LEAVE",
+  SICK_LEAVE: "SICK_LEAVE",
+  UNPAID_LEAVE: "UNPAID_LEAVE",
+  WEDDING_FUNERAL: "PERSONAL_EXEMPT",
+  MATERNITY_LEAVE: "PERSONAL_EXEMPT",
+  PERSONAL_EXEMPT: "PERSONAL_EXEMPT",
+};
+const DAY_TYPES = ["FULL_DAY", "MORNING", "AFTERNOON", "LATE_EARLY_EXEMPT"];
+const REASON_CATEGORIES = ["ANNUAL_LEAVE", "SICK_LEAVE", "UNPAID_LEAVE", "PERSONAL_EXEMPT"];
+
 const date = value => {
   const text = String(value || "");
   const parsed = new Date(`${text}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== text) throw fail("Ngày nghỉ không hợp lệ (YYYY-MM-DD)");
   return text;
-};
-const weekdays = (from, to) => {
-  const days = [];
-  for (const current = new Date(`${from}T00:00:00Z`); current <= new Date(`${to}T00:00:00Z`); current.setUTCDate(current.getUTCDate() + 1)) {
-    if (![0, 6].includes(current.getUTCDay())) days.push(current.toISOString().slice(0, 10));
-  }
-  return days;
 };
 const months = (from, to) => {
   const result = [];
@@ -23,12 +27,23 @@ const months = (from, to) => {
   return result;
 };
 const years = (from, to) => Array.from({ length: Number(to.slice(0, 4)) - Number(from.slice(0, 4)) + 1 }, (_, i) => Number(from.slice(0, 4)) + i);
+const requestCode = (row) => `LV${String(row.work_date).replace(/-/g, "").slice(0, 8)}-${row.employee_id}-${String(row.id).padStart(4, "0")}`;
+const legacyLeaveType = (row) => {
+  if (row.reason_category === "PERSONAL_EXEMPT" && row.leave_type === "LATE_EARLY_EXEMPT") return "PERSONAL_EXEMPT";
+  if (row.reason_category === "PERSONAL_EXEMPT") return "WEDDING_FUNERAL";
+  return row.reason_category;
+};
+const legacyTotalDays = (row) => {
+  if (row.leave_type === "MORNING" || row.leave_type === "AFTERNOON") return 0.5;
+  if (row.leave_type === "LATE_EARLY_EXEMPT") return 0;
+  return 1;
+};
 const lockEmployee = async (connection, employeeId) => {
   const [rows] = await connection.query("SELECT id FROM employees WHERE id = ? FOR UPDATE", [employeeId]);
   if (!rows.length) throw fail("Không tìm thấy hồ sơ nhân viên", 404);
 };
-const assertOpen = async (connection, employeeId, from, to) => {
-  const [rows] = await connection.query("SELECT id FROM monthly_timesheets WHERE employee_id = ? AND month_year BETWEEN ? AND ? AND status = 'LOCKED' FOR UPDATE", [employeeId, from.slice(0, 7), to.slice(0, 7)]);
+const assertOpen = async (connection, employeeId, workDate) => {
+  const [rows] = await connection.query("SELECT id FROM monthly_timesheets WHERE employee_id = ? AND month_year = ? AND status = 'LOCKED' FOR UPDATE", [employeeId, workDate.slice(0, 7)]);
   if (rows.length) throw fail("Khoảng nghỉ thuộc bảng công đã khóa", 409);
 };
 const transaction = async operation => {
@@ -47,12 +62,12 @@ const transaction = async operation => {
 export const recalculateLeaveBalance = async (connection, employeeId, year) => {
   await connection.query("INSERT INTO leave_balances (employee_id, year) VALUES (?, ?) ON DUPLICATE KEY UPDATE employee_id = VALUES(employee_id)", [employeeId, year]);
   const [balances] = await connection.query("SELECT * FROM leave_balances WHERE employee_id = ? AND year = ? FOR UPDATE", [employeeId, year]);
-  const [requests] = await connection.query(`SELECT DATE_FORMAT(from_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(to_date, '%Y-%m-%d') AS to_date, total_days, status
-    FROM leave_requests WHERE employee_id = ? AND leave_type = 'ANNUAL_LEAVE' AND status IN ('PENDING', 'APPROVED') AND from_date < ? AND to_date >= ?`, [employeeId, `${year + 1}-01-01`, `${year}-01-01`]);
+  const [requests] = await connection.query(`SELECT paid_workday, status FROM leave_requests
+    WHERE employee_id = ? AND reason_category = 'ANNUAL_LEAVE' AND status IN ('PENDING', 'APPROVED')
+      AND YEAR(work_date) = ?`, [employeeId, year]);
   let used = 0, pending = 0;
   for (const request of requests) {
-    const days = weekdays(request.from_date, request.to_date);
-    const amount = days.length ? days.filter(day => Number(day.slice(0, 4)) === year).length * Number(request.total_days) / days.length : 0;
+    const amount = Number(request.paid_workday || 0);
     if (request.status === "APPROVED") used += amount;
     else pending += amount;
   }
@@ -110,66 +125,91 @@ export const listLeaveRequests = async (user, filters = {}) => {
   }
   if (filters.month) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(filters.month)) throw fail("Tháng không hợp lệ");
-    condition += " AND lr.from_date <= LAST_DAY(CONCAT(?, '-01')) AND lr.to_date >= CONCAT(?, '-01')"; params.push(filters.month, filters.month);
+    condition += " AND DATE_FORMAT(lr.work_date, '%Y-%m') = ?"; params.push(filters.month);
   }
-  const [rows] = await db.query(`SELECT lr.*, DATE_FORMAT(lr.from_date, '%Y-%m-%d') AS from_date, DATE_FORMAT(lr.to_date, '%Y-%m-%d') AS to_date,
+  const [rows] = await db.query(`SELECT lr.*,
+    DATE_FORMAT(lr.work_date, '%Y-%m-%d') AS from_date,
+    DATE_FORMAT(lr.work_date, '%Y-%m-%d') AS to_date,
     e.full_name, e.employee_code, COALESCE(d.department_name, d.name) AS department_name
     FROM leave_requests lr JOIN employees e ON e.id = lr.employee_id LEFT JOIN departments d ON d.id = e.department_id ${condition} ORDER BY lr.id DESC`, params);
-  return rows;
+  return rows.map(row => ({
+    ...row,
+    request_code: requestCode(row),
+    leave_type: legacyLeaveType(row),
+    total_days: legacyTotalDays(row),
+    is_paid: Number(row.paid_workday || 0) > 0 ? 1 : 0,
+    handover_to: null,
+    reject_reason: null,
+  }));
 };
 
 export const createLeaveRequest = async (user, payload = {}) => {
   if (!user?.employee_id) throw fail("Tài khoản chưa liên kết hồ sơ nhân sự", 404);
   const employeeId = Number(user.employee_id);
   if (payload.employee_id && Number(payload.employee_id) !== employeeId) throw fail("Chỉ được tạo đơn nghỉ của chính mình", 403);
-  const from = date(payload.from_date), to = date(payload.to_date);
-  if (to < from || Number(to.slice(0, 4)) - Number(from.slice(0, 4)) > 1) throw fail("Khoảng ngày nghỉ không hợp lệ");
-  const days = weekdays(from, to);
-  const total = Number(payload.total_days ?? days.length);
-  if (!days.length || !(total === days.length || (days.length === 1 && total === 0.5))) throw fail("Số ngày nghỉ phải bằng số ngày làm việc; hỗ trợ nghỉ nửa ngày cho một ngày làm việc");
-  const type = payload.leave_type || "ANNUAL_LEAVE";
-  if (!types.includes(type)) throw fail("Loại nghỉ phép không hợp lệ");
+  const workDate = date(payload.work_date || payload.from_date);
+  if (payload.to_date && date(payload.to_date) !== workDate) throw fail("Schema hiện tại chỉ hỗ trợ đơn nghỉ cho một ngày");
+
+  const rawType = String(payload.leave_type || "ANNUAL_LEAVE").toUpperCase();
+  const leaveType = DAY_TYPES.includes(rawType)
+    ? rawType
+    : Number(payload.total_days) === 0.5
+      ? (payload.half_day === "AFTERNOON" ? "AFTERNOON" : "MORNING")
+      : "FULL_DAY";
+  const reasonCategory = LEGACY_REASONS[rawType] || (REASON_CATEGORIES.includes(rawType) ? rawType : "ANNUAL_LEAVE");
+  const paid = ["ANNUAL_LEAVE", "WEDDING_FUNERAL"].includes(rawType) || reasonCategory === "ANNUAL_LEAVE";
+  const paidWorkday =
+    !paid || leaveType === "LATE_EARLY_EXEMPT"
+      ? 0
+      : leaveType === "FULL_DAY"
+        ? 1
+        : 0.5;
+  const totalDays = leaveType === "FULL_DAY" ? 1 : leaveType === "LATE_EARLY_EXEMPT" ? 0 : 0.5;
+  const exemptMinutes = Math.max(0, Math.min(480, Number(payload.exempt_minutes || 0)));
   const reason = String(payload.reason || "").trim();
   if (!reason) throw fail("Vui lòng nhập lý do nghỉ");
-  const isPaid = ["ANNUAL_LEAVE", "WEDDING_FUNERAL"].includes(type) ? 1 : 0;
+
   return transaction(async connection => {
     await lockEmployee(connection, employeeId);
-    await assertOpen(connection, employeeId, from, to);
-    const [overlap] = await connection.query("SELECT id FROM leave_requests WHERE employee_id = ? AND status IN ('PENDING', 'APPROVED') AND DATE(from_date) <= ? AND DATE(to_date) >= ? LIMIT 1", [employeeId, to, from]);
+    await assertOpen(connection, employeeId, workDate);
+    const [overlap] = await connection.query("SELECT id FROM leave_requests WHERE employee_id = ? AND status IN ('PENDING', 'APPROVED') AND work_date = ? LIMIT 1", [employeeId, workDate]);
     if (overlap.length) throw fail("Đã có đơn nghỉ trùng khoảng ngày này", 409);
-    const code = `LV${Date.now().toString(36)}-${employeeId}-${Math.random().toString(36).slice(2, 7)}`;
-    const [result] = await connection.query(`INSERT INTO leave_requests (request_code, employee_id, leave_type, is_paid, from_date, to_date, total_days, reason, handover_to)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [code, employeeId, type, isPaid, from, to, total, reason, String(payload.handover_to || "").slice(0, 100) || null]);
-    for (const year of years(from, to)) {
-      const balance = await recalculateLeaveBalance(connection, employeeId, year);
-      if (type === "ANNUAL_LEAVE" && balance.remaining_days < 0) throw fail("Quỹ phép năm không đủ", 409);
-    }
-    return { id: result.insertId, request_code: code, status: "PENDING", total_days: total, is_paid: isPaid };
+    const [result] = await connection.query(`INSERT INTO leave_requests
+      (employee_id, work_date, leave_type, reason_category, paid_workday, exempt_minutes, reason, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+      [employeeId, workDate, leaveType, reasonCategory, paidWorkday, exemptMinutes, reason]);
+    const balance = await recalculateLeaveBalance(connection, employeeId, Number(workDate.slice(0, 4)));
+    if (reasonCategory === "ANNUAL_LEAVE" && balance.remaining_days < 0) throw fail("Quỹ phép năm không đủ", 409);
+    const row = { id: result.insertId, employee_id: employeeId, work_date: workDate };
+    return { id: result.insertId, request_code: requestCode(row), status: "PENDING", total_days: totalDays, is_paid: paid ? 1 : 0 };
   });
 };
 
 export const processLeaveRequest = async (user, id, action, payload = {}) => transaction(async connection => {
   const requestId = Number(id);
   if (!Number.isSafeInteger(requestId) || requestId <= 0) throw fail("Mã đơn nghỉ không hợp lệ");
-  const [targets] = await connection.query("SELECT employee_id FROM leave_requests WHERE id = ?", [requestId]);
+  const [targets] = await connection.query("SELECT employee_id, work_date FROM leave_requests WHERE id = ?", [requestId]);
   if (!targets.length) throw fail("Không tìm thấy đơn nghỉ", 404);
-  await lockEmployee(connection, targets[0].employee_id);
-  const [rows] = await connection.query("SELECT *, DATE_FORMAT(from_date, '%Y-%m-%d') AS from_day, DATE_FORMAT(to_date, '%Y-%m-%d') AS to_day FROM leave_requests WHERE id = ? FOR UPDATE", [requestId]);
+  const target = targets[0];
+  await lockEmployee(connection, target.employee_id);
+  const [rows] = await connection.query("SELECT * FROM leave_requests WHERE id = ? FOR UPDATE", [requestId]);
   if (!rows.length) throw fail("Không tìm thấy đơn nghỉ", 404);
   const request = rows[0];
   if (request.status !== "PENDING") throw fail("Đơn nghỉ đã được xử lý", 409);
+  const workDate = String(request.work_date).slice(0, 10);
   if (action === "cancel") {
     if (Number(user?.employee_id) !== Number(request.employee_id)) throw fail("Chỉ được hủy đơn của chính mình", 403);
-    await assertOpen(connection, request.employee_id, request.from_day, request.to_day);
+    await assertOpen(connection, request.employee_id, workDate);
     await connection.query("DELETE FROM leave_requests WHERE id = ?", [requestId]);
   } else {
     await assertCanApprove(connection, user, request.employee_id);
-    await assertOpen(connection, request.employee_id, request.from_day, request.to_day);
+    await assertOpen(connection, request.employee_id, workDate);
     const rejection = String(payload.reject_reason || payload.reason || "").trim();
     if (action === "reject" && !rejection) throw fail("Vui lòng nhập lý do từ chối");
-    await connection.query("UPDATE leave_requests SET status = ?, approved_by = ?, approved_at = NOW(), reject_reason = ? WHERE id = ?", [action === "approve" ? "APPROVED" : "REJECTED", user.employee_id, action === "reject" ? rejection.slice(0, 255) : null, requestId]);
-    for (const month of months(request.from_day, request.to_day)) await recalculateEmployeeMonth(connection, request.employee_id, month);
+    await connection.query("UPDATE leave_requests SET status = ?, approved_by = ?, approved_at = NOW(), reason = ? WHERE id = ?", [action === "approve" ? "APPROVED" : "REJECTED", user.employee_id, action === "reject" ? `${request.reason} | Từ chối: ${rejection}`.slice(0, 255) : request.reason, requestId]);
+    await recalculateDailyAttendance(connection, request.employee_id, workDate);
+    await recalculateEmployeeMonth(connection, request.employee_id, workDate.slice(0, 7));
   }
-  for (const year of years(request.from_day, request.to_day)) await recalculateLeaveBalance(connection, request.employee_id, year);
+  await recalculateLeaveBalance(connection, request.employee_id, Number(workDate.slice(0, 4)));
   return { id: requestId, status: action === "cancel" ? "CANCELLED" : action === "approve" ? "APPROVED" : "REJECTED" };
 });
