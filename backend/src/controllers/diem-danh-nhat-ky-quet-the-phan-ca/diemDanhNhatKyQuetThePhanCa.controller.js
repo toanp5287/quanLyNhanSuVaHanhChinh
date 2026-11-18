@@ -46,6 +46,8 @@ export const attendanceCheckIn = async (req, res) => {
       embeddings: req.body?.embeddings,
       blink_verified: req.body?.blink_verified,
       ip: req.ip,
+      device_info: req.body?.device_info || req.headers["x-device-id"] || null,
+      user_id: req.user?.user_id,
       note: req.body?.note,
     });
 
@@ -89,6 +91,8 @@ export const attendanceCheckOut = async (req, res) => {
       embeddings: req.body?.embeddings,
       blink_verified: req.body?.blink_verified,
       ip: req.ip,
+      device_info: req.body?.device_info || req.headers["x-device-id"] || null,
+      user_id: req.user?.user_id,
       note: req.body?.note,
     });
 

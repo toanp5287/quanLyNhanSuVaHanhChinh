@@ -90,6 +90,7 @@ router.post(
         req.body?.embeddings,
         req.ip,
         req.body?.blink_verified,
+        req.headers["x-device-id"] || null,
       );
       res.json({
         success: true,
