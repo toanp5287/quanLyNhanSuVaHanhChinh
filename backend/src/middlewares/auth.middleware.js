@@ -76,16 +76,25 @@ const normalizeIp = (ip) => {
     .trim();
 };
 
+let missingDeviceWarningLogged = false;
+
 export const requireAllowedAttendanceDevice = (req, res, next) => {
   const configured = String(process.env.ALLOWED_DEVICE_ID || "")
     .trim()
     .toLowerCase();
+  if (!configured) {
+    if (!missingDeviceWarningLogged) {
+      console.warn("ALLOWED_DEVICE_ID chưa được cấu hình: kiểm tra thiết bị chấm công đang bị bỏ qua.");
+      missingDeviceWarningLogged = true;
+    }
+    return next();
+  }
   const supplied = String(
     req.headers["x-device-id"] || req.body?.device_id || "",
   )
     .trim()
     .toLowerCase();
-  if (configured && supplied === configured) return next();
+  if (supplied && supplied === configured) return next();
   return res.status(403).json({
     success: false,
     message: "Chỉ máy chấm công đã đăng ký mới được vào ca hoặc tan ca.",
@@ -112,6 +121,6 @@ export const requireAllowedAttendanceIp = (req, res, next) => {
 
   return res.status(403).json({
     success: false,
-    message: "IP máy không được phép chấm công hoặc cập nhật khuôn mặt",
+    message: "IP máy không được phép chấm công.",
   });
 };

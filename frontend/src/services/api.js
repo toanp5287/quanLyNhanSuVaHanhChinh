@@ -12,6 +12,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  if (config.skipAuth) return config;
   const token = sessionStorage.getItem(TOKEN_KEY);
 
   if (token) {

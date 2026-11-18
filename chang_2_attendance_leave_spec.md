@@ -11,13 +11,13 @@ Hiển thị nổi bật ngay đầu màn hình Chấm công (View 7) cho ngư�
   - Hiển thị Đồng hồ thời gian thực (Real-time Clock) và trạng thái điểm danh ngày hôm nay (`CURRENT_DATE`) của chính người dùng.
 - **Trạng thái Nút bấm thông minh**:
   - **Trường hợp 1 (Hôm nay chưa có bản ghi trong `attendance_logs`)**: Hiển thị nút **`[Chấm công Vào ca (Check-in)]`**.
-    - Khi bấm: Gọi API `POST /api/attendance/check-in` lấy giờ hiện tại:
+    - Khi bấm: Gọi API `POST /attendance/check-in` lấy giờ hiện tại:
       - So sánh giờ hiện tại với `start_time + grace_minutes` của ca làm việc.
       - Nếu vào đúng giờ hoặc trong 15 phút ân hạn -> `late_minutes = 0`, `status = 'VALID'`.
       - Nếu vào trễ quá 15 phút -> tự động tính `late_minutes`, gán `status = 'LATE'`.
       - Lưu vào `attendance_logs` với `work_date = CURRENT_DATE`, `source = 'FACE_ID'`, `work_unit = 0.50` (tạm tính nửa công khi mới check-in).
   - **Trường hợp 2 (Đã có `check_in` nhưng `check_out IS NULL`)**: Hiển thị giờ đã Check-in sáng nay và bật sáng nút **`[Chấm công Tan ca (Check-out)]`**.
-    - Khi bấm: Gọi API `POST /api/attendance/check-out`:
+    - Khi bấm: Gọi API `POST /attendance/check-out`:
       - Cập nhật `check_out = CURRENT_TIME`.
       - Tính toán số giờ làm việc để cập nhật `work_unit = 1.00` (đủ ngày công) hoặc `0.50` (nửa ngày công).
       - **Đồng bộ tự động sang bảng `monthly_timesheets`**: Tự động tính lại tổng `actual_work_days`, `late_count`, `total_late_minutes` và `total_payable_days = actual_work_days + paid_leave_days` của nhân viên đó trong tháng hiện tại (`YYYY-MM`).
@@ -42,7 +42,7 @@ Trong **VIEW 7 (`#view-attendance-logs`)**, bổ sung chế độ xem **"Bảng 
 
 ### 1. Nguyên tắc hoạt động
 - Khi người dùng bấm nút **`[Chấm công Vào ca (Check-in)]`** hoặc **`[Chấm công Tan ca (Check-out)]`**, hệ thống **không** gọi API lưu ngay mà bắt buộc mở **Cửa sổ Popup Camera FaceID (`#modal-faceid-camera`)** ngay trong file giao diện hiện tại.
-- Chỉ sau khi quét khuôn mặt qua Webcam (hoặc chế độ mô phỏng nếu máy tính không có Webcam) đạt trạng thái **"Khớp sinh trắc học"** thì mới gọi API lưu giờ chấm công xuống bảng `attendance_logs` với `source = 'FACE_ID'`.
+- Chỉ sau khi quét khuôn mặt qua Webcam thật, đạt chất lượng và chớp mắt hợp lệ, rồi đối chiếu sinh trắc học thành công thì mới gọi API lưu giờ chấm công xuống bảng `attendance_logs` với `source = 'FACE_ID'`. Không hỗ trợ mẫu mô phỏng.
 
 ### 2. Giao diện & Trải nghiệm trên Modal `#modal-faceid-camera`
 - **Khung hiển thị Camera**:
@@ -56,14 +56,14 @@ Trong **VIEW 7 (`#view-attendance-logs`)**, bổ sung chế độ xem **"Bảng 
   - *Bước 1 (0.5s)*: Hiển thị trạng thái `"Đang khởi động cảm biến Camera & định vị khuôn mặt..."` (Khung viền màu xanh dương).
   - *Bước 2 (1.0s)*: Hiển thị trạng thái `"Đang phân tích điểm đặc trưng sinh trắc học (Face Mesh)..."` (Khung viền màu vàng cam).
   - *Bước 3 (Hoàn tất)*: Khung viền chuyển sang **Màu xanh lá**, hiển thị `"Xác thực khớp 99.6%: [Mã NV] - [Họ tên]"` và mở khóa nút **`[Xác nhận & Ghi nhận Chấm công]`** (hoặc tự động gửi API sau 1 giây).
-- **Cơ chế Dự phòng bắt buộc (Fallback khi PC không có Webcam hoặc bị chặn quyền Camera)**:
-  - Nếu `getUserMedia` báo lỗi (máy bàn không gắn Webcam), tuyệt đối không làm đứng chức năng.
-  - Tự động chuyển khung `<video>` sang **Chế độ Mô phỏng Cảm biến FaceID (AI Avatar Biometric Scan)** với hiệu ứng quét khuôn mặt số hóa để người dùng vẫn test trọn vẹn luồng Check-in / Check-out trên mọi thiết bị.
+- **Xử lý lỗi Camera**:
+  - Nếu `getUserMedia` báo lỗi, hiển thị lý do cụ thể (quyền bị chặn, không có webcam, camera bận, cần HTTPS/localhost).
+  - Không chuyển sang mẫu mô phỏng; người dùng phải dùng webcam thật để đăng ký và điểm danh.
 - **Giải phóng tài nguyên**: Ngay khi đóng Modal hoặc chấm công xong, bắt buộc gọi `stream.getTracks().forEach(track => track.stop())` để tắt đèn Webcam trên máy tính.
 
 ### 3. Xử lý tại Backend API sau khi FaceID xác thực thành công
-- **API `POST /api/attendance/check-in`** và **`POST /api/attendance/check-out`**:
-  - Nhận thêm tham số `source: 'FACE_ID'`, `face_confidence` (VD: `99.6`).
+- **API `POST /attendance/check-in`** và **`POST /attendance/check-out`**:
+  - Nhận `embeddings` (5 vector từ `@vladmandic/human`) và `blink_verified: true`. `source` được server gán là `FACE_ID`.
   - Khi **Check-in**:
     - Lấy giờ hiện tại trên Server đối chiếu với `start_time` và `grace_minutes` của ca làm việc trong bảng `work_shifts`.
     - Nếu giờ vào lớn hơn `(start_time + grace_minutes)`: Tính số phút đi muộn `late_minutes`, gán `status = 'LATE'`. Ngược lại: `late_minutes = 0`, `status = 'VALID'`.

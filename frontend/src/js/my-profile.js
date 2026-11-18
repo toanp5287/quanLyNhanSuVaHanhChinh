@@ -368,8 +368,8 @@ const loadProfile = async () => {
   try {
     const response = await api.get("/my-profile");
     renderProfile(response.data.data);
-    const hasFace = Boolean(response.data.data?.employee?.face_descriptor);
-    updateCurrentUser({ has_face_descriptor: hasFace, face_descriptor: response.data.data?.employee?.face_descriptor || null });
+    const hasFace = Boolean(response.data.data?.employee?.has_face_descriptor);
+    updateCurrentUser({ has_face_descriptor: hasFace });
     updateFaceButtonState(getCurrentUser());
   } catch (error) {
     const message =

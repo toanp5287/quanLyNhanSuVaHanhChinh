@@ -1,12 +1,14 @@
 import { db } from "../../config/database.js";
-import {
-  assertCanApprove,
-  buildEmployeeScope,
-  cosineSimilarity,
-} from "../../utils/helper.js";
+import { assertCanApprove, buildEmployeeScope } from "../../utils/helper.js";
+import { recalculateEmployeeMonth } from "../tong-hop-chot-cong/tongHopChotCong.service.js";
 
 export const attendanceError = (message, status = 400) =>
   Object.assign(new Error(message), { status });
+export const FACE_MATCH_THRESHOLD = 0.76;
+export const FACE_MIN_PASS_RATIO = 0.8;
+export const FACE_AMBIGUITY_MARGIN = 0.06;
+const requiredPassCount = (total) =>
+  Math.max(1, Math.ceil(total * FACE_MIN_PASS_RATIO));
 export const l2Normalize = (vec) => {
   if (
     !Array.isArray(vec) ||
@@ -85,7 +87,7 @@ export const parseStoredFaceData = (rawJson) => {
 export const evaluateFullSetMatch = (
   liveEmbeddings,
   storedFaceJson,
-  threshold = 0.76,
+  threshold = FACE_MATCH_THRESHOLD,
 ) => {
   const stored = parseStoredFaceData(storedFaceJson);
   const empty = {
@@ -93,11 +95,12 @@ export const evaluateFullSetMatch = (
     avgScore: 0,
     centroidScore: 0,
     passCount: 0,
-    totalSamples: liveEmbeddings.length,
+    requiredPassCount: 0,
+    totalSamples: liveEmbeddings?.length || 0,
   };
   if (
     !stored ||
-    !liveEmbeddings.length ||
+    !liveEmbeddings?.length ||
     liveEmbeddings.some((vector) => vector.length !== stored.centroid.length)
   )
     return empty;
@@ -115,11 +118,13 @@ export const evaluateFullSetMatch = (
     (scores.reduce((sum, score) => sum + score, 0) / scores.length) * 0.5 +
     centroidScore * 0.5;
   const passCount = scores.filter((score) => score >= threshold - 0.02).length;
+  const required = requiredPassCount(scores.length);
   return {
-    isMatch: avgScore >= threshold && passCount >= 4,
+    isMatch: avgScore >= threshold && passCount >= required,
     avgScore,
     centroidScore,
     passCount,
+    requiredPassCount: required,
     totalSamples: liveEmbeddings.length,
   };
 };
@@ -142,79 +147,6 @@ export const validateBiometricCapture = (
   if (!consistency.valid) throw attendanceError(consistency.message, 400);
   return samples;
 };
-export const faceDistance = (left, right) =>
-  Math.sqrt(
-    left.reduce((sum, value, index) => sum + (value - right[index]) ** 2, 0),
-  );
-export const parseFaceDescriptor = (value) => {
-  let descriptor = value;
-  if (typeof value === "string") {
-    try {
-      descriptor = JSON.parse(value);
-    } catch {
-      return null;
-    }
-  }
-  if (
-    !Array.isArray(descriptor) ||
-    descriptor.length !== 128 ||
-    descriptor.some(
-      (value) =>
-        typeof value !== "number" ||
-        !Number.isFinite(value) ||
-        Math.abs(value) > 2,
-    )
-  )
-    return null;
-  const norm = Math.sqrt(
-    descriptor.reduce((sum, value) => sum + value ** 2, 0),
-  );
-  const simulated = Array.from({ length: 128 }, (_, index) =>
-    Number((Math.sin(index + 1) * 0.1).toFixed(6)),
-  );
-  if (norm < 0.5 || norm > 2.5 || faceDistance(descriptor, simulated) < 0.01)
-    return null;
-  return descriptor;
-};
-export const validateFaceSamples = (values) => {
-  if (!Array.isArray(values) || values.length < 3 || values.length > 8)
-    throw attendanceError(
-      "Cần ít nhất 3 mẫu khuôn mặt từ camera. Vui lòng quét lại.",
-    );
-  const samples = values.map(parseFaceDescriptor);
-  if (samples.some((sample) => !sample))
-    throw attendanceError(
-      "Mẫu khuôn mặt không hợp lệ hoặc là mẫu mô phỏng. Vui lòng đăng ký lại bằng camera thật.",
-    );
-  if (samples.some((sample) => faceDistance(sample, samples[0]) >= 0.32))
-    throw attendanceError(
-      "Khuôn mặt thay đổi trong lúc quét. Chỉ một người đứng trước camera và thử lại.",
-    );
-  return samples;
-};
-
-export const findFaceEnrollmentConflict = (samples, employees, employeeId) => {
-  return (
-    employees
-      .filter((employee) => Number(employee.id) !== Number(employeeId))
-      .map((employee) => ({
-        employee,
-        descriptor: parseFaceDescriptor(employee.face_descriptor),
-      }))
-      .filter((candidate) => candidate.descriptor)
-      .map((candidate) => ({
-        employee: candidate.employee,
-        distance: Math.max(
-          ...samples.map((sample) =>
-            faceDistance(sample, candidate.descriptor),
-          ),
-        ),
-      }))
-      .filter((candidate) => candidate.distance < 0.42)
-      .sort((left, right) => left.distance - right.distance)[0] || null
-  );
-};
-
 export const identifyFace = (samples, employees) => {
   const candidates = employees
     .map((employee) => ({
@@ -228,7 +160,10 @@ export const identifyFace = (samples, employees) => {
       "Không tìm thấy khuôn mặt đã đăng ký phù hợp. Vui lòng đăng ký lại FaceID bằng Human nếu mẫu cũ dùng mô hình khác.",
       403,
     );
-  if (candidates[1]?.isMatch && best.avgScore - candidates[1].avgScore <= 0.02)
+  if (
+    candidates[1]?.isMatch &&
+    best.avgScore - candidates[1].avgScore <= FACE_AMBIGUITY_MARGIN
+  )
     throw attendanceError(
       "Bộ mẫu khớp với nhiều hồ sơ và chưa đủ rõ để phân biệt. Vui lòng cập nhật lại FaceID.",
       409,
@@ -249,11 +184,10 @@ export const kioskAttendance = async (action, values, ip, blinkVerified) => {
     match.employee.id,
     {
       ip,
-      embeddings: samples,
-      blink_verified: blinkVerified,
-      note: `Human FaceID; similarity=${(match.avgScore * 100).toFixed(1)}%; samples=${match.passCount}/5`,
+      note: `Human FaceID; similarity=${(match.avgScore * 100).toFixed(1)}%; samples=${match.passCount}/${match.totalSamples}`,
     },
     action === "check-in" ? checkInInternal : checkOutInternal,
+    { employee: match.employee, match, samples },
   );
   const errors = {
     ALREADY_CHECKED_IN:
@@ -293,9 +227,19 @@ export const serverDate = async (connection = db) => {
   return rows[0].today;
 };
 export const assertMonthOpen = async (connection, employeeId, date) => {
+  const month = date.slice(0, 7);
+  await connection.query(
+    `INSERT INTO monthly_timesheets
+      (employee_id, month_year, standard_days, actual_work_days, paid_leave_days,
+       unpaid_leave_days, total_payable_days, late_count, total_late_minutes,
+       ot_hours_150, ot_hours_200, ot_hours_300, status)
+     VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'OPEN')
+     ON DUPLICATE KEY UPDATE employee_id = employee_id`,
+    [employeeId, month],
+  );
   const [rows] = await connection.query(
     "SELECT status FROM monthly_timesheets WHERE employee_id = ? AND month_year = ? FOR UPDATE",
-    [employeeId, date.slice(0, 7)],
+    [employeeId, month],
   );
   if (rows[0]?.status === "LOCKED")
     throw attendanceError("Bảng công tháng này đã khóa", 409);
@@ -399,8 +343,6 @@ const checkInInternal = async (employeeId, meta = {}, connection) => {
     [lateMinutes, status, result.insertId],
   );
 
-  const { recalculateEmployeeMonth } =
-    await import("../tong-hop-chot-cong/tongHopChotCong.service.js");
   await recalculateEmployeeMonth(
     connection,
     employeeId,
@@ -445,10 +387,7 @@ const checkOutInternal = async (employeeId, meta = {}, connection) => {
     const [ch, cm] = String(checkOutTime).split(":").map(Number);
     const endMin = eh * 60 + em;
     const outMin = ch * 60 + cm;
-    if (outMin < endMin) {
-      earlyLeave = endMin - outMin;
-      workUnit = 0.5;
-    }
+    if (outMin < endMin) earlyLeave = endMin - outMin;
     const minute = (value) =>
       String(value)
         .split(":")
@@ -465,10 +404,11 @@ const checkOutInternal = async (employeeId, meta = {}, connection) => {
       0,
       endMin - minute(shift.start_time) - Number(shift.break_minutes || 0),
     );
+    const standard = Number(shift.standard_work_units || 1);
     workUnit =
-      worked >= required
-        ? Number(shift.standard_work_units || 1)
-        : Math.min(0.5, Number(shift.standard_work_units || 1));
+      earlyLeave > 0 || worked < required
+        ? Math.min(0.5, standard)
+        : standard;
   }
 
   await connection.query(
@@ -476,8 +416,6 @@ const checkOutInternal = async (employeeId, meta = {}, connection) => {
     [earlyLeave, workUnit, log.id],
   );
 
-  const { recalculateEmployeeMonth } =
-    await import("../tong-hop-chot-cong/tongHopChotCong.service.js");
   await recalculateEmployeeMonth(
     connection,
     employeeId,
@@ -491,12 +429,16 @@ const checkOutInternal = async (employeeId, meta = {}, connection) => {
   return { log: finalRows[0], shift };
 };
 
-const recordSelfAttendance = async (employeeId, meta, operation) => {
+const recordSelfAttendance = async (
+  employeeId,
+  meta,
+  operation,
+  verifiedIdentity = null,
+) => {
   if (!employeeId) return { error: "NO_EMPLOYEE" };
-  const samples = validateBiometricCapture(
-    meta.embeddings,
-    meta.blink_verified,
-  );
+  const samples = verifiedIdentity?.samples
+    ? verifiedIdentity.samples
+    : validateBiometricCapture(meta.embeddings, meta.blink_verified);
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -510,35 +452,45 @@ const recordSelfAttendance = async (employeeId, meta, operation) => {
     if (current[0]?.work_status !== "WORKING")
       throw attendanceError("Hồ sơ nhân viên không hoạt động", 403);
     const selfMatch = evaluateFullSetMatch(samples, current[0].face_descriptor);
-    const [others] = await connection.query(
-      "SELECT id, employee_code, full_name, face_descriptor FROM employees WHERE id <> ? AND face_descriptor IS NOT NULL AND LENGTH(face_descriptor) > 20",
-      [employeeId],
-    );
-    const other = others
-      .map((employee) => ({
-        employee,
-        ...evaluateFullSetMatch(samples, employee.face_descriptor),
-      }))
-      .filter(
-        (match) => match.isMatch && match.avgScore > selfMatch.avgScore + 0.02,
-      )
-      .sort((a, b) => b.avgScore - a.avgScore)[0];
-    if (other)
-      throw attendanceError(
-        `CẢNH BÁO NHẬN DIỆN: Khuôn mặt trước Camera khớp với hồ sơ [${other.employee.employee_code} - ${other.employee.full_name}] (${(other.avgScore * 100).toFixed(1)}%), không phải tài khoản đang đăng nhập!`,
-        403,
-      );
     if (!selfMatch.isMatch)
       throw attendanceError(
-        `Khuôn mặt không khớp với hồ sơ đăng ký! Độ khớp trung bình bộ mẫu: ${(selfMatch.avgScore * 100).toFixed(1)}% (${selfMatch.passCount}/5 mẫu đạt ngưỡng, yêu cầu >= 76% và >= 4/5 mẫu).`,
+        `Khuôn mặt không khớp với hồ sơ đăng ký! Độ khớp trung bình bộ mẫu: ${(selfMatch.avgScore * 100).toFixed(1)}% (${selfMatch.passCount}/${selfMatch.totalSamples} mẫu đạt ngưỡng, yêu cầu >= ${(FACE_MATCH_THRESHOLD * 100).toFixed(0)}% và >= ${selfMatch.requiredPassCount}/${selfMatch.totalSamples} mẫu).`,
         403,
       );
+    if (!verifiedIdentity) {
+      const [others] = await connection.query(
+        "SELECT id, employee_code, full_name, face_descriptor FROM employees WHERE id <> ? AND face_descriptor IS NOT NULL AND LENGTH(face_descriptor) > 20",
+        [employeeId],
+      );
+      const other = others
+        .map((employee) => ({
+          employee,
+          ...evaluateFullSetMatch(samples, employee.face_descriptor),
+        }))
+        .filter(
+          (match) =>
+            match.isMatch &&
+            match.avgScore > selfMatch.avgScore + FACE_AMBIGUITY_MARGIN,
+        )
+        .sort((a, b) => b.avgScore - a.avgScore)[0];
+      if (other)
+        throw attendanceError(
+          `CẢNH BÁO NHẬN DIỆN: Khuôn mặt trước Camera khớp với hồ sơ [${other.employee.employee_code} - ${other.employee.full_name}] (${(other.avgScore * 100).toFixed(1)}%), không phải tài khoản đang đăng nhập!`,
+          403,
+        );
+    } else if (Number(verifiedIdentity.employee?.id) !== Number(employeeId)) {
+      throw attendanceError("Khuôn mặt không thuộc tài khoản đang chấm công", 403);
+    }
     await assertMonthOpen(connection, employeeId, await serverDate(connection));
     const result = await operation(
       employeeId,
       { ...meta, source: "FACE_ID" },
       connection,
     );
+    if (result.error) {
+      await connection.rollback();
+      return result;
+    }
     await connection.commit();
     return result;
   } catch (error) {
@@ -723,8 +675,6 @@ const markEmployees = async (ids, date, type, user, skipExisting = false) => {
           `Điểm danh ${type} bởi ${user.user_id}`,
         ],
       );
-      const { recalculateEmployeeMonth } =
-        await import("../tong-hop-chot-cong/tongHopChotCong.service.js");
       await recalculateEmployeeMonth(connection, id, targetDate.slice(0, 7));
       count += 1;
     }

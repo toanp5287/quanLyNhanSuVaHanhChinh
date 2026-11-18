@@ -43,27 +43,22 @@ export const attendanceCheckIn = async (req, res) => {
     }
 
     const result = await checkIn(employeeId, {
-      source: req.body?.source || "FACE_ID",
-      face_confidence: req.body?.face_confidence,
-      face_samples: req.body?.face_samples,
-      face_match_mode: req.body?.face_match_mode || "COSINE",
+      embeddings: req.body?.embeddings,
+      blink_verified: req.body?.blink_verified,
       ip: req.ip,
       note: req.body?.note,
     });
 
-    if (result.error === "ALREADY_CHECKED_IN") {
-      return res
-        .status(409)
-        .json({
-          success: false,
-          message: "Đã chấm công vào ca hôm nay",
-          data: result.log,
-        });
-    }
     if (result.error) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Không thể chấm công vào ca" });
+      const messages = {
+        NO_SHIFT: "Chưa cấu hình ca làm việc cho nhân viên",
+        ALREADY_CHECKED_IN: "Đã chấm công vào ca hôm nay",
+      };
+      return res.status(result.error === "ALREADY_CHECKED_IN" ? 409 : 400).json({
+        success: false,
+        message: messages[result.error] || "Không thể chấm công vào ca",
+        data: result.log || null,
+      });
     }
 
     return res
@@ -74,15 +69,7 @@ export const attendanceCheckIn = async (req, res) => {
         data: result,
       });
   } catch (error) {
-    console.error("Lỗi chấm công vào ca:", error);
-    return res
-      .status(error.status || 500)
-      .json({
-        success: false,
-        message: error.status
-          ? error.message
-          : "Có lỗi xảy ra khi chấm công vào ca",
-      });
+    return respondError(res, error, "Có lỗi xảy ra khi chấm công vào ca");
   }
 };
 
@@ -99,32 +86,22 @@ export const attendanceCheckOut = async (req, res) => {
     }
 
     const result = await checkOut(employeeId, {
-      source: req.body?.source || "FACE_ID",
-      face_confidence: req.body?.face_confidence,
-      face_samples: req.body?.face_samples,
-      face_match_mode: req.body?.face_match_mode || "COSINE",
+      embeddings: req.body?.embeddings,
+      blink_verified: req.body?.blink_verified,
       ip: req.ip,
       note: req.body?.note,
     });
 
-    if (result.error === "NO_CHECK_IN") {
-      return res
-        .status(400)
-        .json({ success: false, message: "Chưa chấm công vào ca hôm nay" });
-    }
-    if (result.error === "ALREADY_CHECKED_OUT") {
-      return res
-        .status(409)
-        .json({
-          success: false,
-          message: "Đã chấm công tan ca hôm nay",
-          data: result.log,
-        });
-    }
     if (result.error) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Không thể chấm công tan ca" });
+      const messages = {
+        NO_CHECK_IN: "Chưa chấm công vào ca hôm nay",
+        ALREADY_CHECKED_OUT: "Đã chấm công tan ca hôm nay",
+      };
+      return res.status(result.error === "ALREADY_CHECKED_OUT" ? 409 : 400).json({
+        success: false,
+        message: messages[result.error] || "Không thể chấm công tan ca",
+        data: result.log || null,
+      });
     }
 
     return res
@@ -135,15 +112,7 @@ export const attendanceCheckOut = async (req, res) => {
         data: result,
       });
   } catch (error) {
-    console.error("Lỗi chấm công tan ca:", error);
-    return res
-      .status(error.status || 500)
-      .json({
-        success: false,
-        message: error.status
-          ? error.message
-          : "Có lỗi xảy ra khi chấm công tan ca",
-      });
+    return respondError(res, error, "Có lỗi xảy ra khi chấm công tan ca");
   }
 };
 
@@ -161,8 +130,7 @@ export const attendanceToday = async (req, res) => {
     const data = await getTodayStatus(employeeId);
     return res.status(200).json({ success: true, data });
   } catch (error) {
-    console.error("Lỗi lấy trạng thái chấm công:", error);
-    return res.status(500).json({ success: false, message: "Có lỗi xảy ra" });
+    return respondError(res, error, "Không thể lấy trạng thái chấm công");
   }
 };
 
@@ -171,15 +139,7 @@ export const attendanceList = async (req, res) => {
     const data = await listAttendanceByDate(req.query?.date, req.user);
     return res.status(200).json({ success: true, data });
   } catch (error) {
-    console.error("Lỗi lấy danh sách chấm công:", error);
-    return res
-      .status(error.status || 500)
-      .json({
-        success: false,
-        message: error.status
-          ? error.message
-          : "Không thể tải danh sách chấm công",
-      });
+    return respondError(res, error, "Không thể tải danh sách chấm công");
   }
 };
 
@@ -204,13 +164,7 @@ export const attendanceQuickMark = async (req, res) => {
       .status(200)
       .json({ success: true, message: "Đã cập nhật chấm công", data: result });
   } catch (error) {
-    console.error("Lỗi cập nhật chấm công:", error);
-    return res
-      .status(error.status || 500)
-      .json({
-        success: false,
-        message: error.status ? error.message : "Không thể cập nhật chấm công",
-      });
+    return respondError(res, error, "Không thể cập nhật chấm công");
   }
 };
 
@@ -226,13 +180,7 @@ export const attendanceQuickMarkAll = async (req, res) => {
       .status(200)
       .json({ success: true, message: "Đã chấm công hàng loạt", data: result });
   } catch (error) {
-    console.error("Lỗi chấm công hàng loạt:", error);
-    return res
-      .status(error.status || 500)
-      .json({
-        success: false,
-        message: error.status ? error.message : "Không thể điểm danh hàng loạt",
-      });
+    return respondError(res, error, "Không thể điểm danh hàng loạt");
   }
 };
 

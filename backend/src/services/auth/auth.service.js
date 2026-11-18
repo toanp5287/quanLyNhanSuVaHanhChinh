@@ -32,7 +32,7 @@ const USER_QUERY = `
     e.hire_date,
     e.resign_date,
     e.work_status,
-    e.face_descriptor,
+    (e.face_descriptor IS NOT NULL) AS has_face_descriptor,
     d.id AS department_id,
     COALESCE(d.department_code, d.dept_code) AS department_code,
     COALESCE(d.department_name, d.name) AS department_name,

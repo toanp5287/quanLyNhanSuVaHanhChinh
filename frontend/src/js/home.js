@@ -605,7 +605,12 @@ export const captureFaceSamples = async (video, onProgress = () => {}, isActive 
       if (stable >= 4) { stage = "WAIT_FOR_BLINK"; stageMessage("👁️ HÃY CHỚP MẮT 1 LẦN ĐỂ BẮT ĐẦU QUÉT KHUÔN MẶT"); }
     } else if (stage === "WAIT_FOR_BLINK") {
       if (detectEyeBlink(face, result.gesture, blinkState)) { stage = "CAPTURE_5_SAMPLES"; stageMessage("✅ Đã xác thực chớp mắt! Đang thu thập 5 mẫu sinh trắc học..."); }
-    } else if (eyeRatio(face) > 0.22 && face.score >= 0.82 && face.embedding?.length && performance.now() - lastCapture >= 160) {
+    } else if (!center || !inFrame || brightness < 45 || face.score < 0.82 || face.real < 0.62 || face.live < 0.62) {
+      stage = "ALIGN_FACE"; stable = 0; samples.length = 0; previousBox = null;
+      blinkState.open = false; blinkState.closedAt = null;
+      progress.value = 0;
+      stageMessage("Mất khuôn mặt rõ trong lúc quét. Nhìn thẳng, giữ yên để quét lại từ đầu.");
+    } else if (eyeRatio(face) > 0.22 && face.embedding?.length && performance.now() - lastCapture >= 160) {
       const values = Array.from(face.embedding);
       if (samples.length && vectorSimilarity(values, samples[0]) < 0.83) throw new Error("Mẫu khuôn mặt không ổn định. Vui lòng giữ thẳng mặt và quét lại!");
       samples.push(values); lastCapture = performance.now(); progress.value = samples.length;
@@ -687,7 +692,7 @@ const runFaceEnrollScan = async () => {
     setFaceEnrollStatus("Đang kiểm tra khuôn mặt đã đăng ký", "Chỉ một người trước camera. Đang xác nhận khuôn mặt chưa được dùng cho tài khoản khác.");
     const embedding = await captureFaceProbe(video, () => session === faceEnrollSession && Boolean(faceEnrollStream?.active), text => setFaceEnrollStatus("Kiểm tra FaceID đã kích hoạt", text));
     if (session !== faceEnrollSession || !document.getElementById("modal-faceid-enroll")?.isConnected) return;
-    await api.post("/api/attendance/check-face-owner", { embedding });
+    await api.post("/attendance/check-face-owner", { embedding });
     if (session !== faceEnrollSession || !document.getElementById("modal-faceid-enroll")?.isConnected) return;
     if (startBtn) startBtn.querySelector("span:last-child").textContent = "Bắt đầu quét";
     setFaceEnrollStatus("Đang lấy 5 mẫu khuôn mặt...", "Chỉ một người trong khung hình, nhìn thẳng và giữ yên.");
@@ -796,12 +801,11 @@ const saveFaceDescriptor = async () => {
       saveBtn.disabled = true;
       saveBtn.innerHTML = "<span>Đang lưu...</span>";
     }
-    const response = await api.post("/api/attendance/register-face", {
+    const response = await api.post("/attendance/register-face", {
       ...faceEnrollDescriptor,
       current_password: document.getElementById("faceEnrollPassword")?.value,
     });
     const updated = updateCurrentUser({
-      face_descriptor: response.data.data.face_descriptor,
       has_face_descriptor: true,
     });
     closeFaceEnrollModal();
@@ -842,7 +846,7 @@ export const bindFaceEnrollModal = () => {
       const session = faceEnrollSession;
       startBtn.disabled = true;
       try {
-        await api.post("/api/attendance/verify-face-password", { current_password: password });
+        await api.post("/attendance/verify-face-password", { current_password: password });
         if (session !== faceEnrollSession) return;
         document.getElementById("faceEnrollPasswordStep").classList.add("hidden");
         cameraStep.classList.remove("hidden"); cameraStep.classList.add("flex");

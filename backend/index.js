@@ -13,9 +13,14 @@ import routerQuanLyLamThemGio from "./src/routes/quanLyLamThemGio.router.js";
 import routerQuanLyNghiPhepVaQuyPhepNam from "./src/routes/quan-ly-nghi-phep-va-quy-phep-nam.service.js";
 import routerMyProfile from "./src/routes/myProfile.router.js";
 import connectMysql from "./src/config/database.js";
-const app = express();
 
 dotenv.config();
+
+const app = express();
+const trustProxy = String(process.env.TRUST_PROXY || "").trim();
+if (trustProxy) {
+  app.set("trust proxy", /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
+}
 
 app.use(
   cors({

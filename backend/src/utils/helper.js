@@ -164,8 +164,7 @@ export const toPublicUser = (row) => {
     position_code: row.position_code,
     position_title: row.position_title,
     grade_level: row.grade_level,
-    face_descriptor: row.face_descriptor ?? null,
-    has_face_descriptor: Boolean(row.face_descriptor),
+    has_face_descriptor: Boolean(row.has_face_descriptor ?? row.face_descriptor),
     permissions: row.permissions || [],
   };
 };

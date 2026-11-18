@@ -94,7 +94,7 @@ export function initChamCong(user = getCurrentUser(), initialTab = "daily") {
     state.loading = true; state.failed = false; state.rows = []; render();
     try {
       const daily = state.tab === "daily";
-      const response = await api.get(daily ? "/attendance/logs" : "/attendance/monthly", { params: daily ? { date: el("Date").value } : { month: el("Month").value } });
+      const response = await api.get(daily ? "/attendance/logs" : "/timesheets", { params: daily ? { date: el("Date").value } : { month: el("Month").value } });
       if (!root.isConnected || request !== state.request) return;
       state.rows = response.data.data.rows; state.standardDays = response.data.data.standard_days;
       const selected = el("Department").value;
@@ -128,7 +128,7 @@ export function initChamCong(user = getCurrentUser(), initialTab = "daily") {
         : action === "mark" ? `Điểm danh ${type === "PRESENT" ? "đủ công" : type === "HALF" ? "nửa ngày" : "vắng không phép"} ngày ${date} cho ${state.rows.find(row => Number(row.employee_id) === employeeId)?.full_name || "nhân viên"}?`
         : `Tổng hợp lại công, nghỉ phép và OT tháng ${month}?`;
       if (!await confirmAction(message) || !root.isConnected) return;
-      const path = action === "mark" ? "/attendance/quick-mark" : action === "mark-all" ? "/attendance/quick-mark-all" : `/attendance/monthly/${action}`;
+      const path = action === "mark" ? "/attendance/quick-mark" : action === "mark-all" ? "/attendance/quick-mark-all" : `/timesheets/${action}`;
       const response = await api.post(path, { date, month, department_id: department || null, employee_id: employeeId, type });
       notice(`${response.data.message} (${response.data.data?.count || 0} nhân viên).`);
       await load();

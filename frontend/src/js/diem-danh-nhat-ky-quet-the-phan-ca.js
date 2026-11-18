@@ -196,11 +196,12 @@ export const initFaceKiosk = () => {
       );
       el("Recognition").textContent = "Đang đối chiếu hồ sơ";
       const response = await api.post(
-        `/api/attendance/kiosk/${action}`,
+        `/attendance/kiosk/${action}`,
         capture,
         {
           timeout: 30000,
-          headers: { Authorization: undefined, "X-Device-Id": deviceId },
+          skipAuth: true,
+          headers: { "X-Device-Id": deviceId },
         },
       );
       if (!active() || current !== session) return;
@@ -331,8 +332,3 @@ export const initDiemDanh = () => {
   loadLogs();
   setInterval(loadLogs, 10000);
 };
-
-if (!window.__HRM_SPA__) {
-  loadLogs();
-  setInterval(loadLogs, 10000);
-}

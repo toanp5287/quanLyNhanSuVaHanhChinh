@@ -136,6 +136,7 @@ export const verifyMyFacePassword = async (req, res) => {
     await verifySelfFacePassword(employeeId, password);
     return res.status(200).json({ success: true, message: "Mật khẩu hợp lệ" });
   } catch (error) {
+    if (!error.status) console.error("Loi xac nhan mat khau FaceID:", error);
     return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Không thể xác nhận mật khẩu" });
   }
 };
@@ -147,6 +148,7 @@ export const checkMyFaceOwner = async (req, res) => {
     const data = await checkRegisteredFaceOwner(employeeId, req.body?.embedding);
     return res.status(200).json({ success: true, data });
   } catch (error) {
+    if (!error.status) console.error("Loi kiem tra chu so huu FaceID:", error);
     return res.status(error.status || 500).json({ success: false, error_code: error.error_code, conflict_employee: error.conflict_employee, message: error.status ? error.message : "Không thể kiểm tra khuôn mặt đã đăng ký" });
   }
 };
@@ -157,11 +159,11 @@ export const resetMyFaceDescriptor = async (req, res) => {
     if (!employeeId) {
       return res.status(404).json({ success: false, message: "Tai khoan chua duoc lien ket voi ho so nhan su" });
     }
-    const data = await clearSelfFaceDescriptor(employeeId);
+    const data = await clearSelfFaceDescriptor(employeeId, req.body?.current_password);
     return res.status(200).json({ success: true, message: "Da dat lai mau khuon mat FaceID", data });
   } catch (error) {
-    console.error("Loi dat lai khuon mat:", error);
-    return res.status(500).json({ success: false, message: "Co loi xay ra khi dat lai mau khuon mat" });
+    if (!error.status) console.error("Loi dat lai khuon mat:", error);
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Co loi xay ra khi dat lai mau khuon mat" });
   }
 };
 

@@ -4,16 +4,11 @@ import {
   updateMyFaceDescriptor,
   verifyMyFacePassword,
 } from "../controllers/my-profile/myProfile.controller.js";
-import {
-  listMonthlyTimesheets,
-  updateMonth,
-} from "../services/tong-hop-chot-cong/tongHopChotCong.service.js";
 import { kioskAttendance } from "../services/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 import {
   requireAllowedAttendanceDevice,
   requireAllowedAttendanceIp,
-  requireAllowedAttendanceDevice,
   requireAnyPermission,
   requirePermission,
   verifyToken,
@@ -41,24 +36,54 @@ import {
 
 const router = express.Router();
 
-const kioskAttempts = new Map();
+const failureAttempts = new Map();
+const normalizeClientIp = (req) =>
+  String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+const createFailureLimiter = (prefix, max, message, windowMs = 60000) => {
+  return (req, res, next) => {
+    const now = Date.now();
+    for (const [key, value] of failureAttempts)
+      if (value.until < now) failureAttempts.delete(key);
+    const key = `${prefix}:${normalizeClientIp(req)}:${String(req.headers["x-device-id"] || "")}`;
+    const attempts = failureAttempts.get(key) || {
+      count: 0,
+      until: now + windowMs,
+    };
+    if (attempts.count >= max)
+      return res.status(429).json({ success: false, message });
+    failureAttempts.set(key, attempts);
+    res.on("finish", () => {
+      if (res.statusCode >= 400) {
+        attempts.count += 1;
+        attempts.until = Date.now() + windowMs;
+      }
+    });
+    next();
+  };
+};
+const kioskLimiter = createFailureLimiter(
+  "kiosk",
+  20,
+  "Quá nhiều lần quét chưa thành công. Vui lòng chờ một phút rồi thử lại.",
+);
+const faceAuthLimiter = createFailureLimiter(
+  "face-auth",
+  10,
+  "Quá nhiều lần xác nhận FaceID chưa thành công. Vui lòng chờ một phút rồi thử lại.",
+);
+const faceEnrollLimiter = createFailureLimiter(
+  "face-enroll",
+  5,
+  "Quá nhiều lần đăng ký FaceID chưa thành công. Vui lòng chờ một phút rồi thử lại.",
+);
+
 router.post(
   "/kiosk/:action",
   requireAllowedAttendanceIp,
   requireAllowedAttendanceDevice,
+  kioskLimiter,
   async (req, res) => {
     res.set("Cache-Control", "no-store");
-    const now = Date.now();
-    for (const [key, value] of kioskAttempts)
-      if (value.until < now) kioskAttempts.delete(key);
-    const key = req.ip;
-    const attempts = kioskAttempts.get(key) || { count: 0, until: now + 60000 };
-    if (++attempts.count > 20)
-      return res.status(429).json({
-        success: false,
-        message: "Quá nhiều lần quét. Vui lòng chờ một phút rồi thử lại.",
-      });
-    kioskAttempts.set(key, attempts);
     try {
       const data = await kioskAttendance(
         req.params.action,
@@ -92,16 +117,19 @@ router.get("/today", requirePermission("ESS.SELF_PROFILE"), attendanceToday);
 router.post(
   "/verify-face-password",
   requirePermission("ESS.SELF_PROFILE"),
+  faceAuthLimiter,
   verifyMyFacePassword,
 );
 router.post(
   "/check-face-owner",
   requirePermission("ESS.SELF_PROFILE"),
+  faceAuthLimiter,
   checkMyFaceOwner,
 );
 router.post(
   "/register-face",
   requirePermission("ESS.SELF_PROFILE"),
+  faceEnrollLimiter,
   updateMyFaceDescriptor,
 );
 router.post(
@@ -196,49 +224,5 @@ router.post(
   requirePermission("ESS.SELF_PROFILE"),
   rejectExplanationHandler,
 );
-
-// Tổng hợp & khóa bảng công tháng
-router.get("/monthly", requirePermission("ATT.VIEW"), async (req, res) => {
-  try {
-    res.json({
-      success: true,
-      data: await listMonthlyTimesheets(req.query.month, req.user),
-    });
-  } catch (error) {
-    res.status(error.status || 500).json({
-      success: false,
-      message: error.status ? error.message : "Không thể tải bảng công tháng",
-    });
-  }
-});
-for (const action of ["recalculate", "lock"]) {
-  router.post(
-    `/monthly/${action}`,
-    requirePermission("ATT.SHIFT_OT_MANAGE"),
-    async (req, res) => {
-      try {
-        const data = await updateMonth(
-          req.body.month,
-          req.user,
-          action === "lock",
-          req.body.department_id || null,
-        );
-        res.json({
-          success: true,
-          data,
-          message:
-            action === "lock" ? "Đã khóa bảng công" : "Đã tổng hợp công tháng",
-        });
-      } catch (error) {
-        res.status(error.status || 500).json({
-          success: false,
-          message: error.status
-            ? error.message
-            : "Không thể cập nhật bảng công tháng",
-        });
-      }
-    },
-  );
-}
 
 export default router;
