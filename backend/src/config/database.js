@@ -8,6 +8,7 @@ const db = mysql.createPool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   port: Number(process.env.DB_PORT),
+  timezone: "+07:00",
 
   ssl: {
     minVersion: "TLSv1.2",
@@ -16,6 +17,12 @@ const db = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+});
+
+db.on("connection", (connection) => {
+  connection.query("SET SESSION time_zone = '+07:00'", (error) => {
+    if (error) console.error("Không thể thiết lập múi giờ MySQL:", error);
+  });
 });
 
 export { db };

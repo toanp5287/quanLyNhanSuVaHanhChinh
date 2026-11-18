@@ -453,13 +453,34 @@ const showToast = (message, options = {}) => {
   return toast;
 };
 
+const FACE_CAPTURE_MODEL = "human-faceres1024-subjectlock-v3";
+const FACE_SAMPLE_COUNT = 5;
+const TRACK_CONFIG = {
+  face: {
+    enabled: true,
+    detector: { modelPath: "blazeface.json", maxDetected: 4, rotation: true, minConfidence: 0.45, skipFrames: 0, skipTime: 0 },
+    mesh: { enabled: false }, attention: { enabled: false }, iris: { enabled: false },
+    description: { enabled: false }, antispoof: { enabled: false }, liveness: { enabled: false }, emotion: { enabled: false },
+  },
+  body: { enabled: false },
+  hand: { enabled: false }, object: { enabled: false }, gesture: { enabled: false },
+};
+const RECOGNIZE_CONFIG = {
+  face: {
+    enabled: true,
+    detector: { modelPath: "blazeface.json", maxDetected: 1, rotation: true, minConfidence: 0.5, skipFrames: 0, skipTime: 0 },
+    mesh: { enabled: true }, attention: { enabled: false }, iris: { enabled: true },
+    description: { enabled: true, skipFrames: 0, skipTime: 0 },
+    antispoof: { enabled: true, skipFrames: 0, skipTime: 0 },
+    liveness: { enabled: true, skipFrames: 0, skipTime: 0 }, emotion: { enabled: false },
+  },
+  body: { enabled: false }, hand: { enabled: false }, object: { enabled: false }, gesture: { enabled: true },
+};
+
 const human = new Human({
   modelBasePath: "https://cdn.jsdelivr.net/npm/@vladmandic/human/models/",
   cacheSensitivity: 0,
-  face: { enabled: true, detector: { maxDetected: 2, rotation: true }, mesh: { enabled: true },
-    iris: { enabled: true }, description: { enabled: true, skipFrames: 0, skipTime: 0 }, antispoof: { enabled: true, skipFrames: 0, skipTime: 0 }, liveness: { enabled: true, skipFrames: 0, skipTime: 0 },
-    emotion: { enabled: false } },
-  body: { enabled: false }, hand: { enabled: false }, object: { enabled: false }, gesture: { enabled: true },
+  ...TRACK_CONFIG,
 });
 let faceModelPromise;
 let faceEnrollStream = null;
@@ -503,7 +524,10 @@ const setFaceEnrollStatus = (text, hint) => {
 };
 
 export const ensureFaceModels = async () => {
-  if (!faceModelPromise) faceModelPromise = (async () => { await human.load(); await human.warmup(); })().catch(error => { faceModelPromise = null; throw error; });
+  if (!faceModelPromise) faceModelPromise = (async () => {
+    await human.load(TRACK_CONFIG);
+    await human.load(RECOGNIZE_CONFIG);
+  })().catch(error => { faceModelPromise = null; throw error; });
   await faceModelPromise;
 };
 
@@ -543,110 +567,361 @@ export const detectEyeBlink = (face, gestures, state = {}, now = performance.now
   return false;
 };
 
-const faceBrightness = (video, box) => {
-  if (!video.videoWidth || !video.videoHeight) return 0;
-  const canvas = document.createElement("canvas");
-  canvas.width = 32; canvas.height = 32;
+const boxCenter = (box) => [box[0] + box[2] / 2, box[1] + box[3] / 2];
+
+const median = values => {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+};
+const percentile = (values, fraction) => {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * fraction))];
+};
+
+const boxIoU = (a, b) => {
+  const intersectionWidth = Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0]));
+  const intersectionHeight = Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]));
+  const intersection = intersectionWidth * intersectionHeight;
+  const union = a[2] * a[3] + b[2] * b[3] - intersection;
+  return union > 0 ? intersection / union : 0;
+};
+
+const expandBox = (box, factor, width, height) => {
+  const [x, y, w, h] = box;
+  const left = Math.max(0, x - w * (factor - 1) / 2);
+  const top = Math.max(0, y - h * (factor - 1) / 2);
+  return [left, top, Math.min(width - left, w * factor), Math.min(height - top, h * factor)];
+};
+
+const cropMetrics = (context, size) => {
+  const pixels = context.getImageData(0, 0, size, size).data;
+  const gray = new Float32Array(size * size);
+  let brightness = 0;
+  for (let index = 0, pixel = 0; index < gray.length; index++, pixel += 4) {
+    gray[index] = 0.2126 * pixels[pixel] + 0.7152 * pixels[pixel + 1] + 0.0722 * pixels[pixel + 2];
+    brightness += gray[index];
+  }
+  let sum = 0;
+  let sumSquares = 0;
+  let count = 0;
+  for (let y = 1; y < size - 1; y++) {
+    for (let x = 1; x < size - 1; x++) {
+      const index = y * size + x;
+      const laplacian = 4 * gray[index] - gray[index - 1] - gray[index + 1] - gray[index - size] - gray[index + size];
+      sum += laplacian;
+      sumSquares += laplacian * laplacian;
+      count++;
+    }
+  }
+  const mean = sum / count;
+  return { brightness: brightness / gray.length, sharpness: Math.max(0, sumSquares / count - mean * mean) };
+};
+
+const drawFaceGuides = (canvas, video, subject, note) => {
+  if (!canvas || !video.videoWidth || !video.clientWidth) return;
+  const width = video.clientWidth;
+  const height = video.clientHeight;
+  if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, width, height);
+  const scale = Math.max(width / video.videoWidth, height / video.videoHeight);
+  const offsetX = (width - video.videoWidth * scale) / 2;
+  const offsetY = (height - video.videoHeight * scale) / 2;
+  const displayBox = (box) => [offsetX + (video.videoWidth - box[0] - box[2]) * scale, offsetY + box[1] * scale, box[2] * scale, box[3] * scale];
+  context.lineWidth = 2;
+  context.setLineDash([8, 6]);
+  context.strokeStyle = subject?.locked ? "rgba(251, 191, 36, 0.95)" : "rgba(148, 163, 184, 0.85)";
+  const guide = displayBox([video.videoWidth * 0.3, video.videoHeight * 0.16, video.videoWidth * 0.4, video.videoHeight * 0.62]);
+  context.strokeRect(guide[0], guide[1], guide[2], guide[3]);
+  if (subject) {
+    const person = displayBox(subject.personBox);
+    const face = displayBox(subject.faceBox);
+    context.strokeStyle = subject.locked ? "rgba(251, 191, 36, 0.95)" : "rgba(148, 163, 184, 0.8)";
+    context.strokeRect(person[0], person[1], person[2], person[3]);
+    context.setLineDash([]);
+    context.strokeStyle = subject.locked ? "rgba(52, 211, 153, 1)" : "rgba(148, 163, 184, 0.9)";
+    context.strokeRect(face[0], face[1], face[2], face[3]);
+    context.font = "600 12px sans-serif";
+    context.fillStyle = subject.locked ? "rgba(52, 211, 153, 1)" : "rgba(226, 232, 240, 0.95)";
+    context.fillText(subject.locked ? "KHUÔN MẶT (đã khóa)" : "ĐANG XÁC ĐỊNH KHUÔN MẶT", Math.max(4, person[0]), Math.max(14, person[1] - 6));
+  }
+  context.setLineDash([]);
+  if (note) {
+    context.font = "600 12px sans-serif";
+    const textWidth = context.measureText(note).width;
+    const left = Math.max(0, (width - textWidth - 20) / 2);
+    context.fillStyle = "rgba(0, 0, 0, 0.68)";
+    context.fillRect(left, height - 34, textWidth + 20, 26);
+    context.fillStyle = "rgba(255, 255, 255, 0.96)";
+    context.fillText(note, left + 10, height - 16);
+  }
+};
+
+const buildCandidates = (result, width, height) => {
+  const faces = (result.face || []).filter(face => face?.box && Number(face.score) >= 0.45 && face.box[2] >= 40);
+  return faces.map(face => ({
+    personBox: expandBox(face.box, 2.2, width, height),
+    faceBox: face.box,
+    score: Number(face.score) || 0,
+  })).sort((a, b) => b.score - a.score);
+};
+
+const updateTrackMetrics = (track, candidate, now, width, height) => {
+  track.missed = 0;
+  track.personBox = candidate.personBox;
+  track.faceBox = track.faceBox
+    ? track.faceBox.map((value, index) => value + (candidate.faceBox[index] - value) * 0.45)
+    : candidate.faceBox;
+  track.score = candidate.score;
+  const [rawCenterX, rawCenterY] = boxCenter(track.personBox);
+  const previous = track.history[track.history.length - 1];
+  const elapsed = previous ? Math.max(16, now - previous.t) : 100;
+  const centerX = previous ? previous.centerX + (rawCenterX - previous.centerX) * 0.3 : rawCenterX;
+  const centerY = previous ? previous.centerY + (rawCenterY - previous.centerY) * 0.3 : rawCenterY;
+  const smoothWidth = previous ? previous.width + (track.personBox[2] - previous.width) * 0.25 : track.personBox[2];
+  const speed = previous ? Math.hypot(centerX - previous.centerX, centerY - previous.centerY) / elapsed * 1000 / width * 100 : 0;
+  track.history.push({ t: now, centerX, centerY, width: smoothWidth, speed });
+  if (track.history.length > 16) track.history.shift();
+  const recent = track.history.filter(entry => entry.t >= now - 6000);
+  const maxSpeed = percentile(recent.map(entry => entry.speed), 0.85);
+  const widths = recent.map(entry => entry.width);
+  const medianWidth = median(widths);
+  const drift = medianWidth ? (percentile(widths, 0.9) - percentile(widths, 0.1)) / medianWidth : 1;
+  const faceWidth = track.faceBox[2];
+  const centered = centerX > width * 0.2 && centerX < width * 0.8;
+  const faceInside = track.faceBox[0] >= 6 && track.faceBox[1] >= 6 && track.faceBox[0] + faceWidth <= width - 6 && track.faceBox[1] + track.faceBox[3] <= height - 6;
+  const ready = recent.length >= 8 && maxSpeed <= 12 && drift <= 0.4 && faceWidth >= 100 && centered && faceInside;
+  track.speed = speed;
+  track.maxSpeedRecent = maxSpeed;
+  track.drift = drift;
+  track.stableFrames = ready ? recent.length : 0;
+  track.moving = speed > 36 || maxSpeed > 24 || drift > 0.55;
+  return track;
+};
+
+const trackSubject = (candidates, tracks, now, width, height) => {
+  const active = tracks.filter(track => track.missed < 12);
+  const used = new Set();
+  for (const track of active) {
+    let bestIndex = -1;
+    let bestOverlap = 0;
+    candidates.forEach((candidate, index) => {
+      if (used.has(index)) return;
+      const overlap = boxIoU(candidate.personBox, track.personBox);
+      if (overlap > bestOverlap) { bestOverlap = overlap; bestIndex = index; }
+    });
+    if (bestIndex >= 0 && bestOverlap >= 0.18) {
+      used.add(bestIndex);
+      updateTrackMetrics(track, candidates[bestIndex], now, width, height);
+    } else {
+      track.missed += 1;
+    }
+  }
+  candidates.forEach((candidate, index) => {
+    if (used.has(index)) return;
+    const track = {
+      personBox: candidate.personBox,
+      faceBox: candidate.faceBox,
+      score: candidate.score,
+      history: [],
+      stableFrames: 0,
+      missed: 0,
+      locked: false,
+      readyStreak: 0,
+      fastFrames: 0,
+      maxSpeed: 0,
+      moving: false,
+    };
+    updateTrackMetrics(track, candidate, now, width, height);
+    active.push(track);
+  });
+  const nextTracks = active.filter(track => track.missed < 12 || track.locked).slice(-6);
+  let subject = nextTracks.find(track => track.locked && track.missed < 12);
+  if (subject) {
+    subject.maxSpeed = Math.max(subject.maxSpeed || 0, subject.maxSpeedRecent || 0);
+    subject.fastFrames = (subject.speed || 0) > 30 ? subject.fastFrames + 1 : 0;
+    subject.otherPersons = 0;
+    if (subject.fastFrames >= 5 || subject.maxSpeedRecent > 40 || subject.missed >= 8) {
+      subject.locked = false;
+      subject.readyStreak = 0;
+      subject.history.length = 0;
+      subject.stableFrames = 0;
+      subject = null;
+    }
+  }
+  if (!subject) {
+    const eligible = nextTracks
+      .filter(track => track.missed === 0 && !track.moving && track.stableFrames >= 8)
+      .sort((a, b) => (b.readyStreak - a.readyStreak) || (b.stableFrames - a.stableFrames) || (b.score - a.score));
+    subject = eligible[0] || null;
+    if (subject) {
+      subject.readyStreak += 1;
+      if (subject.readyStreak >= 2) {
+        subject.locked = true;
+        subject.lockedStableFrames = subject.stableFrames;
+        subject.maxSpeed = 0;
+      }
+    }
+  }
+  const otherPersons = nextTracks.filter(track => track !== subject && track.missed === 0).length;
+  if (subject) subject.otherPersons = otherPersons;
+  const message = !subject
+    ? candidates.length ? "Đang phân biệt người đứng yên và người đi qua. Giữ yên để khóa khuôn mặt." : "Đưa khuôn mặt vào khung hình, đứng yên để hệ thống tự tách mặt và khóa đúng người."
+    : subject.locked
+      ? otherPersons > 0 ? "Đã khóa đúng người quét. Người đi qua lại đang bị bỏ qua." : "Đã khóa đúng người quét. Giữ nguyên tư thế và nhìn thẳng vào camera."
+      : otherPersons > 0 ? "Đang khóa người đứng yên. Người đi qua đang bị bỏ qua." : "Đứng yên đúng chỗ, nhìn thẳng vào camera để khóa người quét.";
+  return { tracks: nextTracks, subject, otherPersons, speed: subject?.speed || 0, message };
+};
+
+const cropFaceRegion = (video, faceBox, canvas) => {
+  const [centerX, centerY] = boxCenter(faceBox);
+  const side = Math.min(Math.max(faceBox[2], faceBox[3]) * 1.9, Math.min(video.videoWidth, video.videoHeight));
+  const x = Math.max(0, Math.min(centerX - side / 2, video.videoWidth - side));
+  const y = Math.max(0, Math.min(centerY - side / 2, video.videoHeight - side));
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.drawImage(video, box[0], box[1], box[2], box[3], 0, 0, 32, 32);
-  const pixels = context.getImageData(0, 0, 32, 32).data;
-  let luminance = 0;
-  for (let index = 0; index < pixels.length; index += 4) luminance += 0.2126 * pixels[index] + 0.7152 * pixels[index + 1] + 0.0722 * pixels[index + 2];
-  return luminance / (pixels.length / 4);
+  context.drawImage(video, x, y, side, side, 0, 0, canvas.width, canvas.height);
+  return context;
 };
 
-export const captureFaceSamples = async (video, onProgress = () => {}, isActive = () => true, onStage = () => {}) => {
+const buildCaptureMetadata = (state) => {
+  const stats = state.stats;
+  return {
+    model: FACE_CAPTURE_MODEL,
+    face_only: true,
+    samples: state.samples.length || 1,
+    quality: {
+      min_score: stats.minScore,
+      min_real: stats.minReal,
+      min_live: stats.minLive,
+      min_sharpness: stats.minSharpness,
+      brightness_min: stats.brightnessMin,
+      brightness_max: stats.brightnessMax,
+      min_face_width: stats.minFaceWidth,
+    },
+    liveness: {
+      blink_verified: state.blinks > 0,
+      blink_count: state.blinks,
+      min_real: stats.minReal,
+      min_live: stats.minLive,
+    },
+    subject: {
+      locked: true,
+      stable_frames: state.subject?.lockedStableFrames || state.subject?.stableFrames || 0,
+      max_speed: Math.round((state.subject?.maxSpeed || 0) * 100) / 100,
+      rejected_moving_persons: state.rejectedOthers,
+    },
+  };
+};
+
+const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}, isActive = () => true, probeOnly = false, timeoutMs = 75000 }) => {
   await ensureFaceModels();
-  const frame = video.parentElement;
-  frame.style.position = "relative";
-  const overlay = document.createElement("div");
-  overlay.className = "absolute inset-x-2 top-1/2 z-20 rounded-lg bg-black/80 px-3 py-3 text-center text-sm font-semibold text-white pointer-events-none";
-  const instruction = document.createElement("p");
-  const progress = document.createElement("progress");
-  const faceOutline = document.createElement("div");
-  faceOutline.className = "absolute z-10 border-2 border-emerald-400 rounded-lg pointer-events-none hidden";
-  faceOutline.style.transform = "scaleX(-1)";
-  progress.max = 5; progress.value = 0; progress.className = "mt-2 w-full h-2";
-  overlay.append(instruction, progress); frame.append(faceOutline, overlay);
-  const stageMessage = text => { instruction.textContent = text; onStage(text); };
+  const host = video.parentElement;
+  video.style.transform = "scaleX(-1)";
+  let guide = host?.querySelector("canvas[data-face-guide], #faceEnrollOverlay");
+  if (!guide && host) {
+    guide = document.createElement("canvas");
+    guide.dataset.faceGuide = "1";
+    guide.className = "absolute inset-0 w-full h-full pointer-events-none z-20";
+    host.appendChild(guide);
+  }
+  const faceCanvas = document.createElement("canvas");
+  faceCanvas.width = 320;
+  faceCanvas.height = 320;
+  const state = {
+    subject: null,
+    tracks: [],
+    samples: [],
+    blinks: 0,
+    rejectedOthers: 0,
+    lastCapture: 0,
+    blinkState: {},
+    stats: { minScore: null, minReal: null, minLive: null, minSharpness: null, brightnessMin: null, brightnessMax: null, minFaceWidth: null },
+  };
+  const updateMin = (key, value) => {
+    state.stats[key] = state.stats[key] === null ? value : Math.min(state.stats[key], value);
+  };
+  const deadline = performance.now() + timeoutMs;
   try {
-  const samples = [];
-  let stage = "ALIGN_FACE", stable = 0, lastCapture = 0, previousBox = null;
-  const blinkState = {};
-  const deadline = performance.now() + 60000;
-  stageMessage("Căn chỉnh khuôn mặt: nhìn thẳng, đủ sáng và giữ yên.");
-  while (performance.now() < deadline && samples.length < 5) {
-    if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
-    const result = await human.detect(video);
-    if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
-    const face = result.face?.length === 1 ? result.face[0] : null;
-    const angle = face?.rotation?.angle;
-    const center = angle && Math.abs(angle.yaw) < 0.25 && Math.abs(angle.pitch) < 0.25 && Math.abs(angle.roll) < 0.25;
-    if (face?.box && video.videoWidth && video.videoHeight) {
-      const [x, y, width, height] = face.box;
-      const bounds = video.getBoundingClientRect();
-      const scale = Math.max(bounds.width / video.videoWidth, bounds.height / video.videoHeight);
-      const left = (bounds.width - video.videoWidth * scale) / 2 + x * scale;
-      const top = (bounds.height - video.videoHeight * scale) / 2 + y * scale;
-      Object.assign(faceOutline.style, { display: "block", left: `${left}px`, top: `${top}px`, width: `${width * scale}px`, height: `${height * scale}px` });
-    } else faceOutline.style.display = "none";
-    const box = face?.box;
-    const inFrame = box && box[0] >= 0 && box[1] >= 0 && box[0] + box[2] <= video.videoWidth && box[1] + box[3] <= video.videoHeight;
-    const brightness = face && inFrame ? faceBrightness(video, box) : 0;
-    const quality = face && center && inFrame && face.box[2] >= 130 && face.score >= 0.80 && face.real >= 0.62 && face.live >= 0.62 && brightness >= 45;
-    if (!quality) {
-      stage = "ALIGN_FACE"; stable = 0; samples.length = 0; previousBox = null;
-      blinkState.open = false; blinkState.closedAt = null;
-      progress.value = 0;
-      stageMessage(result.face?.length > 1 ? "Chỉ một người đứng trước camera." : !face ? "Đưa khuôn mặt vào giữa khung hình." : !inFrame ? "Đưa toàn bộ khuôn mặt vào trong khung hình." : brightness < 45 ? "Khuôn mặt thiếu sáng. Hãy hướng về phía nguồn sáng hoặc tăng ánh sáng." : face.box[2] < 130 ? "Đến gần camera hơn để khuôn mặt rõ nét." : "Nhìn thẳng vào camera và giữ khuôn mặt ổn định.");
-    } else if (stage === "ALIGN_FACE") {
-      const moved = previousBox && Math.hypot(face.box[0] - previousBox[0], face.box[1] - previousBox[1]) > face.box[2] * 0.12;
-      stable = moved ? 1 : stable + 1; previousBox = [...face.box];
-      if (stable >= 4) { stage = "WAIT_FOR_BLINK"; stageMessage("👁️ HÃY CHỚP MẮT 1 LẦN ĐỂ BẮT ĐẦU QUÉT KHUÔN MẶT"); }
-    } else if (stage === "WAIT_FOR_BLINK") {
-      if (detectEyeBlink(face, result.gesture, blinkState)) { stage = "CAPTURE_5_SAMPLES"; stageMessage("✅ Đã xác thực chớp mắt! Đang thu thập 5 mẫu sinh trắc học..."); }
-    } else if (!center || !inFrame || brightness < 45 || face.score < 0.82 || face.real < 0.62 || face.live < 0.62) {
-      stage = "ALIGN_FACE"; stable = 0; samples.length = 0; previousBox = null;
-      blinkState.open = false; blinkState.closedAt = null;
-      progress.value = 0;
-      stageMessage("Mất khuôn mặt rõ trong lúc quét. Nhìn thẳng, giữ yên để quét lại từ đầu.");
-    } else if (eyeRatio(face) > 0.22 && face.embedding?.length && performance.now() - lastCapture >= 160) {
+    while (performance.now() < deadline) {
+      if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
+      const tracking = await human.detect(video, TRACK_CONFIG);
+      if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
+      const width = video.videoWidth || 640;
+      const height = video.videoHeight || 480;
+      const candidates = buildCandidates(tracking, width, height);
+      const tracked = trackSubject(candidates, state.tracks, performance.now(), width, height);
+      state.tracks = tracked.tracks;
+      state.subject = tracked.subject;
+      if (tracked.otherPersons > 0) state.rejectedOthers += 1;
+      drawFaceGuides(guide, video, state.subject, tracked.message);
+      if (!state.subject?.locked) {
+        onStage(tracked.message);
+        await new Promise(resolve => setTimeout(resolve, 60));
+        continue;
+      }
+      const context = cropFaceRegion(video, state.subject.faceBox, faceCanvas);
+      const recognition = await human.detect(faceCanvas, RECOGNIZE_CONFIG);
+      if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
+      const face = recognition.face?.length === 1 ? recognition.face[0] : null;
+      const metrics = cropMetrics(context, faceCanvas.width);
+      const angle = face?.rotation?.angle;
+      const facing = angle && Math.abs(angle.yaw) <= 0.22 && Math.abs(angle.pitch) <= 0.22 && Math.abs(angle.roll) <= 0.22;
+      const box = face?.box;
+      const boxValid = box && box[0] >= 10 && box[1] >= 10 && box[0] + box[2] <= 310 && box[1] + box[3] <= 310 && box[2] >= 130;
+      if (face && Number(face.score) >= 0.7 && detectEyeBlink(face, recognition.gesture, state.blinkState)) state.blinks += 1;
+      const quality = face && facing && eyeRatio(face) > 0.18 && boxValid && Number(face.score) >= 0.85 && Number(face.real) >= 0.7 && Number(face.live) >= 0.7 && metrics.brightness >= 50 && metrics.brightness <= 220 && metrics.sharpness >= 30 && (face.embedding?.length || 0) >= 512;
+      if (!quality) {
+        onStage(!face ? "Đang lấy lại nét khuôn mặt đã khóa." : !facing ? "Hướng mặt gần thẳng về camera." : metrics.sharpness < 30 ? "Khung hình hơi nhòe, đang chờ nét lại." : metrics.brightness < 50 ? "Khuôn mặt thiếu sáng. Hướng về phía nguồn sáng." : metrics.brightness > 220 ? "Ánh sáng quá chói. Giảm độ sáng rồi quét lại." : "Đang chờ khung hình khuôn mặt đạt chất lượng.");
+        await new Promise(resolve => setTimeout(resolve, 60));
+        continue;
+      }
+      updateMin("minScore", Number(face.score));
+      updateMin("minReal", Number(face.real));
+      updateMin("minLive", Number(face.live));
+      updateMin("minSharpness", metrics.sharpness);
+      updateMin("brightnessMin", metrics.brightness);
+      state.stats.brightnessMax = Math.max(state.stats.brightnessMax ?? metrics.brightness, metrics.brightness);
+      updateMin("minFaceWidth", box[2]);
       const values = Array.from(face.embedding);
-      if (samples.length && vectorSimilarity(values, samples[0]) < 0.83) throw new Error("Mẫu khuôn mặt không ổn định. Vui lòng giữ thẳng mặt và quét lại!");
-      samples.push(values); lastCapture = performance.now(); progress.value = samples.length;
-      instruction.textContent = `Đang quét mẫu: ${samples.length}/5 (${samples.length * 20}%)`;
-      onProgress(samples.length, 5);
+      if (probeOnly) return { embedding: values, capture: buildCaptureMetadata(state) };
+      if (!state.blinks) {
+        onStage("Đã khóa đúng người quét. HÃY CHỚP MẮT 1 LẦN ĐỂ BẮT ĐẦU QUÉT");
+        await new Promise(resolve => setTimeout(resolve, 60));
+        continue;
+      }
+      if (performance.now() - state.lastCapture < 120) {
+        await new Promise(resolve => setTimeout(resolve, 35));
+        continue;
+      }
+      if (state.samples.length && vectorSimilarity(values, state.samples[0]) < 0.82) {
+        onStage("Khung hình chưa khớp ổn định với các mẫu trước, đang thử lại.");
+        await new Promise(resolve => setTimeout(resolve, 60));
+        continue;
+      }
+      state.samples.push(values);
+      state.lastCapture = performance.now();
+      onProgress(state.samples.length, FACE_SAMPLE_COUNT);
+      onStage(`Đang lấy mẫu khuôn mặt: ${state.samples.length}/${FACE_SAMPLE_COUNT}. Người đi qua lại đã được bỏ qua.`);
+      if (state.samples.length === FACE_SAMPLE_COUNT)
+        return { embeddings: state.samples, blink_verified: true, capture: buildCaptureMetadata(state) };
+      await new Promise(resolve => setTimeout(resolve, 35));
     }
-    if (samples.length < 5) await new Promise(resolve => setTimeout(resolve, 60));
+    throw new Error(probeOnly
+      ? "Không khóa được đúng người quét. Đứng yên trước camera rồi thử lại."
+      : "Không lấy đủ mẫu khuôn mặt. Đứng yên, nhìn thẳng, đủ sáng rồi quét lại.");
+  } finally {
+    guide?.getContext("2d").clearRect(0, 0, guide.width, guide.height);
   }
-  if (samples.length < 5) throw new Error("Chưa nhận diện rõ khuôn mặt. Đứng gần hơn, nhìn thẳng và tăng ánh sáng rồi quét lại.");
-  return { embeddings: samples, blink_verified: true };
-  } finally { overlay.remove(); faceOutline.remove(); }
 };
 
-const captureFaceProbe = async (video, isActive = () => true, onStage = () => {}) => {
-  await ensureFaceModels();
-  const deadline = performance.now() + 12000;
-  onStage("Nhìn thẳng vào camera để kiểm tra khuôn mặt đã được kích hoạt.");
-  while (performance.now() < deadline) {
-    if (!isActive()) throw new Error("Đã dừng kiểm tra khuôn mặt.");
-    const result = await human.detect(video);
-    if (!isActive()) throw new Error("Đã dừng kiểm tra khuôn mặt.");
-    const face = result.face?.length === 1 ? result.face[0] : null;
-    const box = face?.box;
-    const angle = face?.rotation?.angle;
-    const center = angle && Math.abs(angle.yaw) < 0.25 && Math.abs(angle.pitch) < 0.25 && Math.abs(angle.roll) < 0.25;
-    const inFrame = box && box[0] >= 0 && box[1] >= 0 && box[0] + box[2] <= video.videoWidth && box[1] + box[3] <= video.videoHeight;
-    const brightness = face && inFrame ? faceBrightness(video, box) : 0;
-    if (face && center && inFrame && box[2] >= 130 && face.score >= 0.80 && face.real >= 0.62 && face.live >= 0.62 && brightness >= 45 && face.embedding?.length) {
-      onStage("Đã thấy khuôn mặt rõ. Đang kiểm tra tài khoản đã kích hoạt.");
-      return Array.from(face.embedding);
-    }
-    onStage(result.face?.length > 1 ? "Chỉ một người đứng trước camera." : !face ? "Đưa khuôn mặt vào giữa khung hình." : !inFrame ? "Đưa toàn bộ khuôn mặt vào trong khung hình." : brightness < 45 ? "Khuôn mặt thiếu sáng. Tăng ánh sáng rồi thử lại." : "Nhìn thẳng vào camera và giữ yên.");
-    await new Promise(resolve => setTimeout(resolve, 80));
-  }
-  throw new Error("Không kiểm tra được khuôn mặt. Hãy nhìn thẳng, đủ sáng và thử lại.");
-};
+export const captureFaceSamples = async (video, onProgress = () => {}, isActive = () => true, onStage = () => {}) =>
+  runFaceCapture(video, { onProgress, onStage, isActive, probeOnly: false, timeoutMs: 75000 });
+
+const captureFaceProbe = async (video, isActive = () => true, onStage = () => {}) =>
+  runFaceCapture(video, { onStage, isActive, probeOnly: true, timeoutMs: 25000 });
+
 
 const showFaceEnrollConflict = (error, retryLabel = "Quét lại khuôn mặt") => {
   const conflict = error.response?.data?.conflict_employee;
@@ -689,13 +964,13 @@ const runFaceEnrollScan = async () => {
   const session = ++faceEnrollSession;
   try {
     if (!faceEnrollStream?.active) throw new Error("Camera chưa sẵn sàng. Vui lòng cho phép camera rồi mở lại cửa sổ.");
-    setFaceEnrollStatus("Đang kiểm tra khuôn mặt đã đăng ký", "Chỉ một người trước camera. Đang xác nhận khuôn mặt chưa được dùng cho tài khoản khác.");
-    const embedding = await captureFaceProbe(video, () => session === faceEnrollSession && Boolean(faceEnrollStream?.active), text => setFaceEnrollStatus("Kiểm tra FaceID đã kích hoạt", text));
+    setFaceEnrollStatus("Đang khóa khuôn mặt", "Hệ thống tự tách khuôn mặt để quét, kể cả khi người quét đứng cả thân trong khung hình. Người đi qua lại sẽ bị bỏ qua.");
+    const probe = await captureFaceProbe(video, () => session === faceEnrollSession && Boolean(faceEnrollStream?.active), text => setFaceEnrollStatus("Kiểm tra FaceID đã kích hoạt", text));
     if (session !== faceEnrollSession || !document.getElementById("modal-faceid-enroll")?.isConnected) return;
-    await api.post("/attendance/check-face-owner", { embedding });
+    await api.post("/attendance/check-face-owner", { embedding: probe.embedding, capture: probe.capture });
     if (session !== faceEnrollSession || !document.getElementById("modal-faceid-enroll")?.isConnected) return;
     if (startBtn) startBtn.querySelector("span:last-child").textContent = "Bắt đầu quét";
-    setFaceEnrollStatus("Đang lấy 5 mẫu khuôn mặt...", "Chỉ một người trong khung hình, nhìn thẳng và giữ yên.");
+    setFaceEnrollStatus("Đang lấy 5 mẫu khuôn mặt...", "Giữ nguyên người đã khóa, nhìn thẳng và chớp mắt khi được yêu cầu.");
     faceEnrollDescriptor = await captureFaceSamples(video, (count, total) => setFaceEnrollStatus(`Đang quét mẫu: ${count}/${total} (${Math.round(count / total * 100)}%)`), () => session === faceEnrollSession && Boolean(faceEnrollStream?.active), text => setFaceEnrollStatus(text));
     if (!activeSession(session)) return;
     setFaceEnrollStatus("Đã lấy đủ 5 mẫu khuôn mặt", "Bấm Lưu mẫu khuôn mặt để cập nhật FaceID. Hệ thống sẽ kiểm tra trùng với nhân viên khác.");

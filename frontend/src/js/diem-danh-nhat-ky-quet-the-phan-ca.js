@@ -19,7 +19,7 @@ export const initFaceKiosk = () => {
       <div class="max-w-5xl mx-auto px-space-lg py-space-md">
         <div class="mb-space-md">
           <h1 class="font-headline-lg text-headline-lg text-on-surface">Điểm danh bằng FaceID</h1>
-          <p class="text-on-surface-variant text-body-sm mt-1">Không cần đăng nhập. Hệ thống nhận diện khuôn mặt đã đăng ký để ghi nhận đúng người.</p>
+          <p class="text-on-surface-variant text-body-sm mt-1">Không cần đăng nhập. Hệ thống tự tách khuôn mặt để quét, kể cả khi cả thân nằm trong khung hình; người đi qua lại bị bỏ qua.</p>
         </div>
         <div class="grid lg:grid-cols-[minmax(0,720px)_minmax(300px,1fr)] gap-space-lg items-start">
           <section class="rounded-lg border border-surface-variant bg-surface-container-lowest shadow-sm overflow-hidden">
@@ -30,7 +30,7 @@ export const initFaceKiosk = () => {
             <div class="relative aspect-[4/3] bg-surface-container-high flex items-center justify-center">
               <video id="kioskVideo" autoplay muted playsinline class="w-full h-full object-cover" style="transform:scaleX(-1)"></video>
               <div class="absolute pointer-events-none inset-[16%] border-2 border-primary/70 rounded-[32%]"></div>
-              <span id="kioskCameraHint" class="absolute bottom-space-sm left-1/2 -translate-x-1/2 max-w-[90%] rounded-lg bg-inverse-surface text-inverse-on-surface px-space-sm py-1 text-body-sm text-center">Đứng một mình trước camera, nhìn thẳng và đủ ánh sáng</span>
+              <span id="kioskCameraHint" class="absolute bottom-space-sm left-1/2 -translate-x-1/2 max-w-[90%] rounded-lg bg-inverse-surface text-inverse-on-surface px-space-sm py-1 text-body-sm text-center">Đứng yên trước camera để hệ thống khóa đúng người quét</span>
             </div>
             <div class="p-space-md flex flex-wrap gap-space-sm">
               <button id="kioskCamera" class="h-10 px-space-md rounded-lg bg-primary text-on-primary font-label-lg text-label-lg hover:bg-primary-container">Bật camera</button>
@@ -41,8 +41,10 @@ export const initFaceKiosk = () => {
             <div class="rounded-lg border border-surface-variant bg-surface-container-lowest shadow-sm p-space-md">
               <h2 class="font-headline-md text-headline-md text-on-surface">Chọn thao tác điểm danh</h2>
               <p class="text-on-surface-variant text-body-sm mt-1 leading-6">Hệ thống nhận diện khuôn mặt đã đăng ký để ghi nhận đúng người.</p>
-              <dl class="mt-space-sm space-y-1 text-body-sm">
-                <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Chất lượng khuôn mặt</dt><dd id="kioskQuality" class="text-right">Chưa kiểm tra</dd></div>
+                <dl class="mt-space-sm space-y-1 text-body-sm">
+                  <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Người quét</dt><dd id="kioskSubject" class="text-right">Chưa khóa</dd></div>
+                  <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Người đi qua (bỏ qua)</dt><dd id="kioskPasserby" class="text-right">0</dd></div>
+                  <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Chất lượng khuôn mặt</dt><dd id="kioskQuality" class="text-right">Chưa kiểm tra</dd></div>
                 <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Xác minh chớp mắt</dt><dd id="kioskBlink" class="text-right">Chưa thực hiện</dd></div>
                 <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Nhận diện</dt><dd id="kioskRecognition" class="text-right">Chưa quét</dd></div>
                 <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Trạng thái chấm công</dt><dd id="kioskAttendance" class="text-right">Chưa ghi nhận</dd></div>
@@ -131,11 +133,13 @@ export const initFaceKiosk = () => {
       await ensureFaceModels();
       if (!active() || current !== session) return;
       el("CameraLabel").textContent = "Camera sẵn sàng";
+      el("Subject").textContent = "Chưa khóa";
+      el("Passerby").textContent = "0";
       el("Quality").textContent = "Đang chờ khuôn mặt";
       el("Blink").textContent = "Chưa thực hiện";
       status(
         "Sẵn sàng điểm danh",
-        "Chọn Vào ca hoặc Tan ca. Chỉ một người đứng trước camera.",
+        "Chọn Vào ca hoặc Tan ca. Đứng yên để khóa đúng người quét.",
       );
     } catch (error) {
       if (active() && current === session) {
@@ -163,15 +167,18 @@ export const initFaceKiosk = () => {
     try {
       status(
         "Đang quét khuôn mặt",
-        "Giữ khuôn mặt trong khung hình. Hệ thống đang lấy 5 mẫu để đối chiếu.",
+        "Đứng yên để hệ thống tự tách mặt và khóa. Chỉ khuôn mặt được phân tích.",
       );
+      el("Subject").textContent = "Đang xác định";
+      el("Passerby").textContent = "0";
       el("Quality").textContent = "Đang kiểm tra";
       el("Blink").textContent = "Chờ chớp mắt hợp lệ";
       el("Recognition").textContent = "Đang chờ xác minh";
-      el("Attendance").textContent = "Chưa ghi nhận";
+       el("Attendance").textContent = "Đang xác thực...";
       const capture = await captureFaceSamples(
         video,
         (count, total) => {
+          el("Subject").textContent = "Đã khóa • đang quét";
           el("Quality").textContent = `Đạt • ${count}/${total} mẫu`;
           el("Blink").textContent = "Đã xác minh";
           status(
@@ -182,13 +189,19 @@ export const initFaceKiosk = () => {
         () => active() && current === session && Boolean(stream?.active),
         (text) => {
           el("Quality").textContent = text;
-          if (text.includes("CHỚP MẮT"))
-            el("Blink").textContent = "Đang chờ thao tác";
-          if (text.includes("Đã xác thực chớp mắt"))
-            el("Blink").textContent = "Đã xác minh";
+          if (text.includes("Đã khóa")) el("Subject").textContent = "Đã khóa • giữ yên";
+          if (text.includes("đi qua lại")) {
+            el("Subject").textContent = "Đã khóa • bỏ qua người đi qua";
+            el("Passerby").textContent = String(
+              Number(el("Passerby").textContent || 0) + 1,
+            );
+          }
+          if (text.includes("CHỚP MẮT")) el("Blink").textContent = "Đang chờ thao tác";
           status("Xác thực khuôn mặt", text);
         },
       );
+      el("Subject").textContent = "Đã khóa • hoàn tất";
+      el("Passerby").textContent = String(capture.capture?.subject?.rejected_moving_persons || 0);
       if (!active() || current !== session) return;
       status(
         "Đang xác thực",
@@ -205,20 +218,23 @@ export const initFaceKiosk = () => {
         },
       );
       if (!active() || current !== session) return;
-      const { employee, log, account } = response.data.data;
-      el("Recognition").textContent = `Đã xác nhận • ${employee.full_name}`;
-      el("Attendance").textContent = "Đã ghi nhận thành công";
-      status(
-        response.data.message,
-        action === "check-in"
-          ? "Đã ghi nhận giờ vào ca. Chúc bạn một ngày làm việc hiệu quả."
-          : "Đã ghi nhận giờ tan ca.",
-      );
+       const { employee, log, account, already_recorded: alreadyRecorded, attendance_state: attendanceState } = response.data.data;
+       el("Recognition").textContent = `Đã xác nhận • ${employee.full_name}`;
+       const completed = attendanceState === "COMPLETED" || Boolean(log.check_out);
+       el("Attendance").textContent = alreadyRecorded
+         ? completed ? "Đã hoàn thành hôm nay" : `Đã vào ca lúc ${String(log.check_in || "—").slice(0, 5)}`
+         : "Đã ghi nhận thành công";
+       status(
+         alreadyRecorded ? (completed ? "Đã hoàn thành chấm công hôm nay" : "Đã vào ca hôm nay") : response.data.message,
+         alreadyRecorded ? response.data.message : (action === "check-in"
+           ? "Đã ghi nhận giờ vào ca. Chúc bạn một ngày làm việc hiệu quả."
+           : "Đã ghi nhận giờ tan ca."),
+       );
       for (const text of [
         `${employee.employee_code} • ${employee.full_name}`,
         `Tài khoản: ${account?.username || employee.username || "—"}`,
         employee.department_name || "",
-        `Giờ vào: ${log.check_in || "—"} • Giờ ra: ${log.check_out || "—"}`,
+         `Giờ vào: ${String(log.check_in || "—").slice(0, 5)} • Giờ ra: ${String(log.check_out || "—").slice(0, 5)}`,
         `Công: ${Number(log.work_unit).toFixed(2)} • Đi muộn: ${Number(log.late_minutes || 0)} phút`,
       ]) {
         const line = document.createElement("p");
@@ -230,15 +246,23 @@ export const initFaceKiosk = () => {
         el("Recognition").textContent = "Không nhận diện được";
         el("Attendance").textContent = "Không ghi nhận";
       }
-      if (active() && current === session)
-        status(
-          "Chưa ghi nhận điểm danh",
-          error.response?.data?.message ||
-            (error.code === "ECONNABORTED"
-              ? "Máy chủ phản hồi chậm. Kiểm tra lại kết quả trước khi quét lại."
-              : error.message || "Không thể kết nối máy chủ."),
-          true,
-        );
+       if (active() && current === session) {
+         const message = error.response?.data?.message ||
+           (error.code === "ECONNABORTED"
+             ? "Máy chủ phản hồi chậm. Kiểm tra lại kết quả trước khi quét lại."
+             : error.message || "Không thể kết nối máy chủ.");
+         if (/đã vào ca hôm nay/i.test(message)) {
+           el("Recognition").textContent = "Đã xác nhận khuôn mặt";
+           el("Attendance").textContent = "Đã vào ca hôm nay";
+           status("Đã vào ca hôm nay", message);
+         } else if (/hoàn thành chấm công hôm nay/i.test(message)) {
+           el("Recognition").textContent = "Đã xác nhận khuôn mặt";
+           el("Attendance").textContent = "Đã hoàn thành hôm nay";
+           status("Đã hoàn thành chấm công hôm nay", message);
+         } else {
+           status("Chưa ghi nhận điểm danh", message, true);
+         }
+       }
     } finally {
       busy = false;
       controls();

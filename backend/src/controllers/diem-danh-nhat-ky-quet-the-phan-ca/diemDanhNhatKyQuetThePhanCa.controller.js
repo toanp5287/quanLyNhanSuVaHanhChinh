@@ -6,6 +6,7 @@ import {
   createShiftAssignment,
   createWorkShift,
   deleteShiftAssignment,
+  getAttendanceDetail,
   getTodayStatus,
   listAttendanceByDate,
   listExplanations,
@@ -13,8 +14,10 @@ import {
   listWorkShifts,
   quickMarkAll,
   quickMarkAttendance,
+  recalculateDateAttendance,
   rejectExplanation,
   submitExplanation,
+  updateAttendanceManual,
   updateShiftAssignment,
   updateWorkShift,
   validateShiftPayload,
@@ -147,6 +150,33 @@ export const attendanceList = async (req, res) => {
   }
 };
 
+export const attendanceDetail = async (req, res) => {
+  try {
+    const data = await getAttendanceDetail(
+      Number(req.query?.employee_id),
+      req.query?.date,
+      req.user,
+    );
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return respondError(res, error, "Không thể tải chi tiết chấm công");
+  }
+};
+
+export const attendanceManualUpdate = async (req, res) => {
+  try {
+    const data = await updateAttendanceManual(
+      { ...req.body, ip: req.ip },
+      req.user,
+    );
+    return res
+      .status(200)
+      .json({ success: true, message: "Đã cập nhật chấm công", data });
+  } catch (error) {
+    return respondError(res, error, "Không thể cập nhật chấm công");
+  }
+};
+
 export const attendanceQuickMark = async (req, res) => {
   try {
     const { employee_id, date, type } = req.body || {};
@@ -169,6 +199,24 @@ export const attendanceQuickMark = async (req, res) => {
       .json({ success: true, message: "Đã cập nhật chấm công", data: result });
   } catch (error) {
     return respondError(res, error, "Không thể cập nhật chấm công");
+  }
+};
+
+export const attendanceRecalculateDate = async (req, res) => {
+  try {
+    const { date, department_id } = req.body || {};
+    const data = await recalculateDateAttendance(
+      date,
+      req.user,
+      department_id ? Number(department_id) : null,
+    );
+    return res.status(200).json({
+      success: true,
+      message: `Đã tính lại công ngày ${data.date} cho ${data.count} nhân viên${data.skipped ? `, bỏ qua ${data.skipped} nhân viên tháng đã khóa` : ""}.`,
+      data,
+    });
+  } catch (error) {
+    return respondError(res, error, "Không thể tính lại công theo ngày");
   }
 };
 
