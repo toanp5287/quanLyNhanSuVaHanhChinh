@@ -71,18 +71,31 @@ export const requireAnyPermission = (permissionCodes = []) => {
 
 const normalizeIp = (ip) => {
   if (!ip) return "";
-  return String(ip).replace(/^::ffff:/, "").trim();
+  return String(ip)
+    .replace(/^::ffff:/, "")
+    .trim();
 };
 
 export const requireAllowedAttendanceDevice = (req, res, next) => {
-  const configured = String(process.env.ALLOWED_DEVICE_ID || "").trim().toLowerCase();
-  const supplied = String(req.headers["x-device-id"] || req.body?.device_id || "").trim().toLowerCase();
+  const configured = String(process.env.ALLOWED_DEVICE_ID || "")
+    .trim()
+    .toLowerCase();
+  const supplied = String(
+    req.headers["x-device-id"] || req.body?.device_id || "",
+  )
+    .trim()
+    .toLowerCase();
   if (configured && supplied === configured) return next();
-  return res.status(403).json({ success: false, message: "Chỉ máy chấm công đã đăng ký mới được vào ca hoặc tan ca." });
+  return res.status(403).json({
+    success: false,
+    message: "Chỉ máy chấm công đã đăng ký mới được vào ca hoặc tan ca.",
+  });
 };
 
 export const requireAllowedAttendanceIp = (req, res, next) => {
-  if (String(process.env.STRICT_ATTENDANCE_LOCK || "").toLowerCase() !== "true") {
+  if (
+    String(process.env.STRICT_ATTENDANCE_LOCK || "").toLowerCase() !== "true"
+  ) {
     return next();
   }
 

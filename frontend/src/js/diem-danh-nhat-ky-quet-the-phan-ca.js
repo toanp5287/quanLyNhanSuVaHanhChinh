@@ -64,15 +64,22 @@ export const initFaceKiosk = () => {
     </main>`;
   const root = document.getElementById("faceKiosk");
   const video = document.getElementById("kioskVideo");
-  const el = id => document.getElementById(`kiosk${id}`);
-  let stream = null, busy = false, starting = false, session = 0, resultTimer;
-  const deviceId = localStorage.getItem("hrm_kiosk_device_id") || crypto.randomUUID();
+  const el = (id) => document.getElementById(`kiosk${id}`);
+  let stream = null,
+    busy = false,
+    starting = false,
+    session = 0,
+    resultTimer;
+  const deviceId =
+    localStorage.getItem("hrm_kiosk_device_id") || crypto.randomUUID();
   localStorage.setItem("hrm_kiosk_device_id", deviceId);
   const active = () => root.isConnected;
   const status = (title, text, error = false) => {
     if (!active()) return;
-    el("ResultTitle").textContent = title; el("ResultText").textContent = text;
-    el("ResultTitle").className = `font-bold text-lg ${error ? "text-error" : "text-primary"}`;
+    el("ResultTitle").textContent = title;
+    el("ResultText").textContent = text;
+    el("ResultTitle").className =
+      `font-bold text-lg ${error ? "text-error" : "text-primary"}`;
     el("CameraHint").textContent = text;
   };
   const controls = () => {
@@ -83,60 +90,195 @@ export const initFaceKiosk = () => {
   };
   const stop = () => {
     session++;
-    stream?.getTracks().forEach(track => track.stop()); stream = null; video.srcObject = null;
-    if (active()) { el("CameraLabel").textContent = "Camera đã tắt"; controls(); }
+    stream?.getTracks().forEach((track) => track.stop());
+    stream = null;
+    video.srcObject = null;
+    if (active()) {
+      el("CameraLabel").textContent = "Camera đã tắt";
+      controls();
+    }
   };
   const start = async () => {
     if (busy || starting) return;
-    stop(); starting = true; controls(); const current = session;
+    stop();
+    starting = true;
+    controls();
+    const current = session;
     try {
-      status("Đang chuẩn bị", "Đang mở camera và tải mô hình nhận diện khuôn mặt...");
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Trình duyệt không hỗ trợ camera. Mở bằng localhost hoặc HTTPS và kiểm tra webcam.");
-      const opened = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
-      if (!active() || current !== session) { opened.getTracks().forEach(track => track.stop()); return; }
-      stream = opened; video.srcObject = stream; await video.play();
+      status(
+        "Đang chuẩn bị",
+        "Đang mở camera và tải mô hình nhận diện khuôn mặt...",
+      );
+      if (!navigator.mediaDevices?.getUserMedia)
+        throw new Error(
+          "Trình duyệt không hỗ trợ camera. Mở bằng localhost hoặc HTTPS và kiểm tra webcam.",
+        );
+      const opened = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+        },
+        audio: false,
+      });
+      if (!active() || current !== session) {
+        opened.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      stream = opened;
+      video.srcObject = stream;
+      await video.play();
       await ensureFaceModels();
       if (!active() || current !== session) return;
       el("CameraLabel").textContent = "Camera sẵn sàng";
-      el("Quality").textContent = "Đang chờ khuôn mặt"; el("Blink").textContent = "Chưa thực hiện";
-      status("Sẵn sàng điểm danh", "Chọn Vào ca hoặc Tan ca. Chỉ một người đứng trước camera.");
-    } catch (error) { if (active() && current === session) { stop(); status("Không thể bật nhận diện", error.name === "NotAllowedError" ? "Camera bị chặn. Cho phép camera trong trình duyệt rồi bấm Bật camera." : error.message, true); } }
-    finally { starting = false; controls(); }
-  };
-  const scan = async action => {
-    if (busy || starting || !stream?.active) return;
-    busy = true; controls(); clearTimeout(resultTimer); el("Identity").replaceChildren(); const current = session;
-    try {
-      status("Đang quét khuôn mặt", "Giữ khuôn mặt trong khung hình. Hệ thống đang lấy 5 mẫu để đối chiếu.");
-      el("Quality").textContent = "Đang kiểm tra"; el("Blink").textContent = "Chờ chớp mắt hợp lệ";
-      el("Recognition").textContent = "Đang chờ xác minh"; el("Attendance").textContent = "Chưa ghi nhận";
-      const capture = await captureFaceSamples(video, (count, total) => { el("Quality").textContent = `Đạt • ${count}/${total} mẫu`; el("Blink").textContent = "Đã xác minh"; status("Đang quét khuôn mặt", `Đang quét mẫu: ${count}/${total} (${Math.round(count / total * 100)}%)`); }, () => active() && current === session && Boolean(stream?.active), text => { el("Quality").textContent = text; if (text.includes("CHỚP MẮT")) el("Blink").textContent = "Đang chờ thao tác"; if (text.includes("Đã xác thực chớp mắt")) el("Blink").textContent = "Đã xác minh"; status("Xác thực khuôn mặt", text); });
-      if (!active() || current !== session) return;
-      status("Đang xác thực", "Đang đối chiếu khuôn mặt và ghi nhận giờ trên máy chủ...");
-      el("Recognition").textContent = "Đang đối chiếu hồ sơ";
-      const response = await api.post(`/api/attendance/kiosk/${action}`, capture, { timeout: 30000, headers: { Authorization: undefined, "X-Device-Id": deviceId } });
-      if (!active() || current !== session) return;
-      const { employee, log } = response.data.data;
-      el("Recognition").textContent = `Đã xác nhận • ${employee.full_name}`; el("Attendance").textContent = "Đã ghi nhận thành công";
-      status(response.data.message, action === "check-in" ? "Đã ghi nhận giờ vào ca. Chúc bạn một ngày làm việc hiệu quả." : "Đã ghi nhận giờ tan ca.");
-      for (const text of [`${employee.employee_code} • ${employee.full_name}`, employee.department_name || "", `Giờ vào: ${log.check_in || "—"} • Giờ ra: ${log.check_out || "—"}`, `Công: ${Number(log.work_unit).toFixed(2)} • Đi muộn: ${Number(log.late_minutes || 0)} phút`]) {
-        const line = document.createElement("p"); line.textContent = text; el("Identity").appendChild(line);
-      }
+      el("Quality").textContent = "Đang chờ khuôn mặt";
+      el("Blink").textContent = "Chưa thực hiện";
+      status(
+        "Sẵn sàng điểm danh",
+        "Chọn Vào ca hoặc Tan ca. Chỉ một người đứng trước camera.",
+      );
     } catch (error) {
-      if (active() && current === session) { el("Recognition").textContent = "Không nhận diện được"; el("Attendance").textContent = "Không ghi nhận"; }
-      if (active() && current === session) status("Chưa ghi nhận điểm danh", error.response?.data?.message || (error.code === "ECONNABORTED" ? "Máy chủ phản hồi chậm. Kiểm tra lại kết quả trước khi quét lại." : error.message || "Không thể kết nối máy chủ."), true);
+      if (active() && current === session) {
+        stop();
+        status(
+          "Không thể bật nhận diện",
+          error.name === "NotAllowedError"
+            ? "Camera bị chặn. Cho phép camera trong trình duyệt rồi bấm Bật camera."
+            : error.message,
+          true,
+        );
+      }
     } finally {
-      busy = false; controls();
-      if (active()) resultTimer = setTimeout(() => { if (active() && !busy) { el("Identity").replaceChildren(); status("Sẵn sàng cho người tiếp theo", "Chọn Vào ca hoặc Tan ca để quét khuôn mặt."); } }, 15000);
+      starting = false;
+      controls();
     }
   };
-  el("Camera").addEventListener("click", start); el("Stop").addEventListener("click", stop);
-  el("CheckIn").addEventListener("click", () => scan("check-in")); el("CheckOut").addEventListener("click", () => scan("check-out"));
-  const tick = () => { if (active()) el("Clock").textContent = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }); };
-  const clock = setInterval(tick, 1000); tick(); controls();
-  const cleanup = () => { stop(); clearInterval(clock); clearTimeout(resultTimer); window.removeEventListener("hashchange", cleanup); window.removeEventListener("pagehide", cleanup); document.removeEventListener("visibilitychange", visibility); };
-  const visibility = () => { if (document.hidden) stop(); };
-  window.addEventListener("hashchange", cleanup); window.addEventListener("pagehide", cleanup); document.addEventListener("visibilitychange", visibility);
+  const scan = async (action) => {
+    if (busy || starting || !stream?.active) return;
+    busy = true;
+    controls();
+    clearTimeout(resultTimer);
+    el("Identity").replaceChildren();
+    const current = session;
+    try {
+      status(
+        "Đang quét khuôn mặt",
+        "Giữ khuôn mặt trong khung hình. Hệ thống đang lấy 5 mẫu để đối chiếu.",
+      );
+      el("Quality").textContent = "Đang kiểm tra";
+      el("Blink").textContent = "Chờ chớp mắt hợp lệ";
+      el("Recognition").textContent = "Đang chờ xác minh";
+      el("Attendance").textContent = "Chưa ghi nhận";
+      const capture = await captureFaceSamples(
+        video,
+        (count, total) => {
+          el("Quality").textContent = `Đạt • ${count}/${total} mẫu`;
+          el("Blink").textContent = "Đã xác minh";
+          status(
+            "Đang quét khuôn mặt",
+            `Đang quét mẫu: ${count}/${total} (${Math.round((count / total) * 100)}%)`,
+          );
+        },
+        () => active() && current === session && Boolean(stream?.active),
+        (text) => {
+          el("Quality").textContent = text;
+          if (text.includes("CHỚP MẮT"))
+            el("Blink").textContent = "Đang chờ thao tác";
+          if (text.includes("Đã xác thực chớp mắt"))
+            el("Blink").textContent = "Đã xác minh";
+          status("Xác thực khuôn mặt", text);
+        },
+      );
+      if (!active() || current !== session) return;
+      status(
+        "Đang xác thực",
+        "Đang đối chiếu khuôn mặt và ghi nhận giờ trên máy chủ...",
+      );
+      el("Recognition").textContent = "Đang đối chiếu hồ sơ";
+      const response = await api.post(
+        `/api/attendance/kiosk/${action}`,
+        capture,
+        {
+          timeout: 30000,
+          headers: { Authorization: undefined, "X-Device-Id": deviceId },
+        },
+      );
+      if (!active() || current !== session) return;
+      const { employee, log } = response.data.data;
+      el("Recognition").textContent = `Đã xác nhận • ${employee.full_name}`;
+      el("Attendance").textContent = "Đã ghi nhận thành công";
+      status(
+        response.data.message,
+        action === "check-in"
+          ? "Đã ghi nhận giờ vào ca. Chúc bạn một ngày làm việc hiệu quả."
+          : "Đã ghi nhận giờ tan ca.",
+      );
+      for (const text of [
+        `${employee.employee_code} • ${employee.full_name}`,
+        employee.department_name || "",
+        `Giờ vào: ${log.check_in || "—"} • Giờ ra: ${log.check_out || "—"}`,
+        `Công: ${Number(log.work_unit).toFixed(2)} • Đi muộn: ${Number(log.late_minutes || 0)} phút`,
+      ]) {
+        const line = document.createElement("p");
+        line.textContent = text;
+        el("Identity").appendChild(line);
+      }
+    } catch (error) {
+      if (active() && current === session) {
+        el("Recognition").textContent = "Không nhận diện được";
+        el("Attendance").textContent = "Không ghi nhận";
+      }
+      if (active() && current === session)
+        status(
+          "Chưa ghi nhận điểm danh",
+          error.response?.data?.message ||
+            (error.code === "ECONNABORTED"
+              ? "Máy chủ phản hồi chậm. Kiểm tra lại kết quả trước khi quét lại."
+              : error.message || "Không thể kết nối máy chủ."),
+          true,
+        );
+    } finally {
+      busy = false;
+      controls();
+      if (active())
+        resultTimer = setTimeout(() => {
+          if (active() && !busy) {
+            el("Identity").replaceChildren();
+            status(
+              "Sẵn sàng cho người tiếp theo",
+              "Chọn Vào ca hoặc Tan ca để quét khuôn mặt.",
+            );
+          }
+        }, 15000);
+    }
+  };
+  el("Camera").addEventListener("click", start);
+  el("Stop").addEventListener("click", stop);
+  el("CheckIn").addEventListener("click", () => scan("check-in"));
+  el("CheckOut").addEventListener("click", () => scan("check-out"));
+  const tick = () => {
+    if (active())
+      el("Clock").textContent = new Date().toLocaleString("vi-VN", {
+        timeZone: "Asia/Ho_Chi_Minh",
+      });
+  };
+  const clock = setInterval(tick, 1000);
+  tick();
+  controls();
+  const cleanup = () => {
+    stop();
+    clearInterval(clock);
+    clearTimeout(resultTimer);
+    window.removeEventListener("hashchange", cleanup);
+    window.removeEventListener("pagehide", cleanup);
+    document.removeEventListener("visibilitychange", visibility);
+  };
+  const visibility = () => {
+    if (document.hidden) stop();
+  };
+  window.addEventListener("hashchange", cleanup);
+  window.addEventListener("pagehide", cleanup);
+  document.addEventListener("visibilitychange", visibility);
 };
 
 const tbody = document.getElementById("attendanceLogsBody");
@@ -172,7 +314,18 @@ const loadLogs = async () => {
   }
 };
 
-const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c]));
+const escapeHtml = (v) =>
+  String(v ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      })[c],
+  );
 
 export const initDiemDanh = () => {
   loadLogs();

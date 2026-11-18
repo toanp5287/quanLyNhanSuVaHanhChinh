@@ -108,11 +108,12 @@ export const getEmployeeList = async (user, filters = {}) => {
       e.email,
       e.citizen_id,
       e.department_id,
-      d.department_code,
-      d.name AS department_name,
+      COALESCE(d.department_code, d.dept_code) AS department_code,
+      COALESCE(d.department_name, d.name) AS department_name,
       e.position_id,
-      p.position_code,
-      p.title AS position_title,
+      COALESCE(p.position_code, p.pos_code) AS position_code,
+      COALESCE(p.position_name, p.name, p.title) AS position_name,
+      COALESCE(p.position_name, p.name, p.title) AS position_title,
       p.grade_level,
       e.base_salary,
       e.work_status,
@@ -156,15 +157,23 @@ export const getEmployeeSummary = async (user) => {
 
 export const getEmployeeFilterOptions = async () => {
   const [departments] = await db.query(
-    `SELECT id, department_code, name
+    `SELECT id,
+            COALESCE(department_code, dept_code) AS department_code,
+            COALESCE(department_name, name) AS department_name,
+            COALESCE(department_name, name) AS name
      FROM departments
-     ORDER BY name ASC`,
+     ORDER BY COALESCE(department_name, name) ASC`,
   );
 
   const [positions] = await db.query(
-    `SELECT id, department_id, position_code, title, grade_level
+    `SELECT id,
+            department_id,
+            COALESCE(position_code, pos_code) AS position_code,
+            COALESCE(position_name, name, title) AS position_name,
+            COALESCE(position_name, name, title) AS title,
+            grade_level
      FROM positions
-     ORDER BY title ASC`,
+     ORDER BY COALESCE(position_name, name, title) ASC`,
   );
 
   return { departments, positions };

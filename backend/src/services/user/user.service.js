@@ -19,11 +19,12 @@ export const getEmployeesByScope = async (user) => {
        e.work_status,
        e.hire_date,
        d.id AS department_id,
-       d.department_code,
-       d.name AS department_name,
+       COALESCE(d.department_code, d.dept_code) AS department_code,
+       COALESCE(d.department_name, d.name) AS department_name,
        p.id AS position_id,
-       p.position_code,
-       p.title AS position_title,
+       COALESCE(p.position_code, p.pos_code) AS position_code,
+       COALESCE(p.position_name, p.name, p.title) AS position_name,
+       COALESCE(p.position_name, p.name, p.title) AS position_title,
        p.grade_level
      FROM employees e
      LEFT JOIN departments d ON d.id = e.department_id

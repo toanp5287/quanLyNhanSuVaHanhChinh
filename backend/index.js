@@ -33,7 +33,9 @@ app.use("/organization", routerOrganization);
 app.use("/contracts", routerContracts);
 app.use("/my-profile", routerMyProfile);
 app.use("/attendance", routerDiemDanhNhatKyQuetThePhanCa);
-app.use("/api/attendance", routerDiemDanhNhatKyQuetThePhanCa);
+app.use("/timesheets", routerTongHopChotCong);
+app.use("/overtime", routerQuanLyLamThemGio);
+app.use("/leave", routerQuanLyNghiPhepVaQuyPhepNam);
 app.listen(port, async () => {
   await connectMysql();
   console.log(`Server đang chạy ở http://localhost:${port}`);

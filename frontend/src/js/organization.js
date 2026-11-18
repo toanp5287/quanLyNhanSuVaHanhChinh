@@ -30,7 +30,7 @@ const TAB_META = {
 
 const SCOPE_LABELS = {
   ALL: "Toàn công ty",
-  DEPARTMENT: "Phòng ban của tôi",
+  DEPARTMENT: "Phòng của tôi và các phòng trực thuộc",
   SELF: "Chỉ hồ sơ của tôi",
 };
 
@@ -51,6 +51,8 @@ const state = {
   departmentId: "",
   scope: "ALL",
   canManage: false,
+  canViewSalary: false,
+  leadership: [],
   summary: {
     departments: 0,
     positions: 0,
@@ -90,6 +92,7 @@ const escapeHtml = (value) =>
     .replace(/'/g, "&#39;");
 
 const formatCurrency = (value) => {
+  if (!state.canViewSalary) return "Không có quyền xem";
   if (value === null || value === undefined || value === "") return "—";
   const number = Number(value);
   if (!Number.isFinite(number)) return "—";
@@ -265,6 +268,13 @@ const renderSummary = () => {
 const getDepartmentMap = () =>
   new Map(state.departments.map((department) => [department.id, department]));
 
+const compareDepartments = (a, b) => (a.order_index ?? a.id) - (b.order_index ?? b.id);
+const comparePositions = (a, b) => {
+  const departments = getDepartmentMap();
+  return compareDepartments(departments.get(a.department_id) || { id: 0 }, departments.get(b.department_id) || { id: 0 })
+    || DEFAULT_GRADE_LEVELS.indexOf(a.grade_level) - DEFAULT_GRADE_LEVELS.indexOf(b.grade_level) || a.id - b.id;
+};
+
 const getDescendantIds = (departmentId) => {
   const descendants = new Set();
   let changed = true;
@@ -424,7 +434,7 @@ const renderDepartmentOptions = () => {
       state.options.departments
         .map(
           (department) =>
-            `<option value="${escapeHtml(department.id)}">${escapeHtml(department.department_code)} - ${escapeHtml(department.name)}</option>`,
+             `<option value="${escapeHtml(department.id)}">${"— ".repeat(department.depth || 0)}${escapeHtml(department.department_code)} - ${escapeHtml(department.name)}</option>`,
         )
         .join("");
 
@@ -461,8 +471,12 @@ const renderDepartmentParentOptions = () => {
     (department) => !excluded.has(department.id),
   );
 
+  const lockedParent = state.departmentFormMode === "edit" && state.editingDepartment?.can_reparent === false;
+  select.disabled = lockedParent;
   select.innerHTML =
-    '<option value="">Không có cấp trên (cấp gốc)</option>' +
+    (state.scope === "ALL" ? '<option value="">Không có cấp trên (cấp gốc)</option>' : '<option value="">Chọn phòng ban cấp trên</option>') +
+    (lockedParent && state.editingDepartment.parent_id && !options.some(item => item.id === state.editingDepartment.parent_id)
+      ? `<option value="${escapeHtml(state.editingDepartment.parent_id)}">${escapeHtml(state.editingDepartment.parent_name || "Phòng ban cấp trên")}</option>` : "") +
     options
       .map(
         (department) =>
@@ -572,7 +586,7 @@ const renderChart = () => {
 
   departments
     .slice()
-    .sort((a, b) => a.department_code.localeCompare(b.department_code))
+    .sort(compareDepartments)
     .forEach((department) => {
       if (department.parent_id && map.has(department.parent_id)) {
         if (!childrenMap.has(department.parent_id)) {
@@ -588,10 +602,10 @@ const renderChart = () => {
     if (depth > 12) return "";
 
     const children = childrenMap.get(department.id) || [];
-    const canCollapse = depth >= 1;
+    const canCollapse = children.length > 0;
     const expanded = !canCollapse || state.expandedDepartments.has(String(department.id));
     const progress = getHeadcountProgress(department);
-    const editButton = state.canManage
+    const editButton = state.canManage && department.can_manage
       ? `<button type="button" class="w-8 h-8 rounded hover:bg-surface-container-high text-primary flex items-center justify-center" data-edit-department="${escapeHtml(department.id)}" title="Sửa phòng ban">
           <span class="material-symbols-outlined text-[18px]">edit</span>
         </button>`
@@ -609,12 +623,16 @@ const renderChart = () => {
         >
           <div class="flex items-start justify-between gap-space-sm">
             <div class="min-w-0">
-              <span class="inline-flex items-center rounded bg-primary-fixed px-2 py-0.5 font-label-sm text-label-sm text-on-primary-fixed font-semibold">${escapeHtml(department.department_code)}</span>
+               <span class="inline-flex items-center rounded bg-primary-fixed px-2 py-0.5 font-label-sm text-label-sm text-on-primary-fixed font-semibold">Cấp ${(department.depth || 0) + 1} · ${escapeHtml(department.department_code)}</span>
               <h3 class="mt-1 font-headline-sm text-headline-sm font-bold text-on-surface truncate group-hover/card:text-primary transition-colors">${escapeHtml(department.name)}</h3>
             </div>
             ${editButton}
           </div>
           <div class="mt-3 flex flex-col gap-1.5">
+            <p class="font-label-md text-label-md font-semibold text-on-surface">${escapeHtml(department.manager?.full_name || "Chưa phân công người đứng đầu")}</p>
+            <p class="font-label-sm text-label-sm text-on-surface-variant">${escapeHtml(department.manager?.position_title || "Người phụ trách phòng ban")}</p>
+            <p class="font-label-sm text-label-sm text-on-surface-variant">${department.parent_name ? `Trực thuộc: ${escapeHtml(department.parent_name)}` : "Phòng ban cấp gốc"}</p>
+            <span class="font-label-sm text-label-sm text-primary">${department.can_manage ? "Được quản lý trong phạm vi phụ trách" : "Chỉ xem cơ cấu và thành viên"}</span>
             ${progressHtml(department)}
             <div class="flex items-center justify-between gap-space-sm font-label-sm text-label-sm text-on-surface-variant">
               <span class="inline-flex items-center gap-1">
@@ -643,7 +661,7 @@ const renderChart = () => {
                 <span class="material-symbols-outlined text-[20px]" aria-hidden="true">${expanded ? "expand_less" : "expand_more"}</span>
                 ${expanded ? "Thu gọn" : "Hiện"} ${children.length} phòng ban trực thuộc
               </button>` : ""}
-              <div id="org-children-${escapeHtml(department.id)}" class="${expanded ? "grid" : "hidden"} ml-5 mt-2 pl-4 border-l-2 border-surface-variant grid-cols-1 xl:grid-cols-2 gap-2">
+              <div id="org-children-${escapeHtml(department.id)}" class="${expanded ? "grid" : "hidden"} ml-5 mt-2 pl-4 border-l-2 border-surface-variant grid-cols-1 xl:grid-cols-3 gap-3">
                 ${expanded ? children.map((child) => renderNode(child, depth + 1)).join("") : ""}
               </div>`
             : ""
@@ -655,6 +673,11 @@ const renderChart = () => {
   container.innerHTML = `
     <div class="overflow-x-auto pb-2">
       <div class="min-w-[300px] space-y-3">
+        <div class="rounded-lg border border-primary-container bg-primary-fixed p-space-md">
+          <p class="font-label-md text-label-md font-bold text-on-primary-fixed">${state.scope === "ALL" ? "Ban giám đốc" : "Phạm vi phụ trách"}</p>
+          ${state.leadership.map(leader => `<p class="mt-1 text-body-sm">${escapeHtml(leader.full_name)} · ${escapeHtml(leader.position_title || "Ban giám đốc")}</p>`).join("")}
+          <p class="mt-1 text-body-sm">${state.scope === "ALL" ? "Ban giám đốc → Phòng quản lý → Bộ phận trực thuộc → Nhân viên" : "Hiển thị phòng được giao và các phòng trực thuộc theo tuyến quản lý"}</p>
+        </div>
         ${roots.map((department) => renderNode(department)).join("")}
       </div>
     </div>
@@ -665,9 +688,7 @@ const renderDepartmentsTable = () => {
   const tbody = document.getElementById("orgDepartmentsBody");
   if (!tbody) return;
 
-  const departments = getFilteredDepartments().slice().sort((a, b) =>
-    a.department_code.localeCompare(b.department_code),
-  );
+  const departments = getFilteredDepartments().slice().sort(compareDepartments);
 
   if (!departments.length) {
     tbody.innerHTML = `
@@ -697,7 +718,7 @@ const renderDepartmentsTable = () => {
             <td class="px-3 py-3">
               <span class="font-label-md text-label-md font-semibold text-primary">${escapeHtml(department.department_code)}</span>
             </td>
-            <td class="px-3 py-3 font-medium text-on-surface">${escapeHtml(department.name)}</td>
+            <td class="px-3 py-3 font-medium text-on-surface"><div style="padding-left:${Math.min(department.depth || 0, 8) * 16}px">${department.depth ? "↳ " : ""}${escapeHtml(department.name)}<p class="font-label-sm text-label-sm text-on-surface-variant">Cấp ${(department.depth || 0) + 1} · ${escapeHtml(department.manager?.full_name || "Chưa có người đứng đầu")}</p></div></td>
             <td class="px-3 py-3 text-on-surface-variant">${parent ? `${escapeHtml(parent.department_code)} - ${escapeHtml(parent.name)}` : "Cấp gốc"}</td>
             <td class="px-3 py-3">
               ${progressHtml(department, true)}
@@ -728,9 +749,7 @@ const renderPositionsTable = () => {
   const tbody = document.getElementById("orgPositionsBody");
   if (!tbody) return;
 
-  const positions = getFilteredPositions().slice().sort((a, b) =>
-    a.position_code.localeCompare(b.position_code),
-  );
+  const positions = getFilteredPositions().slice().sort(comparePositions);
 
   if (!positions.length) {
     tbody.innerHTML = `
@@ -817,6 +836,9 @@ const loadOrganization = async (user) => {
     state.summary = payload.summary || state.summary;
     state.options = payload.options || state.options;
     state.scope = payload.data_scope || "ALL";
+    state.canViewSalary = Boolean(payload.can_view_salary);
+    state.leadership = payload.leadership || [];
+    state.expandedDepartments = new Set(state.departments.map(department => String(department.id)));
     state.canManage =
       Boolean(payload.can_manage) &&
       hasPermission("HR.PROFILE_MANAGE", user);
@@ -911,6 +933,7 @@ const resetDepartmentForm = () => {
 };
 
 const openCreateDepartment = () => {
+  if (!state.canManage) return;
   state.departmentFormMode = "create";
   state.editingDepartment = null;
 
@@ -928,7 +951,7 @@ const openEditDepartment = (departmentId) => {
   const department = state.departments.find(
     (item) => String(item.id) === String(departmentId),
   );
-  if (!department) return;
+  if (!department || !state.canManage || !department.can_manage) return;
 
   state.departmentFormMode = "edit";
   state.editingDepartment = department;
@@ -1312,11 +1335,11 @@ const renderDepartmentDetail = (data) => {
   );
   setText(
     "#departmentDetailSubtitle",
-    `${department.active_count}/${department.headcount_limit || "—"} nhân sự • ${positions.length} chức vụ • ${children.length} phòng ban trực thuộc`,
+    `Đứng đầu: ${department.manager?.full_name || "Chưa phân công"} • ${department.active_count} nhân sự • ${children.length} phòng ban trực thuộc`,
   );
 
   const editButton = document.getElementById("departmentDetailEdit");
-  if (editButton) editButton.hidden = !state.canManage;
+  if (editButton) editButton.hidden = !state.canManage || !department.can_manage;
 
   const memberStatus = (status) =>
     MEMBER_STATUS[status] || {
@@ -1335,7 +1358,9 @@ const renderDepartmentDetail = (data) => {
                   <span class="w-9 h-9 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center font-label-md text-label-md font-bold shrink-0">${escapeHtml(getInitials(member.full_name))}</span>
                   <div class="min-w-0">
                     <p class="font-label-md text-label-md font-semibold text-on-surface truncate">${escapeHtml(member.full_name)}</p>
-                    <p class="font-label-sm text-label-sm text-on-surface-variant">${escapeHtml(member.employee_code)}</p>
+                    <p class="font-label-sm text-label-sm text-on-surface-variant">${escapeHtml(member.employee_code)}${Number(member.id) === Number(department.manager_id) ? " · Người đứng đầu" : ""}</p>
+                    <p class="font-label-sm text-label-sm text-primary">${member.data_scope === "ALL" ? "Quản lý toàn công ty" : member.data_scope === "DEPARTMENT" ? "Quản lý phòng và đơn vị trực thuộc" : "Nhân viên · phạm vi cá nhân"}</p>
+                    <p class="font-label-sm text-label-sm text-on-surface-variant">Báo cáo: ${escapeHtml(member.manager_name || "Không có cấp trên")}</p>
                   </div>
                 </div>
               </td>
@@ -1819,7 +1844,12 @@ export const initOrganization = (user = getCurrentUser(), tab = "chart") => {
   state.tab = TAB_META[tab] ? tab : "chart";
   state.keyword = "";
   state.departmentId = "";
-  state.canManage = hasPermission("HR.PROFILE_MANAGE", user);
+  state.canManage = false;
+  state.canViewSalary = false;
+  state.departments = [];
+  state.positions = [];
+  state.leadership = [];
+  state.scope = user.data_scope || "SELF";
 
   const search = document.getElementById("orgSearch");
   const department = document.getElementById("filterOrgDepartment");
