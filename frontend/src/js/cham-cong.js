@@ -44,9 +44,11 @@ const apiErrorMessage = error => {
 
 const STATUS_LABELS = {
   VALID: "Hợp lệ",
+  ON_TIME: "Đúng giờ",
   LATE: "Đi muộn / về sớm",
   ABSENT: "Vắng không phép",
   MISSING_CHECKOUT: "Thiếu giờ ra",
+  MISSING_OUT: "Thiếu giờ ra",
   IN_PROGRESS: "Đang làm việc",
   LEAVE_SYNC: "Nghỉ phép đã duyệt",
   UNMARKED: "Chưa điểm danh",
@@ -385,7 +387,7 @@ export function initChamCong(user = getCurrentUser(), initialTab = "daily") {
     state.page = 1;
     const daily = tab === "daily";
     const statuses = daily
-      ? ["UNMARKED", "VALID", "LATE", "ABSENT", "MISSING_CHECKOUT", "LEAVE_SYNC", "EXPLAINED", "IN_PROGRESS"]
+      ? ["UNMARKED", "VALID", "ON_TIME", "LATE", "ABSENT", "MISSING_CHECKOUT", "LEAVE_SYNC", "EXPLAINED", "IN_PROGRESS"]
       : ["OPEN", "LOCKED"];
     el("Status").innerHTML =
       '<option value="">Tất cả trạng thái</option>' +

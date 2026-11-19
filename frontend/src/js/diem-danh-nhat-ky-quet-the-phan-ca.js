@@ -218,25 +218,58 @@ export const initFaceKiosk = () => {
         },
       );
       if (!active() || current !== session) return;
-       const { employee, log, account, already_recorded: alreadyRecorded, attendance_state: attendanceState } = response.data.data;
+       const { employee, log, account, shift, already_recorded: alreadyRecorded, attendance_state: attendanceState } = response.data.data;
        el("Recognition").textContent = `Đã xác nhận • ${employee.full_name}`;
        const completed = attendanceState === "COMPLETED" || Boolean(log.check_out);
        el("Attendance").textContent = alreadyRecorded
          ? completed ? "Đã hoàn thành hôm nay" : `Đã vào ca lúc ${String(log.check_in || "—").slice(0, 5)}`
          : "Đã ghi nhận thành công";
-       status(
-         alreadyRecorded ? (completed ? "Đã hoàn thành chấm công hôm nay" : "Đã vào ca hôm nay") : response.data.message,
-         alreadyRecorded ? response.data.message : (action === "check-in"
-           ? "Đã ghi nhận giờ vào ca. Chúc bạn một ngày làm việc hiệu quả."
-           : "Đã ghi nhận giờ tan ca."),
-       );
+      const toMin = (t) => {
+        if (!t) return null;
+        const [h, m] = String(t).split(":").map(Number);
+        return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+      };
+      const checkInMin = toMin(log.check_in);
+      const startMin = toMin(shift?.start_time);
+      const grace = Number(shift?.grace_period_minutes ?? shift?.grace_period ?? 15);
+      const allowedMin = toMin(shift?.allowed_limit_time) ?? (startMin == null ? null : startMin + grace);
+      const lateMinutes = Number(log?.late_minutes || 0);
+      let punctuality = "";
+      let punctualityDetail = "";
+      if (action === "check-in" && checkInMin != null && startMin != null) {
+        if (lateMinutes > 0) {
+          punctuality = "Đi muộn";
+          punctualityDetail = `Đi muộn ${lateMinutes} phút (quá ân hạn ${grace} phút so với giờ bắt đầu ca)`;
+        } else if (checkInMin > startMin && allowedMin != null && checkInMin <= allowedMin) {
+          const within = checkInMin - startMin;
+          punctuality = "Đúng giờ (ân hạn)";
+          punctualityDetail = `Đúng giờ - trong ân hạn ${grace} phút (trễ ${within} phút nhưng không tính đi muộn)`;
+        } else {
+          punctuality = "Đúng giờ";
+          punctualityDetail = "Đúng giờ";
+        }
+      }
+
+      status(
+        alreadyRecorded
+          ? completed
+            ? "Đã hoàn thành chấm công hôm nay"
+            : "Đã vào ca hôm nay"
+          : response.data.message,
+        alreadyRecorded
+          ? response.data.message
+          : action === "check-in"
+            ? `Đã ghi nhận giờ vào ca. ${punctualityDetail || "Đúng giờ"}.`
+            : "Đã ghi nhận giờ tan ca.",
+      );
       for (const text of [
-        `${employee.employee_code} • ${employee.full_name}`,
-        `Tài khoản: ${account?.username || employee.username || "—"}`,
+        `${employee.employee_code} - ${employee.full_name}`,
+        `Tài khoản: ${account?.username || employee.username || "-"}`,
         employee.department_name || "",
-         `Giờ vào: ${String(log.check_in || "—").slice(0, 5)} • Giờ ra: ${String(log.check_out || "—").slice(0, 5)}`,
-        `Công: ${Number(log.work_unit).toFixed(2)} • Đi muộn: ${Number(log.late_minutes || 0)} phút`,
-      ]) {
+        `Giờ vào: ${String(log.check_in || "-").slice(0, 5)} - Giờ ra: ${String(log.check_out || "-").slice(0, 5)}`,
+        punctualityDetail ? `Trạng thái vào ca: ${punctualityDetail}` : "",
+        `Công: ${Number(log.work_unit).toFixed(2)} - Đi muộn: ${lateMinutes} phút`,
+      ].filter(Boolean)) {
         const line = document.createElement("p");
         line.textContent = text;
         el("Identity").appendChild(line);
