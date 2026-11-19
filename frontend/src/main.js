@@ -5,6 +5,7 @@ import { initHome, setupShell } from "./js/home.js";
 import { initPermissions } from "./js/permissions.js";
 import { initMyProfile } from "./js/my-profile.js";
 import { initChamCong } from "./js/cham-cong.js";
+import { initQuanLyCaLam } from "./js/quan-ly-ca-lam.js";
 import { initFaceKiosk } from "./js/diem-danh-nhat-ky-quet-the-phan-ca.js";
 import { getEmployeeModeFromHash, initEmployees } from "./js/employees.js";
 import {
@@ -28,12 +29,23 @@ window.__HRM_SPA__ = true;
 
 const app = document.querySelector("#app");
 
+const TRANSITION_MS = 220;
+
 const transitionStyle = document.createElement("style");
 transitionStyle.textContent = `
-  @keyframes hrm-fade-out { from { opacity: 1; } to { opacity: 0; } }
-  @keyframes hrm-fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-  .hrm-fade-out { animation: hrm-fade-out .25s ease forwards; }
-  .hrm-fade-in { animation: hrm-fade-in .4s ease; }
+  @keyframes hrm-fade-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-8px); }
+  }
+  @keyframes hrm-fade-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .hrm-fade-out { animation: hrm-fade-out ${TRANSITION_MS}ms ease forwards; }
+  .hrm-fade-in { animation: hrm-fade-in 360ms cubic-bezier(.2,.7,.3,1) both; }
+  @media (prefers-reduced-motion: reduce) {
+    .hrm-fade-out, .hrm-fade-in { animation-duration: .01ms; }
+  }
 `;
 document.head.appendChild(transitionStyle);
 
@@ -68,17 +80,29 @@ function showLogin() {
 
 function showHome(user) {
   mountPage(homeHtml);
-  app.classList.add("hrm-fade-in");
   initHome(user || getCurrentUser());
 }
 
+let isTransitioning = false;
+
 function transitionTo(render) {
+  if (isTransitioning) {
+    render();
+    return;
+  }
+
+  isTransitioning = true;
+  app.classList.remove("hrm-fade-in");
+  void app.offsetWidth;
   app.classList.add("hrm-fade-out");
+
   window.setTimeout(() => {
     render();
     app.classList.remove("hrm-fade-out");
+    void app.offsetWidth;
     app.classList.add("hrm-fade-in");
-  }, 250);
+    isTransitioning = false;
+  }, TRANSITION_MS);
 }
 
 const clearHash = () => {
@@ -109,7 +133,6 @@ function showMyProfile(user) {
   }
 
   mountPage(homeHtml);
-  app.classList.add("hrm-fade-in");
   initMyProfile(user);
 }
 
@@ -121,8 +144,18 @@ function showDiemDanh(user, tab = "daily") {
   }
   mountPage(homeHtml);
   setupShell(user);
-  app.classList.add("hrm-fade-in");
   initChamCong(user, tab);
+}
+
+function showQuanLyCaLam(user) {
+  if (!user || (!hasPermission("ATT.SHIFT_OT_MANAGE", user) && !hasPermission("ATT.VIEW", user))) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+  mountPage(homeHtml);
+  setupShell(user);
+  initQuanLyCaLam(user);
 }
 
 function showEmployees(user, mode = "all") {
@@ -138,7 +171,6 @@ function showEmployees(user, mode = "all") {
   }
 
   mountPage(homeHtml);
-  app.classList.add("hrm-fade-in");
   setupShell(user);
   initEmployees(user, mode);
 }
@@ -156,7 +188,6 @@ function showOrganization(user, tab = "chart") {
   }
 
   mountPage(homeHtml);
-  app.classList.add("hrm-fade-in");
   setupShell(user);
   initOrganization(user, tab);
 }
@@ -169,12 +200,11 @@ function showContracts(user, status = "ALL") {
   }
 
   mountPage(homeHtml);
-  app.classList.add("hrm-fade-in");
   setupShell(user);
   initContracts(user, status);
 }
 
-function renderRoute(user) {
+function renderRouteView(user) {
   const hash = window.location.hash;
 
   if (hash === "#/face-id") {
@@ -194,6 +224,8 @@ function renderRoute(user) {
     showMyProfile(user);
   } else if (hash === "#/diem-danh") {
     showDiemDanh(user);
+  } else if (hash === "#/quan-ly-ca-lam") {
+    showQuanLyCaLam(user);
   } else if (hash === "#/cham-cong" || hash === "#/cham-cong/thang") {
     showDiemDanh(user, "monthly");
   } else if (hash === "#/trang-chu") {
@@ -203,6 +235,10 @@ function renderRoute(user) {
   } else {
     showHome(user);
   }
+}
+
+function renderRoute(user) {
+  transitionTo(() => renderRouteView(user));
 }
 
 document.addEventListener("click", (event) => {
@@ -215,6 +251,8 @@ document.addEventListener("click", (event) => {
        "Hồ sơ cá nhân & JD": "#/ho-so-ca-nhan",
        "Dữ liệu máy chấm công": "#/diem-danh",
         "Bảng chấm công tháng": "#/cham-cong/thang",
+      "Quản lý ca làm việc": "#/quan-ly-ca-lam",
+      "Phân ca làm việc": "#/quan-ly-ca-lam",
       "Tất cả nhân viên": "#/nhan-vien",
       "Nhân viên đang làm": "#/nhan-vien/dang-lam",
       "Nhân viên đã nghỉ": "#/nhan-vien/da-nghi",
@@ -254,12 +292,14 @@ document.addEventListener("click", (event) => {
 });
 
 window.addEventListener("hashchange", () => {
+  if (window.location.hash === "#/face-id") {
+    transitionTo(() => initFaceKiosk());
+    return;
+  }
+
   const user = getCurrentUser();
-
-  if (window.location.hash === "#/face-id") { initFaceKiosk(); return; }
-
   if (!user) {
-    showLogin();
+    transitionTo(() => showLogin());
     return;
   }
 
@@ -324,9 +364,14 @@ window.addEventListener("hrm:logout-request", () => {
 });
 
 async function bootstrap() {
-  if (window.location.hash === "#/face-id") { initFaceKiosk(); return; }
+  if (window.location.hash === "#/face-id") {
+    initFaceKiosk();
+    app.classList.add("hrm-fade-in");
+    return;
+  }
   if (!getToken()) {
     showLogin();
+    app.classList.add("hrm-fade-in");
     return;
   }
 
@@ -336,6 +381,7 @@ async function bootstrap() {
   } catch {
     clearSession();
     showLogin();
+    app.classList.add("hrm-fade-in");
   }
 }
 

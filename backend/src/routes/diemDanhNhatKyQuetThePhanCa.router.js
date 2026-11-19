@@ -35,6 +35,7 @@ import {
   putWorkShift,
   rejectExplanationHandler,
   removeShiftAssignment,
+  removeWorkShift,
 } from "../controllers/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.controller.js";
 
 const router = express.Router();
@@ -195,6 +196,11 @@ router.put(
   "/shifts/:id",
   requirePermission("ATT.SHIFT_OT_MANAGE"),
   putWorkShift,
+);
+router.delete(
+  "/shifts/:id",
+  requirePermission("ATT.SHIFT_OT_MANAGE"),
+  removeWorkShift,
 );
 
 // Phân ca nhân viên
