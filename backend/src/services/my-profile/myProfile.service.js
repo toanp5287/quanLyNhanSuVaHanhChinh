@@ -1,7 +1,16 @@
 import bcrypt from "bcryptjs";
 import { db } from "../../config/database.js";
 import { verifyPassword } from "../auth/auth.service.js";
-import { attendanceError, validateBiometricCapture, evaluateFullSetMatch, computeCentroid, l2Normalize, FACE_MATCH_THRESHOLD } from "../diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
+import {
+  attendanceError,
+  validateBiometricCapture,
+  computeCentroid,
+  computeIntraFaceScore,
+  findDuplicateFace,
+  l2Normalize,
+  DUPLICATE_FACE_THRESHOLD,
+  FACE_STORAGE_MODEL,
+} from "../diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 const EMPLOYEE_QUERY = `
   SELECT
@@ -27,6 +36,10 @@ const EMPLOYEE_QUERY = `
     DATE_FORMAT(e.resign_date, '%Y-%m-%d') AS resign_date,
     e.work_status,
     (e.face_descriptor IS NOT NULL) AS has_face_descriptor,
+    e.face_status,
+    DATE_FORMAT(e.face_enrolled_at, '%Y-%m-%d %H:%i:%s') AS face_enrolled_at,
+    DATE_FORMAT(e.face_reset_at, '%Y-%m-%d %H:%i:%s') AS face_reset_at,
+    e.face_reset_reason,
     e.manager_id,
     e.data_scope,
     COALESCE(d.department_code, d.dept_code) AS department_code,
@@ -184,18 +197,49 @@ export const updateSelfContact = async (employeeId, payload = {}) => {
   return rows[0] || null;
 };
 
+const normalizeEnrollmentSamples = (values, blinkVerified, capture) => {
+  if (!Array.isArray(values) || values.length !== 5)
+    throw attendanceError("Cần đúng 5 mẫu khuôn mặt để kích hoạt FaceID.", 400);
+  if (values.some(vector =>
+    !Array.isArray(vector) ||
+    vector.length !== 1024 ||
+    vector.some(value => typeof value !== "number" || !Number.isFinite(value))
+  ))
+    throw attendanceError("Mỗi mẫu khuôn mặt phải có đúng 1024 chiều và là số hợp lệ.", 400);
+  return validateBiometricCapture(values, blinkVerified, 0.82, capture);
+};
+
+const conflictError = (duplicate) => {
+  const employee = duplicate.matchedEmployee || {};
+  return Object.assign(attendanceError("Khuôn mặt này đã được đăng ký cho tài khoản khác", 409), {
+    error_code: "FACE_DUPLICATE_CONFLICT",
+    conflict_employee: {
+      id: employee.id,
+      employee_code: employee.employee_code,
+      full_name: employee.full_name,
+      similarity_percent: Number((duplicate.bestMatchScore * 100).toFixed(1)),
+      threshold_percent: Number((duplicate.thresholdUsed * 100).toFixed(1)),
+    },
+  });
+};
+
 export const updateSelfFaceDescriptor = async (employeeId, values, password, blinkVerified, capture = null) => {
   if (!employeeId) return null;
-  const samples = validateBiometricCapture(values, blinkVerified, 0.82, capture);
+  const samples = normalizeEnrollmentSamples(values, blinkVerified, capture);
   if (typeof password !== "string" || !password)
     throw attendanceError("Nhập mật khẩu tài khoản để xác nhận đăng ký hoặc thay đổi FaceID.");
   await verifySelfFacePassword(employeeId, password);
 
+  const centroid = computeCentroid(samples);
+  const intraCheckScore = computeIntraFaceScore(samples);
+  if (intraCheckScore < 0.82)
+    throw attendanceError("Dữ liệu khuôn mặt không đồng nhất, vui lòng kích hoạt lại", 400);
+
   const compact = vector => vector.map(value => Number(value.toFixed(5)));
   const descriptorJson = JSON.stringify({
-    model: capture?.model || null,
-    centroid: compact(computeCentroid(samples)),
-    samples: samples.map(sample => compact(l2Normalize(sample))),
+    model: FACE_STORAGE_MODEL,
+    centroid: compact(centroid),
+    samples: samples.map(sample => compact(sample)),
   });
   if (Buffer.byteLength(descriptorJson, "utf8") > 60000) {
     throw attendanceError("Bộ mẫu khuôn mặt vượt giới hạn lưu trữ. Vui lòng quét lại để tạo mẫu gọn hơn.", 413);
@@ -208,27 +252,61 @@ export const updateSelfFaceDescriptor = async (employeeId, values, password, bli
     if (Number(lockRows[0]?.locked) !== 1)
       throw attendanceError("Hệ thống đang cập nhật FaceID cho người khác. Vui lòng thử lại.", 409);
     try {
-      const [employees] = await connection.query(
-        "SELECT id, employee_code, full_name, face_descriptor FROM employees WHERE id = ? OR face_descriptor IS NOT NULL",
+      const [currentRows] = await connection.query(
+        "SELECT id, employee_code, full_name, face_status FROM employees WHERE id = ? FOR UPDATE",
         [employeeId],
       );
-      if (!employees.some(employee => Number(employee.id) === Number(employeeId)))
-        throw attendanceError("Không tìm thấy hồ sơ nhân viên", 404);
-      const conflict = employees
-        .filter(employee => Number(employee.id) !== Number(employeeId) && employee.face_descriptor)
-        .map(employee => ({ employee, ...evaluateFullSetMatch(samples, employee.face_descriptor, FACE_MATCH_THRESHOLD) }))
-        .filter(match => match.isMatch)
-        .sort((a, b) => b.avgScore - a.avgScore)[0];
-      if (conflict) {
-        const employee = conflict.employee;
-        throw Object.assign(attendanceError(`PHÁT HIỆN TRÙNG HỒ SƠ SINH TRẮC HỌC: Cả bộ mẫu khuôn mặt vừa quét trùng khớp ${(conflict.avgScore * 100).toFixed(1)}% (${conflict.passCount}/${conflict.totalSamples} mẫu) với hồ sơ [${employee.employee_code} - ${employee.full_name}]. Một khuôn mặt chỉ được dùng cho một tài khoản.`, 409), {
-          error_code: "FACE_DUPLICATE_CONFLICT",
-          conflict_employee: { id: employee.id, employee_code: employee.employee_code, full_name: employee.full_name, similarity_percent: Number((conflict.avgScore * 100).toFixed(1)), matched_samples: `${conflict.passCount}/${conflict.totalSamples}` },
-        });
+      const current = currentRows[0];
+      if (!current) throw attendanceError("Không tìm thấy hồ sơ nhân viên", 404);
+      if (current.face_status === "ACTIVE") {
+        console.log("[FACE_ENROLL]", JSON.stringify({
+          currentUserId: employeeId,
+          bestMatchScore: 0,
+          matchedEmployeeId: null,
+          thresholdUsed: DUPLICATE_FACE_THRESHOLD,
+          isDuplicate: false,
+          intraCheckScore: Number(intraCheckScore.toFixed(6)),
+          blockedReason: "ALREADY_ACTIVE",
+        }));
+        throw attendanceError("Tài khoản đã kích hoạt FaceID. Liên hệ Admin/HR để Reset nếu cần đăng ký lại", 409);
       }
-      await connection.query("UPDATE employees SET face_descriptor = ? WHERE id = ?", [descriptorJson, employeeId]);
+
+      const [others] = await connection.query(
+        "SELECT id, employee_code, full_name, face_descriptor FROM employees WHERE id <> ? AND face_status = 'ACTIVE' AND face_descriptor IS NOT NULL AND TRIM(face_descriptor) <> ''",
+        [employeeId],
+      );
+      const duplicate = findDuplicateFace([...samples, centroid], others, DUPLICATE_FACE_THRESHOLD);
+      console.log("[FACE_ENROLL]", JSON.stringify({
+        currentUserId: employeeId,
+        bestMatchScore: Number(duplicate.bestMatchScore.toFixed(6)),
+        matchedEmployeeId: duplicate.matchedEmployeeId,
+        thresholdUsed: duplicate.thresholdUsed,
+        isDuplicate: duplicate.isDuplicate,
+        intraCheckScore: Number(intraCheckScore.toFixed(6)),
+      }));
+      if (duplicate.isDuplicate) throw conflictError(duplicate);
+
+      const [result] = await connection.query(
+        `UPDATE employees
+         SET face_descriptor = ?, face_status = 'ACTIVE', face_enrolled_at = NOW()
+         WHERE id = ? AND face_status = 'UNREGISTERED'`,
+        [descriptorJson, employeeId],
+      );
+      if (result.affectedRows !== 1)
+        throw attendanceError("Trạng thái FaceID vừa thay đổi. Vui lòng tải lại trang và thử lại.", 409);
+
+      const [updated] = await connection.query(
+        `SELECT id, face_status,
+                DATE_FORMAT(face_enrolled_at, '%Y-%m-%d %H:%i:%s') AS face_enrolled_at
+         FROM employees WHERE id = ?`,
+        [employeeId],
+      );
       await connection.commit();
-      return { has_face_descriptor: true };
+      return {
+        has_face_descriptor: true,
+        face_status: updated[0]?.face_status || "ACTIVE",
+        face_enrolled_at: updated[0]?.face_enrolled_at || null,
+      };
     } finally {
       await connection.query("SELECT RELEASE_LOCK('hrm_face_enrollment')");
     }
@@ -251,31 +329,27 @@ export const verifySelfFacePassword = async (employeeId, password) => {
 
 export const checkRegisteredFaceOwner = async (employeeId, embedding) => {
   if (!employeeId) throw attendanceError("Không tìm thấy hồ sơ nhân viên", 404);
+  if (!Array.isArray(embedding) || embedding.length !== 1024 || embedding.some(value => typeof value !== "number" || !Number.isFinite(value)))
+    throw attendanceError("Mẫu kiểm tra FaceID không hợp lệ (cần 1024 chiều).", 400);
   const sample = l2Normalize(embedding);
-  const [employees] = await db.query("SELECT id, employee_code, full_name, face_descriptor FROM employees WHERE id <> ? AND face_descriptor IS NOT NULL", [employeeId]);
-  const conflict = employees
-    .map(employee => ({ employee, ...evaluateFullSetMatch([sample], employee.face_descriptor, FACE_MATCH_THRESHOLD) }))
-    .filter(match => match.isMatch)
-    .sort((left, right) => right.avgScore - left.avgScore)[0];
-  if (conflict) {
-    const employee = conflict.employee;
-    throw Object.assign(attendanceError(`Khuôn mặt này đã được kích hoạt cho tài khoản [${employee.employee_code} - ${employee.full_name}] (${(conflict.avgScore * 100).toFixed(1)}%). Một khuôn mặt chỉ được dùng cho một tài khoản, vui lòng không quét lại.`, 409), {
-      error_code: "FACE_ALREADY_ACTIVATED",
-      conflict_employee: { id: employee.id, employee_code: employee.employee_code, full_name: employee.full_name, similarity_percent: Number((conflict.avgScore * 100).toFixed(1)), matched_samples: `${conflict.passCount}/${conflict.totalSamples}` },
-    });
-  }
+  const [currentRows] = await db.query("SELECT face_status FROM employees WHERE id = ?", [employeeId]);
+  if (currentRows[0]?.face_status === "ACTIVE")
+    throw attendanceError("Tài khoản đã kích hoạt FaceID. Liên hệ Admin/HR để Reset nếu cần đăng ký lại", 409);
+  const [employees] = await db.query("SELECT id, employee_code, full_name, face_descriptor FROM employees WHERE id <> ? AND face_status = 'ACTIVE' AND face_descriptor IS NOT NULL AND TRIM(face_descriptor) <> ''", [employeeId]);
+  const duplicate = findDuplicateFace([sample], employees, DUPLICATE_FACE_THRESHOLD);
+  console.log("[FACE_CHECK]", JSON.stringify({
+    currentUserId: employeeId,
+    bestMatchScore: Number(duplicate.bestMatchScore.toFixed(6)),
+    matchedEmployeeId: duplicate.matchedEmployeeId,
+    thresholdUsed: duplicate.thresholdUsed,
+    isDuplicate: duplicate.isDuplicate,
+  }));
+  if (duplicate.isDuplicate) throw conflictError(duplicate);
   return { allowed: true };
 };
 
-export const clearSelfFaceDescriptor = async (employeeId, password) => {
-  if (!employeeId) return null;
-  if (typeof password !== "string" || !password)
-    throw attendanceError("Nhập mật khẩu tài khoản để xác nhận đặt lại FaceID.", 400);
-  await verifySelfFacePassword(employeeId, password);
-  await db.query("UPDATE employees SET face_descriptor = NULL WHERE id = ?", [
-    employeeId,
-  ]);
-  return { has_face_descriptor: false };
+export const clearSelfFaceDescriptor = async () => {
+  throw attendanceError("Không thể tự Reset FaceID. Vui lòng liên hệ Admin/HR để mở khóa và ghi rõ lý do.", 403);
 };
 
 export const changeSelfPassword = async (

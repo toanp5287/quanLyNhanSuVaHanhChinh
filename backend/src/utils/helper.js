@@ -165,6 +165,8 @@ export const toPublicUser = (row) => {
     position_title: row.position_title,
     grade_level: row.grade_level,
     has_face_descriptor: Boolean(row.has_face_descriptor ?? row.face_descriptor),
+    face_status: row.face_status || (Boolean(row.has_face_descriptor ?? row.face_descriptor) ? "ACTIVE" : "UNREGISTERED"),
+    face_enrolled_at: row.face_enrolled_at || null,
     permissions: row.permissions || [],
   };
 };

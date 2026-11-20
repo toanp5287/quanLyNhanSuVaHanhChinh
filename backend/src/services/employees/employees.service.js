@@ -1,5 +1,6 @@
 import { db } from "../../config/database.js";
 import { buildEmployeeScope } from "../../utils/helper.js";
+import { attendanceError } from "../diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 const STATUS_FILTERS = ["ALL", "ACTIVE", "WORKING", "MATERNITY", "RESIGNED"];
 
@@ -117,6 +118,11 @@ export const getEmployeeList = async (user, filters = {}) => {
       p.grade_level,
       e.base_salary,
       e.work_status,
+      (e.face_descriptor IS NOT NULL) AS has_face_descriptor,
+      e.face_status,
+      DATE_FORMAT(e.face_enrolled_at, '%Y-%m-%d %H:%i:%s') AS face_enrolled_at,
+      DATE_FORMAT(e.face_reset_at, '%Y-%m-%d %H:%i:%s') AS face_reset_at,
+      e.face_reset_reason,
       DATE_FORMAT(e.hire_date, '%Y-%m-%d') AS hire_date,
       DATE_FORMAT(e.resign_date, '%Y-%m-%d') AS resign_date
     FROM employees e
@@ -128,6 +134,41 @@ export const getEmployeeList = async (user, filters = {}) => {
   );
 
   return rows;
+};
+
+export const resetEmployeeFace = async (employeeId, resetBy, reason) => {
+  const id = Number(employeeId);
+  if (!Number.isInteger(id) || id <= 0)
+    throw attendanceError("Mã nhân viên không hợp lệ", 400);
+
+  const text = String(reason ?? "").trim();
+  if (text.length < 5 || text.length > 255)
+    throw attendanceError("Lý do Reset FaceID phải có từ 5 đến 255 ký tự", 400);
+
+  const adminId = Number(resetBy);
+  const [result] = await db.query(
+    `UPDATE employees
+     SET face_descriptor = NULL,
+         face_status = 'UNREGISTERED',
+         face_enrolled_at = NULL,
+         face_reset_by = ?,
+         face_reset_at = NOW(),
+         face_reset_reason = ?
+     WHERE id = ?`,
+    [Number.isInteger(adminId) && adminId > 0 ? adminId : null, text, id],
+  );
+  if (result.affectedRows !== 1)
+    throw attendanceError("Không tìm thấy hồ sơ nhân viên", 404);
+
+  const [rows] = await db.query(
+    `SELECT id, face_status,
+            DATE_FORMAT(face_enrolled_at, '%Y-%m-%d %H:%i:%s') AS face_enrolled_at,
+            DATE_FORMAT(face_reset_at, '%Y-%m-%d %H:%i:%s') AS face_reset_at,
+            face_reset_reason
+     FROM employees WHERE id = ?`,
+    [id],
+  );
+  return rows[0];
 };
 
 export const getEmployeeSummary = async (user) => {
