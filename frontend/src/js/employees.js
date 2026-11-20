@@ -85,6 +85,7 @@ const state = {
   employees: [],
   requestSeq: 0,
   searchTimer: null,
+  resetFaceTarget: null,
 };
 
 let modalKeyHandler = null;
@@ -169,12 +170,15 @@ const ensureViewMounted = () => {
   const doc = new DOMParser().parseFromString(employeesHtml, "text/html");
   const view = doc.querySelector("main > div");
   const modal = doc.getElementById("modal-employee-detail");
+  const resetModal = doc.getElementById("modal-reset-face");
 
   main.innerHTML = "";
   document.getElementById("modal-employee-detail")?.remove();
+  document.getElementById("modal-reset-face")?.remove();
 
   if (view) main.appendChild(document.importNode(view, true));
   if (modal) document.body.appendChild(document.importNode(modal, true));
+  if (resetModal) document.body.appendChild(document.importNode(resetModal, true));
 };
 
 const setText = (selector, text) => {
@@ -340,13 +344,35 @@ const renderStatusBadge = (status) => {
   `;
 };
 
+const formatDateTime = (value) => {
+  if (!value) return "—";
+  const [date, time] = String(value).split(" ");
+  return time ? `${formatDate(date)} ${time.slice(0, 5)}` : formatDate(date);
+};
+
+const faceStatusOf = (employee) =>
+  employee.face_status || (employee.has_face_descriptor ? "ACTIVE" : "UNREGISTERED");
+
+const renderFaceStatusBadge = (employee) => {
+  const active = faceStatusOf(employee) === "ACTIVE";
+  return `
+    <div class="flex flex-col items-center gap-0.5">
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-label-sm text-label-sm font-semibold ${active ? "bg-emerald-50 text-emerald-800" : "bg-surface-container-high text-on-surface-variant"}">
+        <span class="material-symbols-outlined text-[14px]">${active ? "verified" : "face_retouching_natural"}</span>
+        ${active ? "Đã kích hoạt" : "Chưa kích hoạt"}
+      </span>
+      <span class="font-body-sm text-body-sm text-on-surface-variant">${active ? formatDateTime(employee.face_enrolled_at) : "—"}</span>
+    </div>
+  `;
+};
+
 const renderEmptyRow = () => {
   const body = document.getElementById("employeesBody");
   if (!body) return;
 
   body.innerHTML = `
     <tr>
-      <td class="px-3 py-10 text-center" colspan="9">
+      <td class="px-3 py-10 text-center" colspan="10">
         <div class="flex flex-col items-center gap-2 text-on-surface-variant">
           <span class="material-symbols-outlined text-[36px]">person_search</span>
           <p class="font-body-md text-body-md">Không tìm thấy nhân sự phù hợp với bộ lọc hiện tại.</p>
@@ -363,7 +389,7 @@ const renderTableError = (message) => {
 
   body.innerHTML = `
     <tr>
-      <td class="px-3 py-10 text-center" colspan="9">
+      <td class="px-3 py-10 text-center" colspan="10">
         <div class="flex flex-col items-center gap-2 text-on-surface-variant">
           <span class="material-symbols-outlined text-[36px] text-error">cloud_off</span>
           <p class="font-body-md text-body-md">${escapeHtml(message)}</p>
@@ -384,6 +410,7 @@ const renderTable = (user) => {
   }
 
   const canManage = hasPermission("HR.PROFILE_MANAGE", user);
+  const canResetFace = user?.role_id === "SUPER_ADMIN" || canManage;
   const salaryCell = (employee) =>
     state.showSalary && employee.base_salary !== null && employee.base_salary !== undefined
       ? `<span class="font-medium text-on-surface">${formatCurrency(employee.base_salary)}</span>`
@@ -440,6 +467,9 @@ const renderTable = (user) => {
           <td class="px-3 py-2.5 align-top text-center">
             ${renderStatusBadge(employee.work_status)}
           </td>
+          <td class="px-3 py-2.5 align-top text-center">
+            ${renderFaceStatusBadge(employee)}
+          </td>
           <td class="px-3 py-2.5 align-top">
             <div class="flex items-center justify-center gap-1">
               <button
@@ -459,11 +489,24 @@ const renderTable = (user) => {
                        data-id="${employee.id}"
                        title="Chỉnh sửa hồ sơ (sắp triển khai)"
                        type="button"
-                     >
-                       <span class="material-symbols-outlined text-[18px]">edit</span>
-                     </button>`
-                  : ""
-              }
+                      >
+                        <span class="material-symbols-outlined text-[18px]">edit</span>
+                      </button>`
+                   : ""
+               }
+               ${
+                 canResetFace && faceStatusOf(employee) === "ACTIVE"
+                   ? `<button
+                        class="w-7 h-7 rounded hover:bg-red-50 text-error flex items-center justify-center"
+                        data-action="reset-face"
+                        data-id="${employee.id}"
+                        title="Reset FaceID"
+                        type="button"
+                      >
+                        <span class="material-symbols-outlined text-[18px]">lock_reset</span>
+                      </button>`
+                   : ""
+               }
             </div>
           </td>
         </tr>
@@ -525,6 +568,9 @@ const openEmployeeDetail = (employee) => {
         ${detailItem("Phòng ban", `${escapeHtml(employee.department_name || "—")}${employee.department_code ? ` (${escapeHtml(employee.department_code)})` : ""}`)}
         ${detailItem("Chức vụ", escapeHtml(employee.position_title || "—"))}
         ${detailItem("Ngạch bậc", escapeHtml(employee.grade_level || "—"))}
+        ${detailItem("Trạng thái FaceID", faceStatusOf(employee) === "ACTIVE" ? "Đã kích hoạt" : "Chưa kích hoạt")}
+        ${detailItem("Ngày kích hoạt FaceID", formatDateTime(employee.face_enrolled_at))}
+        ${detailItem("Lần Reset gần nhất", employee.face_reset_at ? `${formatDateTime(employee.face_reset_at)} — ${escapeHtml(employee.face_reset_reason || "—")}` : "—")}
         ${detailItem("Lương cơ bản", salary)}
         ${detailItem("Ngày vào làm", formatDate(employee.hire_date))}
         ${detailItem("Ngày nghỉ việc", formatDate(employee.resign_date))}
@@ -555,6 +601,53 @@ const closeEmployeeDetail = () => {
   document.body.classList.remove("overflow-hidden");
 };
 
+const openResetFaceModal = (employee) => {
+  const modal = document.getElementById("modal-reset-face");
+  if (!modal) return;
+  state.resetFaceTarget = employee;
+  setText("#resetFaceEmployeeInfo", `${employee.employee_code} — ${employee.full_name}`);
+  setText("#resetFaceError", "");
+  const reason = document.getElementById("resetFaceReason");
+  if (reason) reason.value = "";
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+  document.body.classList.add("overflow-hidden");
+  reason?.focus();
+};
+
+const closeResetFaceModal = () => {
+  const modal = document.getElementById("modal-reset-face");
+  if (!modal) return;
+  state.resetFaceTarget = null;
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+  document.body.classList.remove("overflow-hidden");
+};
+
+const submitResetFace = async (user) => {
+  const target = state.resetFaceTarget;
+  if (!target) return;
+  const reason = document.getElementById("resetFaceReason")?.value.trim() || "";
+  setText("#resetFaceError", "");
+  if (reason.length < 5 || reason.length > 255) {
+    setText("#resetFaceError", "Lý do Reset phải có từ 5 đến 255 ký tự.");
+    return;
+  }
+  const button = document.getElementById("resetFaceConfirm");
+  if (button) button.disabled = true;
+  try {
+    await api.post(`/employees/${target.id}/reset-face`, { reason });
+    closeResetFaceModal();
+    closeEmployeeDetail();
+    showToast("Reset FaceID thành công. Nhân viên có thể đăng ký lại.");
+    loadEmployees(user);
+  } catch (error) {
+    setText("#resetFaceError", error.response?.data?.message || "Không thể Reset FaceID. Vui lòng thử lại.");
+  } finally {
+    if (button) button.disabled = false;
+  }
+};
+
 const setLoading = (loading) => {
   const body = document.getElementById("employeesBody");
   if (!body) return;
@@ -562,7 +655,7 @@ const setLoading = (loading) => {
   if (loading) {
     body.innerHTML = `
       <tr>
-        <td class="px-3 py-10 text-center text-on-surface-variant" colspan="9">
+        <td class="px-3 py-10 text-center text-on-surface-variant" colspan="10">
           <span class="inline-flex items-center gap-2">
             <span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
             Đang tải danh sách nhân sự...
@@ -796,7 +889,16 @@ const bindEvents = (user) => {
       openEmployeeDetail(employee);
     } else if (actionButton.getAttribute("data-action") === "edit") {
       showToast("Chức năng chỉnh sửa hồ sơ sẽ được triển khai ở bước tiếp theo.");
+    } else if (actionButton.getAttribute("data-action") === "reset-face") {
+      openResetFaceModal(employee);
     }
+  });
+
+  document.getElementById("resetFaceClose")?.addEventListener("click", closeResetFaceModal);
+  document.getElementById("resetFaceCancel")?.addEventListener("click", closeResetFaceModal);
+  document.getElementById("resetFaceConfirm")?.addEventListener("click", () => submitResetFace(user));
+  document.getElementById("modal-reset-face")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closeResetFaceModal();
   });
 
   document.getElementById("employeesChips")?.addEventListener("click", (event) => {
@@ -817,7 +919,9 @@ const bindEvents = (user) => {
 
   if (modalKeyHandler) document.removeEventListener("keydown", modalKeyHandler);
   modalKeyHandler = (event) => {
-    if (event.key === "Escape") closeEmployeeDetail();
+    if (event.key !== "Escape") return;
+    if (!document.getElementById("modal-reset-face")?.classList.contains("hidden")) closeResetFaceModal();
+    else closeEmployeeDetail();
   };
   document.addEventListener("keydown", modalKeyHandler);
 };

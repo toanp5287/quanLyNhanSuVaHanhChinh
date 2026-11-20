@@ -2,6 +2,7 @@ import {
   getEmployeeFilterOptions,
   getEmployeeList,
   getEmployeeSummary,
+  resetEmployeeFace,
   validateEmployeeFilters,
 } from "../../services/employees/employees.service.js";
 import { canViewSalary } from "../../utils/helper.js";
@@ -45,6 +46,27 @@ export const listEmployees = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Có lỗi xảy ra khi lấy danh sách nhân sự",
+    });
+  }
+};
+
+export const resetEmployeeFaceController = async (req, res) => {
+  try {
+    const data = await resetEmployeeFace(
+      req.params.id,
+      req.user?.user_id,
+      req.body?.reason,
+    );
+    return res.status(200).json({
+      success: true,
+      message: "Reset FaceID thành công. Nhân viên có thể đăng ký lại.",
+      data,
+    });
+  } catch (error) {
+    if (!error.status) console.error("Lỗi Reset FaceID:", error);
+    return res.status(error.status || 500).json({
+      success: false,
+      message: error.status ? error.message : "Không thể Reset FaceID",
     });
   }
 };

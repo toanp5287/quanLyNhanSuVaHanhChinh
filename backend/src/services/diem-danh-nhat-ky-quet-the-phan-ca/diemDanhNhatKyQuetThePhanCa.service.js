@@ -61,7 +61,14 @@ const ensureWorkShiftSchema = async () => {
   await workShiftSchemaPromise;
 };
 
-export const FACE_MATCH_THRESHOLD = 0.76;
+const readFaceThreshold = (name, fallback) => {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 && value < 1 ? value : fallback;
+};
+export const ATTENDANCE_MATCH_THRESHOLD = readFaceThreshold("ATTENDANCE_MATCH_THRESHOLD", 0.76);
+export const DUPLICATE_FACE_THRESHOLD = readFaceThreshold("DUPLICATE_FACE_THRESHOLD", 0.7);
+export const FACE_MATCH_THRESHOLD = ATTENDANCE_MATCH_THRESHOLD;
+export const FACE_STORAGE_MODEL = "human-faceres1024-subjectlock-v2";
 export const FACE_MIN_PASS_RATIO = 0.8;
 export const FACE_AMBIGUITY_MARGIN = 0.06;
 export const FACE_CAPTURE_MODEL = "human-faceres1024-subjectlock-v3";
@@ -182,6 +189,42 @@ export const parseStoredFaceData = (rawJson) => {
   } catch {
     return null;
   }
+};
+export const extractVectors = (rawDescriptor) => {
+  const stored = parseStoredFaceData(rawDescriptor);
+  if (!stored) return [];
+  return [...stored.samples, stored.centroid];
+};
+export const findDuplicateFace = (
+  incomingVectors,
+  employees,
+  threshold = DUPLICATE_FACE_THRESHOLD,
+) => {
+  let best = null;
+  for (const employee of employees || []) {
+    const existingVectors = extractVectors(employee.face_descriptor);
+    for (const incoming of incomingVectors || []) {
+      for (const existing of existingVectors) {
+        const score = cosineSimilarity(incoming, existing);
+        if (!Number.isFinite(score)) continue;
+        if (!best || score > best.score) best = { employee, score };
+      }
+    }
+  }
+  return {
+    isDuplicate: Boolean(best && best.score >= threshold),
+    bestMatchScore: best?.score ?? 0,
+    matchedEmployeeId: best?.employee?.id ?? null,
+    matchedEmployee: best?.employee ?? null,
+    thresholdUsed: threshold,
+  };
+};
+export const computeIntraFaceScore = (embeddings) => {
+  const centroid = computeCentroid(embeddings);
+  return embeddings.reduce(
+    (minimum, vector) => Math.min(minimum, cosineSimilarity(vector, centroid)),
+    1,
+  );
 };
 export const evaluateFullSetMatch = (
   liveEmbeddings,

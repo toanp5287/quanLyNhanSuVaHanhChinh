@@ -536,6 +536,9 @@
                     <th class="min-w-[120px] px-3 py-2.5 text-center">
                       Trạng thái
                     </th>
+                    <th class="min-w-[150px] px-3 py-2.5 text-center">
+                      FaceID
+                    </th>
                     <th class="min-w-[110px] px-3 py-2.5 text-center">
                       Thao tác
                     </th>
@@ -548,7 +551,7 @@
                   <tr>
                     <td
                       class="px-3 py-6 text-center text-on-surface-variant"
-                      colspan="9"
+                      colspan="10"
                     >
                       Đang tải danh sách nhân sự...
                     </td>
@@ -614,6 +617,60 @@
             type="button"
           >
             Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="hidden fixed inset-0 z-[110] items-center justify-center bg-black/40 p-4"
+      id="modal-reset-face"
+    >
+      <div class="w-full max-w-md rounded-xl bg-surface-container-lowest shadow-2xl">
+        <div class="flex items-start justify-between gap-space-md px-space-lg py-space-md border-b border-surface-variant">
+          <div>
+            <h3 class="font-headline-md text-headline-md text-on-surface font-bold">
+              Reset FaceID
+            </h3>
+            <p class="font-body-sm text-body-sm text-on-surface-variant" id="resetFaceEmployeeInfo"></p>
+          </div>
+          <button
+            class="w-8 h-8 rounded hover:bg-surface-container text-on-surface-variant flex items-center justify-center"
+            id="resetFaceClose"
+            title="Đóng"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+        <div class="p-space-lg flex flex-col gap-space-sm">
+          <label class="font-label-md text-label-md text-on-surface" for="resetFaceReason">
+            Lý do Reset <span class="text-error">*</span>
+          </label>
+          <textarea
+            class="w-full rounded-lg border border-surface-variant bg-surface-container-lowest px-space-md py-space-sm font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none"
+            id="resetFaceReason"
+            rows="3"
+            maxlength="255"
+            placeholder="Ví dụ: Nhân viên quên mật khẩu thiết bị, cần đăng ký lại khuôn mặt"
+          ></textarea>
+          <p class="font-body-sm text-body-sm text-on-surface-variant" id="resetFaceError"></p>
+        </div>
+        <div class="px-space-lg py-space-md border-t border-surface-variant flex items-center justify-end gap-space-sm">
+          <button
+            class="h-9 px-space-md rounded bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors font-label-lg text-label-lg"
+            id="resetFaceCancel"
+            type="button"
+          >
+            Hủy
+          </button>
+          <button
+            class="h-9 px-space-md rounded bg-error text-white hover:opacity-90 transition-opacity font-label-lg text-label-lg flex items-center gap-1.5"
+            id="resetFaceConfirm"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[18px]">lock_reset</span>
+            Xác nhận Reset
           </button>
         </div>
       </div>

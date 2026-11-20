@@ -33,6 +33,8 @@ const USER_QUERY = `
     e.resign_date,
     e.work_status,
     (e.face_descriptor IS NOT NULL) AS has_face_descriptor,
+    e.face_status,
+    DATE_FORMAT(e.face_enrolled_at, '%Y-%m-%d %H:%i:%s') AS face_enrolled_at,
     d.id AS department_id,
     COALESCE(d.department_code, d.dept_code) AS department_code,
     COALESCE(d.department_name, d.name) AS department_name,

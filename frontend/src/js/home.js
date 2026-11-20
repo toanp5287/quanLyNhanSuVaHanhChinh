@@ -454,8 +454,28 @@ const showToast = (message, options = {}) => {
   return toast;
 };
 
+const DEBUG_FACE_SCAN = false;
 const FACE_CAPTURE_MODEL = "human-faceres1024-subjectlock-v3";
 const FACE_SAMPLE_COUNT = 5;
+const FACE_ENROLL_CONFIG = {
+  scanIntervalMs: 140,
+  sampleIntervalMs: 350,
+  faceHeightMin: 0.25,
+  faceHeightMax: 0.55,
+  maxAngleRad: 0.28,
+  luminanceMin: 65,
+  luminanceMax: 215,
+  blurScoreMin: 30,
+  emotionScoreMax: 0.28,
+  marMax: 0.14,
+  mouthWidthRatioMax: 0.44,
+  baselineEarFrames: 5,
+  blinkCloseRatio: 0.75,
+  blinkOpenRatio: 0.9,
+  blinkMinMs: 100,
+  blinkMaxMs: 800,
+  intraScoreMin: 0.82,
+};
 const TRACK_CONFIG = {
   face: {
     enabled: true,
@@ -476,6 +496,13 @@ const RECOGNIZE_CONFIG = {
     liveness: { enabled: true, skipFrames: 0, skipTime: 0 }, emotion: { enabled: false },
   },
   body: { enabled: false }, hand: { enabled: false }, object: { enabled: false }, gesture: { enabled: true },
+};
+const ENROLL_RECOGNIZE_CONFIG = {
+  ...RECOGNIZE_CONFIG,
+  face: {
+    ...RECOGNIZE_CONFIG.face,
+    emotion: { enabled: true, skipFrames: 0, skipTime: 0 },
+  },
 };
 
 const human = new Human({
@@ -532,6 +559,19 @@ export const ensureFaceModels = async () => {
   await faceModelPromise;
 };
 
+let faceEnrollModelPromise;
+let faceWarmupPromise;
+const ensureEnrollFaceModels = async () => {
+  await ensureFaceModels();
+  if (!faceEnrollModelPromise) faceEnrollModelPromise = human.load(ENROLL_RECOGNIZE_CONFIG).catch(error => {
+    faceEnrollModelPromise = null;
+    throw error;
+  });
+  await faceEnrollModelPromise;
+  if (!faceWarmupPromise) faceWarmupPromise = human.warmup(ENROLL_RECOGNIZE_CONFIG).catch(() => undefined);
+  await faceWarmupPromise;
+};
+
 const vectorSimilarity = (a, b) => {
   if (!a || !b || a.length !== b.length) return -1;
   const norm = Math.hypot(...a) * Math.hypot(...b);
@@ -567,6 +607,83 @@ export const detectEyeBlink = (face, gestures, state = {}, now = performance.now
   }
   return false;
 };
+
+const mouthMetrics = (face) => {
+  const mesh = face?.mesh;
+  if (!Array.isArray(mesh)) return null;
+  const distance = (first, second) => first && second ? Math.hypot(first[0] - second[0], first[1] - second[1]) : NaN;
+  const mouthWidth = distance(mesh[61], mesh[291]);
+  const lipGap = distance(mesh[13], mesh[14]);
+  const jawWidth = distance(mesh[234], mesh[454]);
+  if (![mouthWidth, lipGap, jawWidth].every(Number.isFinite) || mouthWidth <= 0 || jawWidth <= 0) return null;
+  return { mar: lipGap / mouthWidth, mouthWidthRatio: mouthWidth / jawWidth };
+};
+
+const evaluateNeutralFace = (face) => {
+  const mouth = mouthMetrics(face);
+  if (!mouth) return { ok: false, message: "Giữ khuôn mặt tự nhiên, không cười khi kích hoạt", mar: 0, mouthWidthRatio: 0, emotion: null };
+  if (mouth.mar > FACE_ENROLL_CONFIG.marMax || mouth.mouthWidthRatio > FACE_ENROLL_CONFIG.mouthWidthRatioMax)
+    return { ok: false, message: "Giữ khuôn mặt tự nhiên, không cười khi kích hoạt", mar: mouth.mar, mouthWidthRatio: mouth.mouthWidthRatio, emotion: null };
+  const emotions = Array.isArray(face?.emotion) ? face.emotion : [];
+  const dominant = emotions.reduce((best, item) => {
+    const score = Number(item?.score || 0);
+    return !best || score > best.score ? { name: item?.emotion || item?.name || "", score } : best;
+  }, null);
+  const blocked = emotions.find(item => {
+    const name = item?.emotion || item?.name || "";
+    return ["happy", "surprised", "angry", "disgust"].includes(name) && Number(item?.score || 0) > FACE_ENROLL_CONFIG.emotionScoreMax;
+  });
+  if (blocked || (dominant && dominant.name && dominant.name !== "neutral" && dominant.score > 0.35))
+    return { ok: false, message: "Giữ khuôn mặt tự nhiên, không cười khi kích hoạt", mar: mouth.mar, mouthWidthRatio: mouth.mouthWidthRatio, emotion: dominant?.name || "non-neutral" };
+  return { ok: true, message: "", mar: mouth.mar, mouthWidthRatio: mouth.mouthWidthRatio, emotion: dominant?.name || "neutral" };
+};
+
+const detectEnrollmentBlink = (face, gestures, state, now) => {
+  const ear = eyeRatio(face);
+  const blinkGesture = (gestures || []).some(item => /blink (left|right) eye/i.test(typeof item === "string" ? item : item.gesture || ""));
+  if (!state.baselineEars) state.baselineEars = [];
+  if (!state.blinkState) state.blinkState = {};
+  if (Number.isFinite(ear) && ear > 0.12 && !blinkGesture && state.baselineEars.length < FACE_ENROLL_CONFIG.baselineEarFrames)
+    state.baselineEars.push(ear);
+  if (!state.baselineEAR && state.baselineEars.length >= FACE_ENROLL_CONFIG.baselineEarFrames)
+    state.baselineEAR = median(state.baselineEars);
+  const ratio = state.baselineEAR ? ear / state.baselineEAR : null;
+  const closeSignal = blinkGesture || (ratio !== null && ratio < FACE_ENROLL_CONFIG.blinkCloseRatio);
+  const openSignal = !blinkGesture && (ratio !== null
+    ? ratio >= FACE_ENROLL_CONFIG.blinkOpenRatio
+    : Number.isFinite(ear) && ear > 0.22);
+  if (state.blinkState.closedAt && !openSignal) {
+    if (now - state.blinkState.closedAt > FACE_ENROLL_CONFIG.blinkMaxMs) state.blinkState.closedAt = null;
+    return false;
+  }
+  if (!state.blinkState.closedAt && (state.baselineEAR || blinkGesture) && closeSignal) {
+    state.blinkState.closedAt = now;
+    return false;
+  }
+  if (state.blinkState.closedAt && openSignal) {
+    const duration = now - state.blinkState.closedAt;
+    state.blinkState.closedAt = null;
+    return duration >= FACE_ENROLL_CONFIG.blinkMinMs && duration <= FACE_ENROLL_CONFIG.blinkMaxMs;
+  }
+  return false;
+};
+
+const evaluateEnrollmentFraming = (subject, width, height) => {
+  const box = subject?.faceBox;
+  if (!box) return { ok: false, message: "Đưa mặt vào giữa khung", faceHeightRatio: 0 };
+  const faceHeightRatio = box[3] / height;
+  const centerX = box[0] + box[2] / 2;
+  const centerY = box[1] + box[3] / 2;
+  const insideGuide = centerX > width * 0.3 && centerX < width * 0.7 && centerY > height * 0.16 && centerY < height * 0.78;
+  if (!insideGuide) return { ok: false, message: "Đưa mặt vào giữa khung", faceHeightRatio };
+  if (faceHeightRatio < FACE_ENROLL_CONFIG.faceHeightMin) return { ok: false, message: "Lại gần hơn một chút", faceHeightRatio };
+  if (faceHeightRatio > FACE_ENROLL_CONFIG.faceHeightMax) return { ok: false, message: "Lùi ra một chút", faceHeightRatio };
+  return { ok: true, message: "", faceHeightRatio };
+};
+
+const meanVector = (vectors) => vectors[0].map((_, index) =>
+  vectors.reduce((sum, vector) => sum + vector[index], 0) / vectors.length
+);
 
 const boxCenter = (box) => [box[0] + box[2] / 2, box[1] + box[3] / 2];
 
@@ -816,8 +933,9 @@ const buildCaptureMetadata = (state) => {
   };
 };
 
-const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}, isActive = () => true, probeOnly = false, timeoutMs = 75000 }) => {
-  await ensureFaceModels();
+const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}, isActive = () => true, probeOnly = false, timeoutMs = 75000, enrollmentMode = false, initialBaseline = null }) => {
+  if (enrollmentMode) await ensureEnrollFaceModels();
+  else await ensureFaceModels();
   const host = video.parentElement;
   video.style.transform = "scaleX(-1)";
   let guide = host?.querySelector("canvas[data-face-guide], #faceEnrollOverlay");
@@ -838,6 +956,9 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
     rejectedOthers: 0,
     lastCapture: 0,
     blinkState: {},
+    baselineEars: initialBaseline?.baselineEars ? [...initialBaseline.baselineEars] : [],
+    baselineEAR: initialBaseline?.baselineEAR || null,
+    lastIntraScore: 0,
     stats: { minScore: null, minReal: null, minLive: null, minSharpness: null, brightnessMin: null, brightnessMax: null, minFaceWidth: null },
   };
   const updateMin = (key, value) => {
@@ -846,6 +967,7 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
   const deadline = performance.now() + timeoutMs;
   try {
     while (performance.now() < deadline) {
+      const cycleStarted = performance.now();
       if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
       const tracking = await human.detect(video, TRACK_CONFIG);
       if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
@@ -857,25 +979,55 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
       state.subject = tracked.subject;
       if (tracked.otherPersons > 0) state.rejectedOthers += 1;
       drawFaceGuides(guide, video, state.subject, tracked.message);
+      const idleMs = enrollmentMode ? FACE_ENROLL_CONFIG.scanIntervalMs : 60;
       if (!state.subject?.locked) {
         onStage(tracked.message);
-        await new Promise(resolve => setTimeout(resolve, 60));
+        await new Promise(resolve => setTimeout(resolve, idleMs));
         continue;
       }
       const context = cropFaceRegion(video, state.subject.faceBox, faceCanvas);
-      const recognition = await human.detect(faceCanvas, RECOGNIZE_CONFIG);
+      const recognition = await human.detect(faceCanvas, enrollmentMode ? ENROLL_RECOGNIZE_CONFIG : RECOGNIZE_CONFIG);
       if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
       const face = recognition.face?.length === 1 ? recognition.face[0] : null;
       const metrics = cropMetrics(context, faceCanvas.width);
       const angle = face?.rotation?.angle;
-      const facing = angle && Math.abs(angle.yaw) <= 0.22 && Math.abs(angle.pitch) <= 0.22 && Math.abs(angle.roll) <= 0.22;
+      const maxAngle = enrollmentMode ? FACE_ENROLL_CONFIG.maxAngleRad : 0.22;
+      const facing = angle && Math.abs(angle.yaw) <= maxAngle && Math.abs(angle.pitch) <= maxAngle && Math.abs(angle.roll) <= maxAngle;
       const box = face?.box;
       const boxValid = box && box[0] >= 10 && box[1] >= 10 && box[0] + box[2] <= 310 && box[1] + box[3] <= 310 && box[2] >= 130;
-      if (face && Number(face.score) >= 0.7 && detectEyeBlink(face, recognition.gesture, state.blinkState)) state.blinks += 1;
-      const quality = face && facing && eyeRatio(face) > 0.18 && boxValid && Number(face.score) >= 0.85 && Number(face.real) >= 0.7 && Number(face.live) >= 0.7 && metrics.brightness >= 50 && metrics.brightness <= 220 && metrics.sharpness >= 30 && (face.embedding?.length || 0) >= 512;
+      const framing = enrollmentMode ? evaluateEnrollmentFraming(state.subject, width, height) : { ok: true, message: "", faceHeightRatio: 0 };
+      const neutral = enrollmentMode ? evaluateNeutralFace(face) : { ok: true, message: "", mar: 0, mouthWidthRatio: 0, emotion: null };
+      const currentEar = enrollmentMode ? eyeRatio(face) : null;
+      if (!enrollmentMode && face && Number(face.score) >= 0.7 && detectEyeBlink(face, recognition.gesture, state.blinkState)) state.blinks += 1;
+      if (enrollmentMode && face && framing.ok && neutral.ok && facing && Number(face.score) >= 0.7 && detectEnrollmentBlink(face, recognition.gesture, state, performance.now())) state.blinks += 1;
+      const embeddingLength = face?.embedding?.length || 0;
+      const embeddingValid = enrollmentMode ? embeddingLength === 1024 : embeddingLength >= 512;
+      const blurMinimum = enrollmentMode ? FACE_ENROLL_CONFIG.blurScoreMin : 30;
+      const brightnessMinimum = enrollmentMode ? FACE_ENROLL_CONFIG.luminanceMin : 50;
+      const brightnessMaximum = enrollmentMode ? FACE_ENROLL_CONFIG.luminanceMax : 220;
+      const quality = face && facing && framing.ok && neutral.ok && Number(face.real) >= 0.7 && Number(face.live) >= 0.7 && eyeRatio(face) > 0.18 && boxValid && Number(face.score) >= 0.85 && embeddingValid && metrics.brightness >= brightnessMinimum && metrics.brightness <= brightnessMaximum && metrics.sharpness >= blurMinimum;
+      if (DEBUG_FACE_SCAN) {
+        console.log("[FACE_SCAN]", JSON.stringify({
+          detectMs: Math.round(performance.now() - cycleStarted),
+          faceHeightRatio: Number(framing.faceHeightRatio.toFixed(3)),
+          yaw: angle ? Number(angle.yaw.toFixed(3)) : null,
+          pitch: angle ? Number(angle.pitch.toFixed(3)) : null,
+          roll: angle ? Number(angle.roll.toFixed(3)) : null,
+          luminance: Number(metrics.brightness.toFixed(1)),
+          blurScore: Number(metrics.sharpness.toFixed(1)),
+          emotion: neutral.emotion,
+          mar: Number(neutral.mar.toFixed(3)),
+          mouthWidthRatio: Number(neutral.mouthWidthRatio.toFixed(3)),
+          ear: Number.isFinite(currentEar) ? Number(currentEar.toFixed(3)) : null,
+          baselineEAR: state.baselineEAR ? Number(state.baselineEAR.toFixed(3)) : null,
+          earRatio: state.baselineEAR && Number.isFinite(currentEar) ? Number((currentEar / state.baselineEAR).toFixed(3)) : null,
+          intraScore: Number(state.lastIntraScore.toFixed(4)),
+          quality: Boolean(quality),
+        }));
+      }
       if (!quality) {
-        onStage(!face ? "Đang lấy lại nét khuôn mặt đã khóa." : !facing ? "Hướng mặt gần thẳng về camera." : metrics.sharpness < 30 ? "Khung hình hơi nhòe, đang chờ nét lại." : metrics.brightness < 50 ? "Khuôn mặt thiếu sáng. Hướng về phía nguồn sáng." : metrics.brightness > 220 ? "Ánh sáng quá chói. Giảm độ sáng rồi quét lại." : "Đang chờ khung hình khuôn mặt đạt chất lượng.");
-        await new Promise(resolve => setTimeout(resolve, 60));
+        onStage(!face ? "Đang lấy lại nét khuôn mặt đã khóa." : !framing.ok ? framing.message : !neutral.ok ? neutral.message : !facing ? "Nhìn thẳng vào camera" : metrics.sharpness < blurMinimum ? "Giữ yên khuôn mặt" : metrics.brightness < brightnessMinimum ? "Thiếu sáng, hãy hướng mặt về nguồn sáng" : metrics.brightness > brightnessMaximum ? "Ánh sáng quá chói hoặc ngược sáng" : !embeddingValid ? "Mô hình nhận diện chưa sẵn sàng, vui lòng đợi rồi quét lại." : "Đang chờ khung hình khuôn mặt đạt chất lượng.");
+        await new Promise(resolve => setTimeout(resolve, idleMs));
         continue;
       }
       updateMin("minScore", Number(face.score));
@@ -886,28 +1038,43 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
       state.stats.brightnessMax = Math.max(state.stats.brightnessMax ?? metrics.brightness, metrics.brightness);
       updateMin("minFaceWidth", box[2]);
       const values = Array.from(face.embedding);
-      if (probeOnly) return { embedding: values, capture: buildCaptureMetadata(state) };
+      if (probeOnly) return { embedding: values, capture: buildCaptureMetadata(state), blinkBaseline: { baselineEars: state.baselineEars, baselineEAR: state.baselineEAR } };
       if (!state.blinks) {
         onStage("Đã khóa đúng người quét. HÃY CHỚP MẮT 1 LẦN ĐỂ BẮT ĐẦU QUÉT");
-        await new Promise(resolve => setTimeout(resolve, 60));
+        await new Promise(resolve => setTimeout(resolve, idleMs));
         continue;
       }
-      if (performance.now() - state.lastCapture < 120) {
-        await new Promise(resolve => setTimeout(resolve, 35));
+      const sampleIntervalMs = enrollmentMode ? FACE_ENROLL_CONFIG.sampleIntervalMs : 120;
+      const betweenSamplesMs = enrollmentMode ? FACE_ENROLL_CONFIG.scanIntervalMs : 35;
+      if (performance.now() - state.lastCapture < sampleIntervalMs) {
+        await new Promise(resolve => setTimeout(resolve, betweenSamplesMs));
         continue;
       }
-      if (state.samples.length && vectorSimilarity(values, state.samples[0]) < 0.82) {
+      const sampleLimit = enrollmentMode ? FACE_ENROLL_CONFIG.intraScoreMin : 0.82;
+      if (state.samples.length && vectorSimilarity(values, state.samples[0]) < sampleLimit) {
         onStage("Khung hình chưa khớp ổn định với các mẫu trước, đang thử lại.");
-        await new Promise(resolve => setTimeout(resolve, 60));
+        await new Promise(resolve => setTimeout(resolve, idleMs));
         continue;
       }
       state.samples.push(values);
       state.lastCapture = performance.now();
       onProgress(state.samples.length, FACE_SAMPLE_COUNT);
       onStage(`Đang lấy mẫu khuôn mặt: ${state.samples.length}/${FACE_SAMPLE_COUNT}. Người đi qua lại đã được bỏ qua.`);
-      if (state.samples.length === FACE_SAMPLE_COUNT)
+      if (state.samples.length === FACE_SAMPLE_COUNT) {
+        if (enrollmentMode) {
+          const intraScore = Math.min(...state.samples.map(vector => vectorSimilarity(vector, meanVector(state.samples))));
+          state.lastIntraScore = intraScore;
+          if (intraScore < FACE_ENROLL_CONFIG.intraScoreMin) {
+            state.samples = [];
+            state.lastCapture = 0;
+            onStage("Giữ yên khuôn mặt và thử lại");
+            await new Promise(resolve => setTimeout(resolve, idleMs));
+            continue;
+          }
+        }
         return { embeddings: state.samples, blink_verified: true, capture: buildCaptureMetadata(state) };
-      await new Promise(resolve => setTimeout(resolve, 35));
+      }
+      await new Promise(resolve => setTimeout(resolve, betweenSamplesMs));
     }
     throw new Error(probeOnly
       ? "Không khóa được đúng người quét. Đứng yên trước camera rồi thử lại."
@@ -917,11 +1084,11 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
   }
 };
 
-export const captureFaceSamples = async (video, onProgress = () => {}, isActive = () => true, onStage = () => {}) =>
-  runFaceCapture(video, { onProgress, onStage, isActive, probeOnly: false, timeoutMs: 75000 });
+export const captureFaceSamples = async (video, onProgress = () => {}, isActive = () => true, onStage = () => {}, options = {}) =>
+  runFaceCapture(video, { onProgress, onStage, isActive, probeOnly: false, timeoutMs: 75000, ...options });
 
 const captureFaceProbe = async (video, isActive = () => true, onStage = () => {}) =>
-  runFaceCapture(video, { onStage, isActive, probeOnly: true, timeoutMs: 25000 });
+  runFaceCapture(video, { onStage, isActive, probeOnly: true, timeoutMs: 25000, enrollmentMode: true });
 
 
 const showFaceEnrollConflict = (error, retryLabel = "Quét lại khuôn mặt") => {
@@ -971,8 +1138,14 @@ const runFaceEnrollScan = async () => {
     await api.post("/attendance/check-face-owner", { embedding: probe.embedding, capture: probe.capture });
     if (session !== faceEnrollSession || !document.getElementById("modal-faceid-enroll")?.isConnected) return;
     if (startBtn) startBtn.querySelector("span:last-child").textContent = "Bắt đầu quét";
-    setFaceEnrollStatus("Đang lấy 5 mẫu khuôn mặt...", "Giữ nguyên người đã khóa, nhìn thẳng và chớp mắt khi được yêu cầu.");
-    faceEnrollDescriptor = await captureFaceSamples(video, (count, total) => setFaceEnrollStatus(`Đang quét mẫu: ${count}/${total} (${Math.round(count / total * 100)}%)`), () => session === faceEnrollSession && Boolean(faceEnrollStream?.active), text => setFaceEnrollStatus(text));
+    setFaceEnrollStatus("Đang lấy 5 mẫu khuôn mặt...", "Giữ khuôn mặt tự nhiên, nhìn thẳng, không cười và giữ yên khi được yêu cầu.");
+    faceEnrollDescriptor = await captureFaceSamples(
+      video,
+      (count, total) => setFaceEnrollStatus(`Đang quét mẫu: ${count}/${total} (${Math.round(count / total * 100)}%)`),
+      () => session === faceEnrollSession && Boolean(faceEnrollStream?.active),
+      text => setFaceEnrollStatus(text),
+      { enrollmentMode: true, initialBaseline: probe.blinkBaseline },
+    );
     if (!activeSession(session)) return;
     setFaceEnrollStatus("Đã lấy đủ 5 mẫu khuôn mặt", "Bấm Lưu mẫu khuôn mặt để cập nhật FaceID. Hệ thống sẽ kiểm tra trùng với nhân viên khác.");
     if (saveBtn) { saveBtn.disabled = false; saveBtn.classList.remove("hidden"); saveBtn.classList.add("flex"); }
@@ -1035,6 +1208,11 @@ const enableFaceEnrollCamera = async () => {
 export const openFaceEnrollModal = async () => {
   const modal = document.getElementById("modal-faceid-enroll");
   if (!modal) return;
+  if (resolveFaceStatus(getCurrentUser()) === "ACTIVE") {
+    showToast("Tài khoản đã kích hoạt FaceID. Liên hệ Admin/HR để Reset nếu cần đăng ký lại.", { duration: 5000 });
+    return;
+  }
+  void ensureEnrollFaceModels().catch(() => undefined);
 
   modal.classList.remove("hidden");
   modal.classList.add("flex");
@@ -1083,6 +1261,8 @@ const saveFaceDescriptor = async () => {
     });
     const updated = updateCurrentUser({
       has_face_descriptor: true,
+      face_status: response.data?.data?.face_status || "ACTIVE",
+      face_enrolled_at: response.data?.data?.face_enrolled_at || null,
     });
     closeFaceEnrollModal();
     showToast("Cập nhật mẫu khuôn mặt FaceID thành công.");
@@ -1148,9 +1328,11 @@ export const bindFaceEnrollModal = () => {
   });
 };
 
+const resolveFaceStatus = (user) => user?.face_status || (user?.has_face_descriptor ? "ACTIVE" : "UNREGISTERED");
+
 const promptFaceEnrollmentIfMissing = (user) => {
   const headerBtn = document.getElementById("btnFaceEnrollHeader");
-  const needsFace = Boolean(user?.employee_id) && !user?.has_face_descriptor;
+  const needsFace = Boolean(user?.employee_id) && resolveFaceStatus(user) !== "ACTIVE";
 
   if (headerBtn) {
     if (needsFace) {
