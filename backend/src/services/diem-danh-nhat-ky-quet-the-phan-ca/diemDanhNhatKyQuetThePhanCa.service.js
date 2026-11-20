@@ -6,7 +6,6 @@ export const attendanceError = (message, status = 400) =>
   Object.assign(new Error(message), { status });
 
 const columnCache = new Map();
-let workShiftSchemaPromise;
 const hasColumn = async (connection, table, column) => {
   const key = `${table}.${column}`;
   const cached = columnCache.get(key);
@@ -21,91 +20,9 @@ const hasColumn = async (connection, table, column) => {
   return value;
 };
 
-const ensureWorkShiftSchema = async () => {
-  if (!workShiftSchemaPromise) {
-    workShiftSchemaPromise = (async () => {
-      const definitions = [
-        ["grace_period", "INT NOT NULL DEFAULT 15"],
-        ["checkin_start", "TIME NULL"],
-        ["checkin_end", "TIME NULL"],
-        ["checkout_start", "TIME NULL"],
-        ["checkout_end", "TIME NULL"],
-        ["grace_period_minutes", "INT NOT NULL DEFAULT 15"],
-        ["is_active", "TINYINT(1) NOT NULL DEFAULT 1"],
-      ];
-      for (const [column, definition] of definitions) {
-        if (await hasColumn(db, "work_shifts", column)) continue;
-        await db.query(
-          `ALTER TABLE work_shifts ADD COLUMN ${column} ${definition}`,
-        );
-        columnCache.delete(`work_shifts.${column}`);
-        columnCache.delete(`work_shifts.grace_period`);
-        if (column === "grace_period_minutes") {
-          const hasLegacyGrace = await hasColumn(
-            db,
-            "work_shifts",
-            "grace_period",
-          );
-          if (hasLegacyGrace) {
-            await db.query(
-              "UPDATE work_shifts SET grace_period_minutes = COALESCE(grace_period, 15)",
-            );
-          }
-        }
-      }
-    })().catch((error) => {
-      workShiftSchemaPromise = null;
-      throw error;
-    });
-  }
-  await workShiftSchemaPromise;
-};
-
 export const FACE_MATCH_THRESHOLD = 0.76;
 export const FACE_MIN_PASS_RATIO = 0.8;
 export const FACE_AMBIGUITY_MARGIN = 0.06;
-export const FACE_CAPTURE_MODEL = "human-faceres1024-subjectlock-v3";
-const CAPTURE_MIN = {
-  score: 0.85,
-  real: 0.7,
-  live: 0.7,
-  sharpness: 30,
-  brightnessMin: 50,
-  brightnessMax: 220,
-  faceWidth: 130,
-  stableFrames: 8,
-  maxSpeed: 18,
-};
-const assertMin = (value, min, message) => {
-  if (!Number.isFinite(Number(value)) || Number(value) < min)
-    throw attendanceError(`${message} chưa đạt yêu cầu. Vui lòng quét lại.`, 400);
-};
-const assertCaptureMetadata = (capture, total) => {
-  if (!capture || typeof capture !== "object")
-    throw attendanceError("Thiếu dữ liệu xác thực chất lượng khuôn mặt. Vui lòng tải lại trang và quét lại.", 400);
-  if (capture.model !== FACE_CAPTURE_MODEL)
-    throw attendanceError("Phiên bản mô hình nhận diện không khớp. Vui lòng tải lại trang và quét lại.", 400);
-  if (capture.face_only !== true || capture.subject?.locked !== true)
-    throw attendanceError("Chưa khóa đúng người quét. Vui lòng đứng yên và quét lại.", 400);
-  const quality = capture.quality || {};
-  const liveness = capture.liveness || {};
-  const subject = capture.subject || {};
-  assertMin(quality.min_score, CAPTURE_MIN.score, "Độ tin cậy khuôn mặt");
-  assertMin(quality.min_real, CAPTURE_MIN.real, "Khả năng chống ảnh giả");
-  assertMin(quality.min_live, CAPTURE_MIN.live, "Xác thực sống");
-  assertMin(quality.min_sharpness, CAPTURE_MIN.sharpness, "Độ nét khuôn mặt");
-  assertMin(quality.min_face_width, CAPTURE_MIN.faceWidth, "Kích thước khuôn mặt");
-  assertMin(quality.brightness_min, CAPTURE_MIN.brightnessMin, "Độ sáng tối thiểu");
-  if (!Number.isFinite(Number(quality.brightness_max)) || Number(quality.brightness_max) > CAPTURE_MIN.brightnessMax)
-    throw attendanceError("Ánh sáng quá chói. Vui lòng quét lại.", 400);
-  if (liveness.blink_verified !== true || !Number.isFinite(Number(liveness.blink_count)) || Number(liveness.blink_count) < 1)
-    throw attendanceError("Chưa xác thực chớp mắt. Vui lòng quét lại.", 400);
-  assertMin(subject.stable_frames, CAPTURE_MIN.stableFrames, "Thời gian đứng yên");
-  if (!Number.isFinite(Number(subject.max_speed)) || Number(subject.max_speed) > CAPTURE_MIN.maxSpeed)
-    throw attendanceError("Người quét di chuyển quá nhiều. Vui lòng đứng yên và quét lại.", 400);
-  if (Number(capture.samples) !== Number(total))
-    throw attendanceError("Số mẫu khuôn mặt không khớp. Vui lòng quét lại.", 400);
-};
 const requiredPassCount = (total) =>
   Math.max(1, Math.ceil(total * FACE_MIN_PASS_RATIO));
 export const l2Normalize = (vec) => {
@@ -231,7 +148,6 @@ export const validateBiometricCapture = (
   embeddings,
   blinkVerified,
   minInternalSim = 0.8,
-  capture = null,
 ) => {
   if (blinkVerified !== true)
     throw attendanceError(
@@ -242,12 +158,8 @@ export const validateBiometricCapture = (
     throw attendanceError("Cần đúng 5 mẫu khuôn mặt để xác thực", 400);
   if (embeddings.some((vector) => !Array.isArray(vector) || vector.length < 64))
     throw attendanceError("Mẫu sinh trắc học không hợp lệ", 400);
-  if (capture) assertCaptureMetadata(capture, embeddings.length);
   const samples = embeddings.map(l2Normalize);
-  const consistency = verifyInternalConsistency(
-    samples,
-    capture ? 0.86 : minInternalSim,
-  );
+  const consistency = verifyInternalConsistency(samples, minInternalSim);
   if (!consistency.valid) throw attendanceError(consistency.message, 400);
   return samples;
 };
@@ -292,20 +204,8 @@ const formatTime = (minutes) => {
   const safe = Math.max(0, Math.min(1439, Math.round(minutes)));
   return `${String(Math.floor(safe / 60)).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}:00`;
 };
-const formatDateOnly = (value) => {
-  if (!value) return null;
-  if (value instanceof Date)
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Ho_Chi_Minh",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(value);
-  return String(value).slice(0, 10);
-};
 const LEGACY_STATUS = {
-  IN_PROGRESS: "IN_PROGRESS",
-  MISSING_CHECKOUT: "MISSING_CHECKOUT",
+  IN_PROGRESS: "MISSING_CHECKOUT",
   MISSING_OUT: "MISSING_CHECKOUT",
   COMPLETED: "VALID",
   LATE_OR_EARLY: "LATE",
@@ -340,7 +240,7 @@ export const serverDate = async (connection = db) => {
 const serverNow = async (connection = db) => {
   const [rows] = await connection.query(
     `SELECT DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS today,
-            DATE_FORMAT(CURTIME(), '%H:%i:%s') AS now_time,
+            DATE_FORMAT(CURTIME(), '%H:%i:%s') AS current_time,
             DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s') AS datetime`,
   );
   return rows[0];
@@ -378,30 +278,25 @@ export const assertMonthOpen = async (connection, employeeId, date) => {
 };
 
 const SHIFT_SELECT = `SELECT s.id AS shift_id, s.code AS shift_code, s.name,
-  s.start_time, s.end_time, s.checkin_start, s.checkin_end,
-  s.checkout_start, s.checkout_end, s.break_start, s.break_end,
-  s.grace_period_minutes, s.grace_period,
-  s.min_ot_minutes, s.standard_hours, s.workday_value, s.is_default, s.is_active
+  s.start_time, s.end_time, s.break_start, s.break_end, s.grace_period,
+  s.min_ot_minutes, s.standard_hours, s.workday_value, s.is_default
   FROM work_shifts s`;
 
-export const getShiftById = async (shiftId, connection = db) => {
-  await ensureWorkShiftSchema();
+const getShiftById = async (shiftId, connection = db) => {
   const [rows] = await connection.query(`${SHIFT_SELECT} WHERE s.id = ? LIMIT 1`, [
     shiftId,
   ]);
-  return shiftWithAllowedLimit(rows[0] || null);
+  return rows[0] || null;
 };
 
 const getDefaultShift = async (connection = db) => {
-  await ensureWorkShiftSchema();
   const [rows] = await connection.query(
     `${SHIFT_SELECT} WHERE s.is_default = 1 AND s.is_active = 1 ORDER BY s.id LIMIT 1`,
   );
-  return shiftWithAllowedLimit(rows[0] || null);
+  return rows[0] || null;
 };
 
 const getTodayShift = async (employeeId, connection = db, dateValue = null) => {
-  await ensureWorkShiftSchema();
   const date = dateValue || (await serverDate(connection));
   const [rows] = await connection.query(
     `${SHIFT_SELECT}
@@ -413,7 +308,7 @@ const getTodayShift = async (employeeId, connection = db, dateValue = null) => {
       LIMIT 1`,
     [employeeId, date, date],
   );
-  return shiftWithAllowedLimit(rows[0] || (await getDefaultShift(connection)));
+  return rows[0] || (await getDefaultShift(connection));
 };
 
 export const getShiftForDate = async (employeeId, dateValue, connection = db) => {
@@ -426,13 +321,10 @@ const getAttendanceForDate = async (
   workDate,
   connection = db,
 ) => {
-  await ensureWorkShiftSchema();
   const withUser = await hasColumn(connection, "attendances", "user_id");
   const [rows] = await connection.query(
     `SELECT a.*, s.code AS shift_code, s.name AS shift_name, s.start_time,
-            s.end_time, s.checkin_start, s.checkin_end,
-            s.checkout_start, s.checkout_end, s.break_start, s.break_end,
-            s.grace_period_minutes, s.grace_period,
+            s.end_time, s.break_start, s.break_end, s.grace_period,
             s.min_ot_minutes, s.standard_hours, s.workday_value,
             ${withUser ? "u.username, u.role_id" : "NULL AS username, NULL AS role_id"}
        FROM attendances a
@@ -442,111 +334,7 @@ const getAttendanceForDate = async (
       LIMIT 1`,
     [employeeId, workDate],
   );
-  return shiftWithAllowedLimit(rows[0] || null);
-};
-
-const shiftTimeWindow = (shift, type) => {
-  const shiftStart = toMinutes(shift.start_time) ?? 0;
-  const shiftEnd = toMinutes(shift.end_time) ?? 1439;
-  const grace = toNumber(shift.grace_period_minutes ?? shift.grace_period, 15);
-  if (type === "CHECK_IN") {
-    return {
-      start: toMinutes(shift.checkin_start) ?? Math.max(0, shiftStart - 120),
-      end: toMinutes(shift.checkin_end) ?? Math.min(1439, shiftStart + 120),
-      allowedLimit: shiftStart + grace,
-    };
-  }
-  return {
-    start:
-      toMinutes(shift.checkout_start) ?? Math.max(shiftStart, shiftEnd - 120),
-    end: toMinutes(shift.checkout_end) ?? Math.min(1439, shiftEnd + 120),
-  };
-};
-
-const shiftWithAllowedLimit = (shift) => {
-  if (!shift) return shift;
-  const grace = toNumber(shift.grace_period_minutes ?? shift.grace_period, 15);
-  const start = toMinutes(shift.start_time);
-  return {
-    ...shift,
-    grace_period_minutes: grace,
-    allowed_limit_time:
-      start === null ? null : formatTime(start + grace),
-  };
-};
-
-const checkScanWindow = (shift, type, scanTime) => {
-  const window = shiftTimeWindow(shift, type);
-  const scanMinutes = toMinutes(scanTime);
-  if (scanMinutes === null || scanMinutes < window.start || scanMinutes > window.end)
-    return { allowed: false, window };
-  return { allowed: true, window };
-};
-
-const reconcileMissingCheckout = async (employeeId, workDate) => {
-  const connection = await db.getConnection();
-  try {
-    await connection.beginTransaction();
-    const attendance = await getAttendanceForDate(employeeId, workDate, connection);
-    if (!attendance?.check_in || attendance.check_out) {
-      await connection.commit();
-      return attendance;
-    }
-    const today = await serverDate(connection);
-    let cutoffPassed = workDate < today;
-    if (workDate === today) {
-      const now = await serverNow(connection);
-      cutoffPassed =
-        toMinutes(now.now_time) !== null &&
-        toMinutes(now.now_time) > shiftTimeWindow(attendance, "CHECK_OUT").end;
-    }
-    if (!cutoffPassed) {
-      await connection.commit();
-      return attendance;
-    }
-    const [timesheets] = await connection.query(
-      "SELECT status FROM monthly_timesheets WHERE employee_id = ? AND month_year = ? LIMIT 1",
-      [employeeId, workDate.slice(0, 7)],
-    );
-    if (timesheets[0]?.status === "LOCKED") {
-      await connection.commit();
-      return attendance;
-    }
-    const withUpdatedAt = await hasColumn(connection, "attendances", "updated_at");
-    await connection.query(
-      `UPDATE attendances
-          SET status = 'MISSING_CHECKOUT'${withUpdatedAt ? ", updated_at = NOW()" : ""}
-        WHERE id = ? AND check_in IS NOT NULL AND check_out IS NULL`,
-      [attendance.id],
-    );
-    await recalculateEmployeeMonth(
-      connection,
-      employeeId,
-      workDate.slice(0, 7),
-    );
-    await connection.commit();
-    return { ...attendance, status: "MISSING_CHECKOUT" };
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
-};
-
-const reconcileMissingCheckoutsForDate = async (workDate, user) => {
-  await ensureWorkShiftSchema();
-  const scope = buildEmployeeScope(user);
-  const [rows] = await db.query(
-    `SELECT a.employee_id FROM attendances a
-       INNER JOIN employees e ON e.id = a.employee_id
-      WHERE a.work_date = ? AND a.check_in IS NOT NULL AND a.check_out IS NULL
-        ${scope.clause ? `AND ${scope.clause.replace(/^WHERE\s+/i, "")}` : ""}`,
-    [workDate, ...scope.params],
-  );
-  for (const row of rows) {
-    await reconcileMissingCheckout(row.employee_id, workDate);
-  }
+  return rows[0] || null;
 };
 
 const insertRawScan = async (
@@ -614,10 +402,6 @@ export const recalculateDailyAttendance = async (
 
   const checkIn = toMinutes(attendance.check_in);
   const checkOut = toMinutes(attendance.check_out);
-  const gracePeriod = toNumber(
-    attendance.grace_period_minutes ?? attendance.grace_period,
-    15,
-  );
   let lateMinutes = 0;
   let earlyLeaveMinutes = 0;
   let actualWorkHours = 0;
@@ -636,11 +420,11 @@ export const recalculateDailyAttendance = async (
     totalWorkday = paidLeaveWorkday;
     status = "ON_LEAVE";
   } else {
-    const lateBeyondGrace =
+    if (
       checkIn !== null &&
       effectiveStart !== null &&
-      checkIn > effectiveStart + gracePeriod;
-    if (lateBeyondGrace) {
+      checkIn > effectiveStart + toNumber(attendance.grace_period, 0)
+    ) {
       lateMinutes = checkIn - effectiveStart;
       if (leave?.leave_type === "LATE_EARLY_EXEMPT")
         lateMinutes = Math.max(0, lateMinutes - toNumber(leave.exempt_minutes, 0));
@@ -717,21 +501,8 @@ export const recalculateDailyAttendance = async (
 
       status = lateMinutes > 0 || earlyLeaveMinutes > 0
         ? "LATE_OR_EARLY"
-        : "ON_TIME";
+        : "COMPLETED";
     }
-  }
-
-  if (checkIn !== null && checkOut === null && !leave) {
-    const today = await serverDate(connection);
-    let pastCheckoutCutoff = workDate < today;
-    if (workDate === today) {
-      const now = await serverNow(connection);
-      const checkoutWindow = shiftTimeWindow(attendance, "CHECK_OUT");
-      pastCheckoutCutoff =
-        toMinutes(now.now_time) !== null &&
-        toMinutes(now.now_time) > checkoutWindow.end;
-    }
-    if (pastCheckoutCutoff) status = "MISSING_CHECKOUT";
   }
 
   await connection.query(
@@ -772,38 +543,31 @@ export const recalculateDailyAttendance = async (
 
 const legacyLog = (attendance, source = null) => {
   if (!attendance) return null;
-  const attendanceId = attendance.id ?? attendance.log_id ?? null;
-  const rawStatus = attendance.status ?? attendance.raw_status ?? null;
-  const start = toMinutes(attendance.start_time);
-  const grace = toNumber(attendance.grace_period_minutes ?? attendance.grace_period, 15);
   return {
-    id: attendanceId,
-    log_id: attendanceId,
+    id: attendance.id,
+    log_id: attendance.id,
     employee_id: attendance.employee_id,
     user_id: attendance.user_id ?? null,
     username: attendance.username ?? null,
-    work_date: formatDateOnly(attendance.work_date),
+    work_date: attendance.work_date
+      ? typeof attendance.work_date === "string"
+        ? attendance.work_date.slice(0, 10)
+        : attendance.work_date
+      : null,
     check_in: attendance.check_in || null,
     check_out: attendance.check_out || null,
     late_minutes: toNumber(attendance.late_minutes, 0),
     early_leave_minutes: toNumber(attendance.early_leave_minutes, 0),
     work_unit: toNumber(attendance.total_workday, 0),
     total_workday: toNumber(attendance.total_workday, 0),
-    status: LEGACY_STATUS[rawStatus] || rawStatus,
-    raw_status: rawStatus,
+    status: LEGACY_STATUS[attendance.status] || attendance.status,
+    raw_status: attendance.status,
     source:
       source ||
       (toNumber(attendance.face_score, 0) > 0 ? "FACE_ID" : "MANUAL_ADJUST"),
     note: attendance.note || null,
     shift_id: attendance.shift_id ?? null,
     shift_code: attendance.shift_code ?? null,
-    shift_name: attendance.shift_name ?? null,
-    start_time: attendance.start_time ?? null,
-    end_time: attendance.end_time ?? null,
-    grace_period_minutes: grace,
-    allowed_limit_time:
-      attendance.allowed_limit_time ??
-      (start == null ? null : formatTime(start + grace)),
     face_score: attendance.face_score ?? null,
   };
 };
@@ -857,14 +621,7 @@ const checkInInternal = async (employeeId, account, meta, connection) => {
     connection,
   );
   if (existing?.check_in)
-    return {
-      error: "ALREADY_CHECKED_IN",
-      log: legacyLog(existing, "FACE_ID"),
-      shift: await getShiftById(existing.shift_id, connection),
-    };
-  const scanWindow = checkScanWindow(shift, "CHECK_IN", now.now_time);
-  if (!scanWindow.allowed)
-    return { error: "CHECK_IN_WINDOW_CLOSED", shift, window: scanWindow.window };
+    return { error: "ALREADY_CHECKED_IN", log: legacyLog(existing) };
 
   await insertRawScan(
     connection,
@@ -875,7 +632,7 @@ const checkInInternal = async (employeeId, account, meta, connection) => {
     meta.face_score ?? null,
   );
   await upsertDailyAttendance(connection, employeeId, account, shift, now.today, {
-    checkIn: now.now_time,
+    checkIn: now.current_time,
     checkInIp: meta.ip || null,
     note: meta.note || null,
     status: "IN_PROGRESS",
@@ -899,16 +656,12 @@ const checkOutInternal = async (employeeId, account, meta, connection) => {
     return {
       error: "ALREADY_CHECKED_OUT",
       log: legacyLog(existing, "FACE_ID"),
-      shift: await getShiftById(existing.shift_id, connection),
     };
 
   const shift =
     (await getShiftById(existing.shift_id, connection)) ||
     (await getTodayShift(employeeId, connection, now.today));
   if (!shift) return { error: "NO_SHIFT" };
-  const scanWindow = checkScanWindow(shift, "CHECK_OUT", now.now_time);
-  if (!scanWindow.allowed)
-    return { error: "CHECK_OUT_WINDOW_CLOSED", shift, window: scanWindow.window };
 
   await insertRawScan(
     connection,
@@ -920,7 +673,7 @@ const checkOutInternal = async (employeeId, account, meta, connection) => {
   );
   await upsertDailyAttendance(connection, employeeId, account, shift, now.today, {
     checkIn: existing.check_in,
-    checkOut: now.now_time,
+    checkOut: now.current_time,
     checkInIp: existing.check_in_ip,
     checkOutIp: meta.ip || null,
     note: existing.note || meta.note || null,
@@ -940,8 +693,6 @@ const recordSelfAttendance = async (
   accountOverride = null,
 ) => {
   if (!employeeId) return { error: "NO_EMPLOYEE" };
-  await ensureWorkShiftSchema();
-  await reconcileMissingCheckout(employeeId, await serverDate());
   const samples = verifiedIdentity?.samples
     ? verifiedIdentity.samples
     : validateBiometricCapture(meta.embeddings, meta.blink_verified);
@@ -1028,11 +779,10 @@ export const kioskAttendance = async (
   ip,
   blinkVerified,
   deviceInfo = null,
-  captureMeta = null,
 ) => {
   if (!["check-in", "check-out"].includes(action))
     throw attendanceError("Thao tác chấm công không hợp lệ");
-  const samples = validateBiometricCapture(values, blinkVerified, 0.8, captureMeta);
+  const samples = validateBiometricCapture(values, blinkVerified);
   const [employees] = await db.query(
     `SELECT e.id, e.employee_code, e.full_name, e.face_descriptor,
             COALESCE(d.department_name, d.name) AS department_name
@@ -1054,40 +804,12 @@ export const kioskAttendance = async (
     { employee: match.employee, match, samples },
     account,
   );
-  if (result.error === "ALREADY_CHECKED_IN" || result.error === "ALREADY_CHECKED_OUT") {
-    const log = result.log;
-    const shift = shiftWithAllowedLimit(result.shift || null);
-    const completed = Boolean(log?.check_out);
-    const checkInTime = String(log?.check_in || "-").slice(0, 5);
-    const checkOutTime = String(log?.check_out || "-").slice(0, 5);
-    return {
-      employee: {
-        employee_code: match.employee.employee_code,
-        full_name: match.employee.full_name,
-        department_name: match.employee.department_name,
-        user_id: account.user_id,
-        username: account.username,
-      },
-      account: {
-        user_id: account.user_id,
-        username: account.username,
-        role_id: account.role_id,
-      },
-      log,
-      shift,
-      action,
-      already_recorded: true,
-      attendance_state: completed ? "COMPLETED" : "CHECKED_IN",
-      message: completed
-        ? `Bạn đã hoàn thành chấm công hôm nay: vào ca lúc ${checkInTime}, tan ca lúc ${checkOutTime}.`
-        : `Bạn đã vào ca lúc ${checkInTime}. Chọn Tan ca khi kết thúc làm việc.`,
-    };
-  }
   const errors = {
+    ALREADY_CHECKED_IN:
+      "Bạn đã vào ca hôm nay. Chọn Tan ca khi kết thúc làm việc.",
+    ALREADY_CHECKED_OUT: "Bạn đã hoàn thành chấm công hôm nay.",
     NO_CHECK_IN: "Bạn chưa chấm công vào ca hôm nay.",
     NO_SHIFT: "Chưa cấu hình ca làm việc cho nhân viên.",
-    CHECK_IN_WINDOW_CLOSED: "Ngoài khung giờ cho phép chấm công vào ca.",
-    CHECK_OUT_WINDOW_CLOSED: "Ngoài khung giờ cho phép chấm công tan ca.",
   };
   if (result.error)
     throw attendanceError(errors[result.error] || "Không thể chấm công", 409);
@@ -1105,15 +827,13 @@ export const kioskAttendance = async (
       role_id: account.role_id,
     },
     log: result.log,
-    shift: shiftWithAllowedLimit(result.shift),
+    shift: result.shift,
     action,
   };
 };
 
 export const getTodayStatus = async (employeeId) => {
   const today = await serverDate();
-  await ensureWorkShiftSchema();
-  await reconcileMissingCheckout(employeeId, today);
   const log = await getAttendanceForDate(employeeId, today);
   const shift = await getTodayShift(employeeId, db, today);
   const [employees] = await db.query(
@@ -1145,51 +865,24 @@ export const getTodayStatus = async (employeeId) => {
 };
 
 export const listAttendanceByDate = async (date, user) => {
-  await ensureWorkShiftSchema();
   const targetDate = validateDate(date || (await serverDate()));
-  await reconcileMissingCheckoutsForDate(targetDate, user);
   const scope = buildEmployeeScope(user);
   const withUser = await hasColumn(db, "attendances", "user_id");
   const [rows] = await db.query(
     `SELECT e.id AS employee_id, e.employee_code, e.full_name, e.department_id,
             COALESCE(d.department_name, d.name) AS department_name,
-            a.id AS log_id, a.work_date, a.shift_id, a.check_in, a.check_out,
-            a.check_in_ip, a.check_out_ip, a.actual_work_hours, a.base_workday,
-            a.paid_leave_workday, a.total_workday, a.late_minutes,
-            a.early_leave_minutes, a.raw_ot_minutes, a.approved_ot_hours,
-            a.ot_rate, a.status AS raw_status, a.note,
-            ${withUser ? "a.user_id, u.username" : "NULL AS user_id, NULL AS username"},
+            a.id AS log_id, a.check_in, a.check_out, a.total_workday,
+            a.status AS raw_status, a.late_minutes, a.early_leave_minutes,
+            a.note, ${withUser ? "a.user_id, u.username" : "NULL AS user_id, NULL AS username"},
             ws.code AS shift_code, ws.start_time, ws.end_time,
-            ws.checkin_start, ws.checkin_end, ws.checkout_start, ws.checkout_end,
-            ws.break_start, ws.break_end, ws.grace_period_minutes, ws.grace_period,
-            ws.standard_hours, ws.workday_value,
             COALESCE(mt.status, 'OPEN') AS month_status,
             (SELECT MAX(lr.paid_workday > 0) FROM leave_requests lr
               WHERE lr.employee_id = e.id AND lr.status = 'APPROVED'
                 AND lr.work_date = ?) AS leave_paid,
-            (SELECT MAX(lr.leave_type) FROM leave_requests lr
-              WHERE lr.employee_id = e.id AND lr.status = 'APPROVED'
-                AND lr.work_date = ?) AS leave_type,
-            (SELECT MAX(lr.reason) FROM leave_requests lr
-              WHERE lr.employee_id = e.id AND lr.status = 'APPROVED'
-                AND lr.work_date = ?) AS leave_reason,
-            (SELECT MAX(lr.exempt_minutes) FROM leave_requests lr
-              WHERE lr.employee_id = e.id AND lr.status = 'APPROVED'
-                AND lr.work_date = ?) AS exempt_minutes,
             (SELECT COUNT(*) FROM attendance_logs al
               WHERE al.employee_id = e.id
                 AND DATE_FORMAT(al.scan_time, '%Y-%m-%d') = ?
-                AND al.scan_type = 'CHECK_IN') AS face_scan_count,
-            (SELECT COUNT(*) FROM attendance_logs al
-              WHERE al.employee_id = e.id
-                AND DATE_FORMAT(al.scan_time, '%Y-%m-%d') = ?
-                AND al.scan_type = 'CHECK_OUT') AS face_out_count,
-            (SELECT MAX(al.device_info) FROM attendance_logs al
-              WHERE al.employee_id = e.id
-                AND DATE_FORMAT(al.scan_time, '%Y-%m-%d') = ?) AS device_info,
-            (SELECT MAX(al.face_score) FROM attendance_logs al
-              WHERE al.employee_id = e.id
-                AND DATE_FORMAT(al.scan_time, '%Y-%m-%d') = ?) AS face_score
+                AND al.scan_type = 'CHECK_IN') AS face_scan_count
        FROM employees e
        LEFT JOIN departments d ON d.id = e.department_id
         LEFT JOIN attendances a ON a.employee_id = e.id AND a.work_date = ?
@@ -1198,19 +891,7 @@ export const listAttendanceByDate = async (date, user) => {
        LEFT JOIN monthly_timesheets mt ON mt.employee_id = e.id AND mt.month_year = ?
        ${scope.clause || "WHERE 1 = 1"} AND e.work_status = 'WORKING'
       ORDER BY e.employee_code`,
-    [
-      targetDate,
-      targetDate,
-      targetDate,
-      targetDate,
-      targetDate,
-      targetDate,
-      targetDate,
-      targetDate,
-      targetDate,
-      targetDate.slice(0, 7),
-      ...scope.params,
-    ],
+    [targetDate, targetDate, targetDate, targetDate.slice(0, 7), ...scope.params],
   );
 
   return {
@@ -1229,209 +910,13 @@ export const listAttendanceByDate = async (date, user) => {
         ...row,
         ...legacyLog(row, source),
         leave_paid: row.leave_paid,
-        leave_type: row.leave_type,
-        leave_reason: row.leave_reason,
-        exempt_minutes: row.exempt_minutes,
         face_scan_count: row.face_scan_count,
-        face_out_count: row.face_out_count,
-        device_info: row.device_info,
-        explanation,
       };
     }),
   };
 };
 
-const MANAGER_ROLES = ["MANAGER", "CB_PAYROLL", "HR_ADMIN", "SUPER_ADMIN"];
-const assertManagerScope = (user, employeeId) => {
-  if (
-    !MANAGER_ROLES.includes(user?.role_id) ||
-    !["ALL", "DEPARTMENT"].includes(user?.data_scope)
-  )
-    throw attendanceError("Không có quyền quản lý chấm công nhân viên này", 403);
-  if (!Number.isSafeInteger(Number(employeeId)) || Number(employeeId) <= 0)
-    throw attendanceError("Nhân viên không hợp lệ");
-};
-const assertAttendanceEmployeeScope = async (
-  connection,
-  employeeId,
-  user,
-  lock = false,
-) => {
-  const scope = buildEmployeeScope(user);
-  const [rows] = await connection.query(
-    `SELECT e.id, e.employee_code, e.full_name,
-            COALESCE(d.department_name, d.name) AS department_name
-       FROM employees e
-       LEFT JOIN departments d ON d.id = e.department_id
-       ${scope.clause || "WHERE 1 = 1"} AND e.id = ?
-       LIMIT 1${lock ? " FOR UPDATE" : ""}`,
-    [...scope.params, Number(employeeId)],
-  );
-  if (!rows.length) throw attendanceError("Nhân viên ngoài phạm vi quản lý", 403);
-  return rows[0];
-};
-export const getAttendanceDetail = async (employeeId, dateValue, user) => {
-  await ensureWorkShiftSchema();
-  const targetDate = validateDate(dateValue || (await serverDate()));
-  if (!user) throw attendanceError("Không có quyền xem chấm công", 403);
-  const employee = await assertAttendanceEmployeeScope(db, employeeId, user);
-  await reconcileMissingCheckout(employee.id, targetDate);
-  const [attendanceRows] = await db.query(
-    `SELECT a.*, s.code AS shift_code, s.name AS shift_name,
-            s.start_time, s.end_time, s.checkin_start, s.checkin_end,
-            s.checkout_start, s.checkout_end, s.break_start, s.break_end,
-            s.grace_period_minutes, s.grace_period, s.standard_hours, s.workday_value
-       FROM attendances a
-       LEFT JOIN work_shifts s ON s.id = a.shift_id
-      WHERE a.employee_id = ? AND a.work_date = ?
-      LIMIT 1`,
-    [employee.id, targetDate],
-  );
-  const attendance = attendanceRows[0] || null;
-  const [scans] = await db.query(
-    `SELECT id, DATE_FORMAT(scan_time, '%Y-%m-%d %H:%i:%s') AS scan_time,
-            scan_type, face_score, ip_address, device_info, is_valid,
-            reject_reason, DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS created_at
-       FROM attendance_logs
-      WHERE employee_id = ? AND DATE(scan_time) = ?
-      ORDER BY scan_time, id`,
-    [employee.id, targetDate],
-  );
-  const [leaves] = await db.query(
-    `SELECT id, leave_type, paid_workday, exempt_minutes, reason, status,
-            DATE_FORMAT(approved_at, '%Y-%m-%d %H:%i:%s') AS approved_at
-       FROM leave_requests
-      WHERE employee_id = ? AND work_date = ? AND status = 'APPROVED'
-      ORDER BY id`,
-    [employee.id, targetDate],
-  );
-  const [overtimes] = await db.query(
-    `SELECT id, start_time, end_time, ot_type, ot_rate, reason, status,
-            DATE_FORMAT(approved_at, '%Y-%m-%d %H:%i:%s') AS approved_at
-       FROM overtime_requests
-      WHERE employee_id = ? AND work_date = ? AND status = 'APPROVED'
-      ORDER BY id`,
-    [employee.id, targetDate],
-  );
-  const [monthlyRows] = await db.query(
-    `SELECT id, month_year, standard_days, actual_work_days, paid_leave_days,
-            unpaid_leave_days, total_payable_days, late_count,
-            total_late_minutes, ot_hours_150, ot_hours_200, ot_hours_300,
-            status, locked_at
-       FROM monthly_timesheets
-      WHERE employee_id = ? AND month_year = ?
-      LIMIT 1`,
-    [employee.id, targetDate.slice(0, 7)],
-  );
-  const shift = attendance?.shift_id
-    ? await getShiftById(attendance.shift_id)
-    : await getShiftForDate(employee.id, targetDate);
-  const explanation = parseExplanationNote(attendance?.note);
-  const source = scans.some((scan) => scan.scan_type === "CHECK_IN")
-    ? "FACE_ID"
-    : explanation
-      ? "MANUAL_ADJUST"
-      : leaves.some((leave) => Number(leave.paid_workday) > 0)
-        ? "LEAVE_SYNC"
-        : null;
-  return {
-    date: targetDate,
-    employee,
-    attendance: attendance
-      ? { ...attendance, ...legacyLog(attendance, source), explanation }
-      : null,
-    shift,
-    scans,
-    leaves,
-    overtimes,
-    monthly: monthlyRows[0] || null,
-    editable: monthlyRows[0]?.status !== "LOCKED",
-  };
-};
-const normalizeManualTime = (value) => {
-  if (value === null || value === undefined || String(value).trim() === "")
-    return null;
-  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(value).trim());
-  if (!match) throw attendanceError("Giờ vào/ra không hợp lệ. Dùng định dạng HH:mm", 400);
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  const second = Number(match[3] || 0);
-  if (hour > 23 || minute > 59 || second > 59)
-    throw attendanceError("Giờ vào/ra không hợp lệ", 400);
-  const pad = (value) => String(value).padStart(2, "0");
-  return `${pad(hour)}:${pad(minute)}:${pad(second)}`;
-};
-export const updateAttendanceManual = async (payload = {}, user) => {
-  await ensureWorkShiftSchema();
-  assertManagerScope(user, payload.employee_id);
-  const targetDate = validateDate(payload.date || (await serverDate()));
-  if (targetDate > (await serverDate()))
-    throw attendanceError("Không thể chỉnh sửa chấm công ngày trong tương lai");
-  const checkIn = normalizeManualTime(payload.check_in);
-  const checkOut = normalizeManualTime(payload.check_out);
-  if (checkOut && !checkIn)
-    throw attendanceError("Phải có giờ vào trước khi chỉnh giờ ra");
-  const inMinutes = checkIn ? toMinutes(checkIn) : null;
-  const outMinutes = checkOut ? toMinutes(checkOut) : null;
-  if (inMinutes !== null && outMinutes !== null && outMinutes < inMinutes)
-    throw attendanceError("Giờ ra không được trước giờ vào");
-  const note =
-    payload.note === undefined || payload.note === null
-      ? null
-      : String(payload.note).trim().slice(0, 500) || null;
-  const connection = await db.getConnection();
-  try {
-    await connection.beginTransaction();
-    const employee = await assertAttendanceEmployeeScope(
-      connection,
-      payload.employee_id,
-      user,
-      true,
-    );
-    await assertMonthOpen(connection, employee.id, targetDate);
-    const [existingRows] = await connection.query(
-      "SELECT * FROM attendances WHERE employee_id = ? AND work_date = ? FOR UPDATE",
-      [employee.id, targetDate],
-    );
-    const existing = existingRows[0];
-    if (!existing)
-      throw attendanceError(
-        "Chưa có bản ghi chấm công để chỉnh sửa. Hãy điểm danh trước.",
-        409,
-      );
-    const withUpdatedAt = await hasColumn(connection, "attendances", "updated_at");
-    await connection.query(
-      `UPDATE attendances
-          SET check_in = ?, check_out = ?, note = ?,
-              ${withUpdatedAt ? "updated_at = NOW()," : ""}
-              status = ?
-        WHERE id = ?`,
-      [checkIn, checkOut, note, existing.status, existing.id],
-    );
-    await insertRawScan(
-      connection,
-      employee.id,
-      { user_id: user?.user_id || null },
-      "RAW_SCAN",
-      {
-        ip: payload.ip || null,
-        device_info: `MANUAL_EDIT_BY_${user?.user_id || "UNKNOWN"}`,
-      },
-    );
-    await recalculateDailyAttendance(connection, employee.id, targetDate);
-    await recalculateEmployeeMonth(connection, employee.id, targetDate.slice(0, 7));
-    await connection.commit();
-    return await getAttendanceDetail(employee.id, targetDate, user);
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
-};
-
 const markEmployees = async (ids, date, type, user, skipExisting = false) => {
-  await ensureWorkShiftSchema();
   if (
     !["MANAGER", "CB_PAYROLL", "HR_ADMIN", "SUPER_ADMIN"].includes(
       user?.role_id,
@@ -1562,60 +1047,6 @@ export const quickMarkAll = async (departmentId, date, user) => {
   );
 };
 
-export const recalculateDateAttendance = async (
-  date,
-  user,
-  departmentId = null,
-) => {
-  await ensureWorkShiftSchema();
-  const targetDate = validateDate(date);
-  if (
-    !user?.permissions?.includes("ATT.SHIFT_OT_MANAGE") ||
-    !["ALL", "DEPARTMENT"].includes(user?.data_scope)
-  )
-    throw attendanceError("Bạn không có quyền tính lại công chấm công", 403);
-  const scope = buildEmployeeScope(user);
-  const connection = await db.getConnection();
-  try {
-    await connection.beginTransaction();
-    const [employees] = await connection.query(
-      `SELECT DISTINCT e.id
-         FROM employees e
-         INNER JOIN attendances a ON a.employee_id = e.id AND a.work_date = ?
-         ${scope.clause || "WHERE 1 = 1"}
-         ${departmentId ? "AND e.department_id = ?" : ""}
-        ORDER BY e.id`,
-      [targetDate, ...scope.params, ...(departmentId ? [departmentId] : [])],
-    );
-    let count = 0;
-    let skipped = 0;
-    for (const employee of employees) {
-      const [month] = await connection.query(
-        "SELECT status FROM monthly_timesheets WHERE employee_id = ? AND month_year = ? FOR UPDATE",
-        [employee.id, targetDate.slice(0, 7)],
-      );
-      if (month[0]?.status === "LOCKED") {
-        skipped += 1;
-        continue;
-      }
-      await recalculateDailyAttendance(connection, employee.id, targetDate);
-      await recalculateEmployeeMonth(
-        connection,
-        employee.id,
-        targetDate.slice(0, 7),
-      );
-      count += 1;
-    }
-    await connection.commit();
-    return { date: targetDate, count, skipped };
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
-};
-
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 const SHIFT_CODE_PATTERN = /^[A-Z0-9_]{2,20}$/;
 
@@ -1653,30 +1084,6 @@ export const validateShiftPayload = (payload = {}) => {
   if (toMinutes(endTime) <= toMinutes(startTime))
     return { error: "Giờ kết thúc phải lớn hơn giờ bắt đầu trong cùng ngày" };
 
-  const checkinStart = payload.checkin_start
-    ? normalizeTime(payload.checkin_start)
-    : null;
-  const checkinEnd = payload.checkin_end
-    ? normalizeTime(payload.checkin_end)
-    : null;
-  const checkoutStart = payload.checkout_start
-    ? normalizeTime(payload.checkout_start)
-    : null;
-  const checkoutEnd = payload.checkout_end
-    ? normalizeTime(payload.checkout_end)
-    : null;
-  if (
-    (payload.checkin_start && !checkinStart) ||
-    (payload.checkin_end && !checkinEnd) ||
-    (payload.checkout_start && !checkoutStart) ||
-    (payload.checkout_end && !checkoutEnd)
-  )
-    return { error: "Khung giờ quét vào/ra phải đúng định dạng HH:MM" };
-  if (checkinStart && checkinEnd && toMinutes(checkinEnd) < toMinutes(checkinStart))
-    return { error: "Giờ kết thúc khung check-in phải sau giờ bắt đầu" };
-  if (checkoutStart && checkoutEnd && toMinutes(checkoutEnd) < toMinutes(checkoutStart))
-    return { error: "Giờ kết thúc khung check-out phải sau giờ bắt đầu" };
-
   const breakStart = normalizeTime(payload.break_start) || "12:00:00";
   let breakEnd = normalizeTime(payload.break_end);
   if (!breakEnd && payload.break_minutes !== undefined) {
@@ -1689,7 +1096,7 @@ export const validateShiftPayload = (payload = {}) => {
     return { error: "Giờ kết thúc nghỉ giữa ca phải lớn hơn giờ bắt đầu" };
 
   const gracePeriod = Number(
-    payload.grace_period_minutes ?? payload.grace_period ?? payload.grace_minutes ?? 15,
+    payload.grace_period ?? payload.grace_minutes ?? 15,
   );
   if (
     !Number.isInteger(gracePeriod) ||
@@ -1733,14 +1140,9 @@ export const validateShiftPayload = (payload = {}) => {
       name,
       start_time: startTime,
       end_time: endTime,
-      checkin_start: checkinStart,
-      checkin_end: checkinEnd,
-      checkout_start: checkoutStart,
-      checkout_end: checkoutEnd,
       break_start: breakStart,
       break_end: breakEnd,
       grace_period: gracePeriod,
-      grace_period_minutes: gracePeriod,
       min_ot_minutes: minOtMinutes,
       standard_hours: round2(standardHours),
       workday_value: round2(workdayValue),
@@ -1751,22 +1153,19 @@ export const validateShiftPayload = (payload = {}) => {
 };
 
 export const listWorkShifts = async () => {
-  await ensureWorkShiftSchema();
   const [rows] = await db.query(
     `SELECT id, code, name, start_time, end_time, break_start, break_end,
-            checkin_start, checkin_end, checkout_start, checkout_end,
-            grace_period_minutes, grace_period, min_ot_minutes, standard_hours, workday_value,
+            grace_period, min_ot_minutes, standard_hours, workday_value,
             is_default, is_active
        FROM work_shifts
       ORDER BY is_active DESC, id ASC`,
   );
-  return rows.map((row) => shiftWithAllowedLimit({
+  return rows.map((row) => ({
     ...row,
     shift_code: row.code,
     break_minutes:
       (toMinutes(row.break_end) ?? 0) - (toMinutes(row.break_start) ?? 0),
-    grace_period_minutes: toNumber(row.grace_period_minutes, row.grace_period ?? 15),
-    grace_minutes: toNumber(row.grace_period_minutes, row.grace_period ?? 15),
+    grace_minutes: row.grace_period,
     standard_work_units: row.workday_value,
     is_default: Number(row.is_default) ? 1 : 0,
     is_active: Number(row.is_active) ? 1 : 0,
@@ -1774,7 +1173,6 @@ export const listWorkShifts = async () => {
 };
 
 export const createWorkShift = async (payload) => {
-  await ensureWorkShiftSchema();
   const [duplicate] = await db.query(
     "SELECT id FROM work_shifts WHERE code = ? LIMIT 1",
     [payload.code],
@@ -1783,24 +1181,17 @@ export const createWorkShift = async (payload) => {
     throw attendanceError("Mã ca làm việc đã tồn tại", 409);
   const [result] = await db.query(
     `INSERT INTO work_shifts
-      (code, name, start_time, end_time, checkin_start, checkin_end,
-       checkout_start, checkout_end, break_start, break_end, grace_period,
-       grace_period_minutes,
+      (code, name, start_time, end_time, break_start, break_end, grace_period,
        min_ot_minutes, standard_hours, workday_value, is_default, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       payload.code,
       payload.name,
       payload.start_time,
       payload.end_time,
-      payload.checkin_start,
-      payload.checkin_end,
-      payload.checkout_start,
-      payload.checkout_end,
       payload.break_start,
       payload.break_end,
       payload.grace_period,
-      payload.grace_period_minutes,
       payload.min_ot_minutes,
       payload.standard_hours,
       payload.workday_value,
@@ -1812,7 +1203,6 @@ export const createWorkShift = async (payload) => {
 };
 
 export const updateWorkShift = async (shiftId, payload) => {
-  await ensureWorkShiftSchema();
   const [existing] = await db.query(
     "SELECT id FROM work_shifts WHERE id = ? LIMIT 1",
     [shiftId],
@@ -1827,8 +1217,7 @@ export const updateWorkShift = async (shiftId, payload) => {
   await db.query(
     `UPDATE work_shifts
         SET code = ?, name = ?, start_time = ?, end_time = ?,
-            checkin_start = ?, checkin_end = ?, checkout_start = ?, checkout_end = ?,
-            break_start = ?, break_end = ?, grace_period = ?, grace_period_minutes = ?,
+            break_start = ?, break_end = ?, grace_period = ?,
             min_ot_minutes = ?, standard_hours = ?, workday_value = ?,
             is_default = ?, is_active = ?
       WHERE id = ?`,
@@ -1837,14 +1226,9 @@ export const updateWorkShift = async (shiftId, payload) => {
       payload.name,
       payload.start_time,
       payload.end_time,
-      payload.checkin_start,
-      payload.checkin_end,
-      payload.checkout_start,
-      payload.checkout_end,
       payload.break_start,
       payload.break_end,
       payload.grace_period,
-      payload.grace_period_minutes,
       payload.min_ot_minutes,
       payload.standard_hours,
       payload.workday_value,
@@ -1854,42 +1238,6 @@ export const updateWorkShift = async (shiftId, payload) => {
     ],
   );
   return { id: Number(shiftId) };
-};
-
-
-export const deleteWorkShift = async (shiftId) => {
-  await ensureWorkShiftSchema();
-  const id = Number(shiftId);
-  if (!Number.isSafeInteger(id) || id <= 0)
-    throw attendanceError("Ca làm việc cần xóa không hợp lệ");
-  const [existing] = await db.query(
-    "SELECT id, code, name FROM work_shifts WHERE id = ? LIMIT 1",
-    [id],
-  );
-  if (!existing.length) throw attendanceError("Không tìm thấy ca làm việc", 404);
-
-  const [assigned] = await db.query(
-    "SELECT id FROM employee_shifts WHERE shift_id = ? LIMIT 1",
-    [id],
-  );
-  if (assigned.length)
-    throw attendanceError(
-      "Không thể xóa vì ca này đang được phân cho nhân viên. Hãy gỡ phân ca hoặc chuyển ca sang trạng thái Ngừng áp dụng.",
-      409,
-    );
-
-  const [used] = await db.query(
-    "SELECT id FROM attendances WHERE shift_id = ? LIMIT 1",
-    [id],
-  );
-  if (used.length)
-    throw attendanceError(
-      "Không thể xóa vì ca này đã có dữ liệu chấm công. Hãy chuyển ca sang trạng thái Ngừng áp dụng để ngừng sử dụng.",
-      409,
-    );
-
-  await db.query("DELETE FROM work_shifts WHERE id = ?", [id]);
-  return { id };
 };
 
 const assertEmployeeInScope = async (connection, user, employeeId) => {
@@ -1904,7 +1252,6 @@ const assertEmployeeInScope = async (connection, user, employeeId) => {
 };
 
 export const listShiftAssignments = async (user, filters = {}) => {
-  await ensureWorkShiftSchema();
   const scope = buildEmployeeScope(user);
   const conditions = [
     scope.clause ? scope.clause.replace(/^WHERE\s+/i, "") : "1 = 1",
@@ -1947,7 +1294,6 @@ export const listShiftAssignments = async (user, filters = {}) => {
 };
 
 export const createShiftAssignment = async (user, payload = {}) => {
-  await ensureWorkShiftSchema();
   const employeeId = Number(payload.employee_id);
   const shiftId = Number(payload.shift_id);
   if (!Number.isSafeInteger(employeeId) || employeeId <= 0)
@@ -2007,7 +1353,6 @@ export const updateShiftAssignment = async (
   assignmentId,
   payload = {},
 ) => {
-  await ensureWorkShiftSchema();
   const id = Number(assignmentId);
   if (!Number.isSafeInteger(id) || id <= 0)
     throw attendanceError("Phân ca cần cập nhật không hợp lệ");
@@ -2114,7 +1459,6 @@ const buildExplanationNote = (data) =>
   `${EXPLANATION_PREFIX}${JSON.stringify(data)}`;
 
 export const submitExplanation = async (user, payload = {}) => {
-  await ensureWorkShiftSchema();
   const employeeId = user?.employee_id;
   if (!employeeId)
     throw attendanceError("Tài khoản chưa liên kết hồ sơ nhân sự", 404);
@@ -2296,7 +1640,6 @@ const loadExplanationLog = async (connection, explanationId) => {
 };
 
 export const approveExplanation = async (user, explanationId, payload = {}) => {
-  await ensureWorkShiftSchema();
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -2360,7 +1703,6 @@ export const approveExplanation = async (user, explanationId, payload = {}) => {
 };
 
 export const rejectExplanation = async (user, explanationId, payload = {}) => {
-  await ensureWorkShiftSchema();
   const rejectReason = String(
     payload.reject_reason ?? payload.reason ?? "",
   ).trim();
@@ -2413,7 +1755,6 @@ export const rejectExplanation = async (user, explanationId, payload = {}) => {
 };
 
 export const cancelExplanation = async (user, explanationId) => {
-  await ensureWorkShiftSchema();
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();

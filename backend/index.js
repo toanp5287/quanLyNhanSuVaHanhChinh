@@ -12,6 +12,7 @@ import routerDiemDanhNhatKyQuetThePhanCa from "./src/routes/diemDanhNhatKyQuetTh
 import routerQuanLyLamThemGio from "./src/routes/quanLyLamThemGio.router.js";
 import routerQuanLyNghiPhepVaQuyPhepNam from "./src/routes/quan-ly-nghi-phep-va-quy-phep-nam.service.js";
 import routerMyProfile from "./src/routes/myProfile.router.js";
+import routerNotifications from "./src/routes/notifications.router.js";
 import connectMysql from "./src/config/database.js";
 
 dotenv.config();
@@ -37,6 +38,7 @@ app.use("/employees", routerEmployees);
 app.use("/organization", routerOrganization);
 app.use("/contracts", routerContracts);
 app.use("/my-profile", routerMyProfile);
+app.use("/notifications", routerNotifications);
 app.use("/attendance", routerDiemDanhNhatKyQuetThePhanCa);
 app.use("/timesheets", routerTongHopChotCong);
 app.use("/overtime", routerQuanLyLamThemGio);

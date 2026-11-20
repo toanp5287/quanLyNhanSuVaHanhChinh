@@ -293,6 +293,29 @@
               >sync</span
             ></button
           ><button
+            id="notificationBellBtn"
+            class="relative p-space-xs text-on-primary hover:bg-white/10 rounded flex items-center justify-center transition-colors"
+            title="Thông báo"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[20px]">notifications</span>
+            <span
+              id="notificationBadge"
+              class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-error text-on-error font-label-sm text-[10px] font-bold items-center justify-center"
+              >0</span
+            >
+          </button>
+          <div
+            id="notificationDropdown"
+            class="hidden fixed right-4 top-14 z-[80] w-[360px] max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-hidden rounded-lg bg-surface-container-lowest text-on-surface shadow-xl border border-surface-variant flex flex-col"
+          >
+            <div class="px-space-md py-space-sm border-b border-surface-variant flex items-center justify-between">
+              <span class="font-label-md text-label-md font-bold">Thông báo</span>
+              <button id="btnMarkAllNotificationsRead" class="font-body-sm text-body-sm text-primary hover:underline" type="button">Đánh dấu đã đọc</button>
+            </div>
+            <div id="notificationList" class="overflow-y-auto"></div>
+          </div>
+          <button
             id="userMenuBtn"
             class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs hover:ring-2 hover:ring-white/40 transition-all"
             type="button"
@@ -769,7 +792,7 @@
                   >
                   <span
                     class="font-label-sm text-label-sm bg-primary-fixed text-on-primary-fixed px-2 py-0.5 rounded-full ml-1 font-semibold"
-                    >6</span
+                    >5</span
                   >
                 </div>
                 <span class="font-label-sm text-label-sm text-outline"
@@ -953,43 +976,6 @@
                           class="font-label-sm text-label-sm text-outline truncate"
                         >
                           Bù công &amp; xác nhận
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      class="w-7 h-7 rounded text-outline hover:text-on-surface hover:bg-surface-variant flex items-center justify-center shrink-0"
-                      type="button"
-                    >
-                      <span class="material-symbols-outlined text-[18px]"
-                        >more_vert</span
-                      >
-                    </button>
-                  </div>
-                  <!-- Card 2.6 -->
-                  <div
-                    class="action-card h-[76px] p-[10px_14px] bg-surface-container-lowest hover:bg-surface-container-low rounded shadow-sm hover:shadow-md transition-all flex items-center justify-between cursor-pointer group"
-                    data-title="Quản lý ca làm việc"
-                  >
-                    <div class="flex items-center gap-3 min-w-0">
-                      <div
-                        class="w-11 h-11 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform"
-                      >
-                        <span
-                          class="material-symbols-outlined text-[28px]"
-                          style="font-variation-settings: &quot;FILL&quot; 1"
-                          >edit_calendar</span
-                        >
-                      </div>
-                      <div class="min-w-0">
-                        <h4
-                          class="font-body-lg text-body-lg font-bold text-on-surface truncate group-hover:text-primary transition-colors"
-                        >
-                          Quản lý ca làm việc
-                        </h4>
-                        <p
-                          class="font-label-sm text-label-sm text-outline truncate"
-                        >
-                          Cấu hình ca &amp; gán ca cho NV
                         </p>
                       </div>
                     </div>
@@ -2894,7 +2880,7 @@
                     </div>
                     <div class="text-center space-y-1">
                       <p id="faceEnrollStatus" class="font-body-md text-body-md text-on-surface">Chuẩn bị quét khuôn mặt...</p>
-                      <p id="faceEnrollHint" class="font-label-sm text-label-sm text-on-surface-variant">Đứng yên để khóa đúng người quét. Chỉ khuôn mặt của người này được phân tích, người đi qua lại bị bỏ qua.</p>
+                      <p id="faceEnrollHint" class="font-label-sm text-label-sm text-on-surface-variant">Giữ khuôn mặt chính diện, đủ ánh sáng trong khung hình.</p>
                     </div>
                     <div class="flex justify-end gap-space-xs pt-space-xs">
                       <button id="faceEnrollCancel" type="button" class="h-9 px-space-md rounded text-on-surface-variant hover:bg-surface-container-high font-label-lg text-label-lg">Hủy</button>

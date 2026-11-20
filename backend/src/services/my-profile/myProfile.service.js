@@ -184,16 +184,15 @@ export const updateSelfContact = async (employeeId, payload = {}) => {
   return rows[0] || null;
 };
 
-export const updateSelfFaceDescriptor = async (employeeId, values, password, blinkVerified, capture = null) => {
+export const updateSelfFaceDescriptor = async (employeeId, values, password, blinkVerified) => {
   if (!employeeId) return null;
-  const samples = validateBiometricCapture(values, blinkVerified, 0.82, capture);
+  const samples = validateBiometricCapture(values, blinkVerified, 0.82);
   if (typeof password !== "string" || !password)
     throw attendanceError("Nhập mật khẩu tài khoản để xác nhận đăng ký hoặc thay đổi FaceID.");
   await verifySelfFacePassword(employeeId, password);
 
   const compact = vector => vector.map(value => Number(value.toFixed(5)));
   const descriptorJson = JSON.stringify({
-    model: capture?.model || null,
     centroid: compact(computeCentroid(samples)),
     samples: samples.map(sample => compact(l2Normalize(sample))),
   });

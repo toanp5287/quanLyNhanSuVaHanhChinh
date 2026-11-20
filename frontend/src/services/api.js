@@ -12,6 +12,10 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    delete config.headers["Content-Type"];
+  }
+
   if (config.skipAuth) return config;
   const token = sessionStorage.getItem(TOKEN_KEY);
 
