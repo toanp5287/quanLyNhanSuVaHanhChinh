@@ -65,7 +65,7 @@ const CARD_PERMISSIONS = {
   "Báo hỏng & Đền bù": ["ASSET.VIEW_OWN", "ASSET.ALLOCATE_MANAGE"],
   "Cổng thông tin cá nhân": [],
   "Tạo đơn từ trực tuyến": ["LEAVE.VIEW_REQUEST", "ESS.SELF_PROFILE"],
-  "Trung tâm Phê duyệt": ["LEAVE.APPROVE", "ATT.SHIFT_OT_MANAGE"],
+  "Trung tâm Phê duyệt": ["LEAVE.APPROVE", "ATT.SHIFT_OT_MANAGE", "ESS.SELF_PROFILE"],
   "Bản tin & Nội quy công ty": [],
   "Dashboard Biến động nhân sự": ["BI.DASHBOARD_VIEW"],
   "Báo cáo Chi phí quỹ lương": ["BI.DASHBOARD_VIEW"],
@@ -364,6 +364,13 @@ const applyCardPermissions = (user) => {
 
     if (Array.isArray(requiredPermissions) && requiredPermissions.length) {
       allowed = hasAnyPermission(requiredPermissions, user);
+    }
+
+    if (
+      title === "Trung tâm Phê duyệt" &&
+      !["MANAGER", "DIRECTOR", "HR_ADMIN"].includes(user.role_id)
+    ) {
+      allowed = false;
     }
 
     if (user.data_scope === "SELF") {

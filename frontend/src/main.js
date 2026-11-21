@@ -25,6 +25,10 @@ import {
   initEmployeeRequestDetail,
 } from "./js/employee-request-detail.js";
 import {
+  getApprovalStatusFromHash,
+  initRequestApprovals,
+} from "./js/request-approvals.js";
+import {
   clearSession,
   getCurrentUser,
   getMe,
@@ -236,6 +240,23 @@ function showEmployeeRequestDetail(user, id) {
   initEmployeeRequestDetail(user, id);
 }
 
+function showRequestApprovals(user, status = "ALL") {
+  const approverRoles = ["MANAGER", "DIRECTOR", "HR_ADMIN"];
+  if (
+    !user ||
+    !hasPermission("ESS.SELF_PROFILE", user) ||
+    !approverRoles.includes(user.role_id)
+  ) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  mountPage(homeHtml);
+  setupShell(user);
+  initRequestApprovals(user, status);
+}
+
 function renderRouteView(user) {
   const hash = window.location.hash;
 
@@ -250,6 +271,8 @@ function renderRouteView(user) {
     showOrganization(user, getOrganizationTabFromHash(hash));
   } else if (hash === "#/hop-dong" || hash.startsWith("#/hop-dong/")) {
     showContracts(user, getContractStatusFromHash(hash));
+  } else if (hash === "#/duyet-don" || hash.startsWith("#/duyet-don/")) {
+    showRequestApprovals(user, getApprovalStatusFromHash(hash));
   } else if (
     hash === "#/don-tu" ||
     hash === "#/don-tu/nghi-viec" ||
@@ -298,6 +321,7 @@ document.addEventListener("click", (event) => {
       "Nhân viên đã nghỉ": "#/nhan-vien/da-nghi",
       "Hợp đồng lao động": "#/hop-dong",
       "Tạo đơn từ trực tuyến": "#/don-tu",
+      "Trung tâm Phê duyệt": "#/duyet-don",
       "Sơ đồ phòng ban": "#/so-do-phong-ban",
     };
 
