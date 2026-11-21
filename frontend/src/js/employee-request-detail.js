@@ -331,7 +331,10 @@ const canViewHrProfile = () =>
 
 const renderHrActions = (request) => {
   const section = document.getElementById("detailHrActionsSection");
-  const visible = canViewHrProfile() && request.status === "PENDING_HR";
+  const isSelf =
+    Number(request.employee_id) === Number(state.currentUser?.employee_id);
+  const visible =
+    canViewHrProfile() && request.status === "PENDING_HR" && !isSelf;
   section?.classList.toggle("hidden", !visible);
   if (!visible) return;
 
@@ -339,6 +342,11 @@ const renderHrActions = (request) => {
     "#btnHrForwardDetail",
     request.request_type === "RESIGNATION" ? "Trình Giám đốc" : "Duyệt đơn",
   );
+
+  const hasSupplement =
+    request.has_pending_supplement === true ||
+    Number(request.has_pending_supplement) === 1;
+  document.getElementById("btnHrReceiveDetail")?.classList.toggle("hidden", !hasSupplement);
 };
 
 const runDetailHrAction = async (action, button, message) => {

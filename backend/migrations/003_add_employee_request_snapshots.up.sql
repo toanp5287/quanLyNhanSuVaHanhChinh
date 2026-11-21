@@ -1,7 +1,6 @@
-ALTER TABLE `employee_requests`
-  ADD COLUMN `employee_code_snapshot` VARCHAR(50) DEFAULT NULL AFTER `department_id`,
-  ADD COLUMN `full_name_snapshot` VARCHAR(255) DEFAULT NULL AFTER `employee_code_snapshot`,
-  ADD COLUMN `department_name_snapshot` VARCHAR(255) DEFAULT NULL AFTER `full_name_snapshot`;
+ALTER TABLE `employee_requests` ADD COLUMN `employee_code_snapshot` VARCHAR(50) DEFAULT NULL AFTER `department_id`;
+ALTER TABLE `employee_requests` ADD COLUMN `full_name_snapshot` VARCHAR(255) DEFAULT NULL AFTER `employee_code_snapshot`;
+ALTER TABLE `employee_requests` ADD COLUMN `department_name_snapshot` VARCHAR(255) DEFAULT NULL AFTER `full_name_snapshot`;
 
 UPDATE `employee_requests` r
 LEFT JOIN `employees` e ON e.id = r.employee_id

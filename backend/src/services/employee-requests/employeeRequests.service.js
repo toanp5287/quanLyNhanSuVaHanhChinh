@@ -37,7 +37,11 @@ const REQUEST_COLUMNS = `r.id, r.employee_id, r.department_id, r.request_type,
   r.department_name_snapshot AS department_name_at_submit,
   COALESCE(r.employee_code_snapshot, e.employee_code) AS employee_code,
   COALESCE(r.full_name_snapshot, e.full_name) AS full_name,
-  COALESCE(r.department_name_snapshot, d.department_name, d.name) AS department_name`;
+  COALESCE(r.department_name_snapshot, d.department_name, d.name) AS department_name,
+  EXISTS(
+    SELECT 1 FROM request_information_requests rir
+    WHERE rir.request_id = r.id AND rir.status = 'SUBMITTED'
+  ) AS has_pending_supplement`;
 
 const parseDate = (value, field) => {
   const text = String(value || "");
@@ -449,10 +453,13 @@ export const requestEmployeeUpdate = async (user, id, payload = {}) => {
 
   return transaction(async (connection) => {
     const [rows] = await connection.query(
-      "SELECT id, status FROM employee_requests WHERE id = ? FOR UPDATE",
+      "SELECT id, employee_id, status FROM employee_requests WHERE id = ? FOR UPDATE",
       [requestId],
     );
     if (!rows.length) throw fail("Không tìm thấy đơn", 404);
+    if (Number(user?.employee_id) === Number(rows[0].employee_id)) {
+      throw fail("Không thể yêu cầu bổ sung đơn của chính mình", 403);
+    }
     if (rows[0].status !== "PENDING_HR") {
       throw fail("Chỉ có thể yêu cầu bổ sung khi đơn đang chờ HR kiểm tra", 409);
     }

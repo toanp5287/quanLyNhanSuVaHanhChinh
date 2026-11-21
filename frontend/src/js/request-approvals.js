@@ -2,7 +2,11 @@ import requestApprovalsHtml from "../pages/request-approvals.html?raw";
 import api from "../services/api.js";
 import { getCurrentUser, logout } from "../services/auth.service.js";
 import { setupShell } from "./home.js";
-import { REQUEST_TYPES, STATUS_META } from "./employee-requests.js";
+import {
+  ACTIVE_STATUSES,
+  REQUEST_TYPES,
+  STATUS_META,
+} from "./employee-requests.js";
 
 const STATUS_ROUTES = {
   ALL: "#/duyet-don",
@@ -353,6 +357,9 @@ const renderRows = () => {
       };
       const isSelf =
         Number(row.employee_id) === Number(state.currentUser?.employee_id);
+      const hasSupplement =
+        row.has_pending_supplement === true ||
+        Number(row.has_pending_supplement) === 1;
       const role = state.currentUser?.role_id;
       const canManagerApprove =
         role === "MANAGER" && row.status === "PENDING_DEPARTMENT" && !isSelf;
@@ -413,11 +420,15 @@ const renderRows = () => {
                         data-check-request-id="${escapeHtml(row.id)}"
                         type="button"
                       >Kiểm tra</button>
-                      <button
-                        class="h-8 px-space-sm rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-label-sm text-label-sm"
-                        data-receive-request-id="${escapeHtml(row.id)}"
-                        type="button"
-                      >Tiếp nhận</button>
+                      ${
+                        hasSupplement
+                          ? `<button
+                              class="h-8 px-space-sm rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-label-sm text-label-sm"
+                              data-receive-request-id="${escapeHtml(row.id)}"
+                              type="button"
+                            >Tiếp nhận</button>`
+                          : ""
+                      }
                       <button
                         class="h-8 px-space-sm rounded border border-orange-400 text-orange-700 hover:bg-orange-50 font-label-sm text-label-sm"
                         data-request-update-id="${escapeHtml(row.id)}"
@@ -432,8 +443,8 @@ const renderRows = () => {
               >Lịch sử</button>
             </div>
             ${
-              isSelf && row.status === "PENDING_DEPARTMENT"
-                ? `<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Đơn của bạn</p>`
+              isSelf && ACTIVE_STATUSES.includes(row.status)
+                ? `<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Đơn do bạn tạo</p>`
                 : ""
             }
           </td>

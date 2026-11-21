@@ -296,6 +296,7 @@ const loadRequests = async () => {
 
     const message =
       error.response?.data?.message ||
+      error.message ||
       "Không thể tải danh sách đơn từ. Vui lòng thử lại.";
 
     showNotice(message, true);
@@ -448,7 +449,9 @@ const submitCreateForm = async (event) => {
     loadRequests();
   } catch (error) {
     setFormError(
-      error.response?.data?.message || "Không thể gửi đơn. Vui lòng thử lại.",
+      error.response?.data?.message ||
+      error.message ||
+      "Không thể gửi đơn. Vui lòng thử lại.",
     );
   } finally {
     if (button) {
