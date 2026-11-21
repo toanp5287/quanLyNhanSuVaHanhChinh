@@ -65,7 +65,7 @@ const CARD_PERMISSIONS = {
   "Báo hỏng & Đền bù": ["ASSET.VIEW_OWN", "ASSET.ALLOCATE_MANAGE"],
   "Cổng thông tin cá nhân": [],
   "Tạo đơn từ trực tuyến": ["LEAVE.VIEW_REQUEST", "ESS.SELF_PROFILE"],
-  "Trung tâm Phê duyệt": ["LEAVE.APPROVE", "ATT.SHIFT_OT_MANAGE", "ESS.SELF_PROFILE"],
+  "Trung tâm Phê duyệt": ["LEAVE.APPROVE", "ATT.SHIFT_OT_MANAGE", "ESS.SELF_PROFILE", "HR.PROFILE_MANAGE"],
   "Bản tin & Nội quy công ty": [],
   "Dashboard Biến động nhân sự": ["BI.DASHBOARD_VIEW"],
   "Báo cáo Chi phí quỹ lương": ["BI.DASHBOARD_VIEW"],
@@ -371,6 +371,11 @@ const applyCardPermissions = (user) => {
       !["MANAGER", "DIRECTOR", "HR_ADMIN"].includes(user.role_id)
     ) {
       allowed = false;
+    }
+
+    if (title === "Trung tâm Phê duyệt" && user.role_id === "HR_ADMIN") {
+      const heading = card.querySelector("h4");
+      if (heading) heading.textContent = "Đơn chờ HR xử lý";
     }
 
     if (user.data_scope === "SELF") {

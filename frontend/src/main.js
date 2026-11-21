@@ -290,6 +290,9 @@ function renderRouteView(user) {
     showContracts(user, getContractStatusFromHash(hash));
   } else if (hash === "#/duyet-don" || hash.startsWith("#/duyet-don/")) {
     showRequestApprovals(user, getApprovalStatusFromHash(hash));
+  } else if (hash === "#/hr-don-tu" || hash.startsWith("#/hr-don-tu/")) {
+    const approvalHash = hash.replace("#/hr-don-tu", "#/duyet-don");
+    showRequestApprovals(user, getApprovalStatusFromHash(approvalHash));
   } else if (
     hash === "#/don-tu" ||
     hash === "#/don-tu/nghi-viec" ||
@@ -339,6 +342,7 @@ document.addEventListener("click", (event) => {
       "Hợp đồng lao động": "#/hop-dong",
       "Tạo đơn từ trực tuyến": "#/don-tu",
       "Trung tâm Phê duyệt": "#/duyet-don",
+      "Đơn chờ HR xử lý": "#/hr-don-tu",
       "Sơ đồ phòng ban": "#/so-do-phong-ban",
     };
 

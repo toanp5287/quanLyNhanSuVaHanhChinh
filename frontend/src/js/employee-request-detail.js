@@ -420,13 +420,23 @@ const submitResubmit = async (event, id) => {
 const bindEvents = (id, user) => {
   const approverRoles = ["MANAGER", "DIRECTOR", "HR_ADMIN"];
   const fromApprovals = approverRoles.includes(user?.role_id);
-  const backHash = fromApprovals ? "#/duyet-don" : "#/don-tu";
+  const isHr = user?.role_id === "HR_ADMIN";
+  const backHash = isHr
+    ? "#/hr-don-tu"
+    : fromApprovals
+      ? "#/duyet-don"
+      : "#/don-tu";
   const backButton = document.getElementById("btnBackEmployeeRequests");
 
   if (backButton) {
+    const backLabel = isHr
+      ? "Đơn chờ HR xử lý"
+      : fromApprovals
+        ? "Trung tâm phê duyệt"
+        : "Danh sách đơn từ";
     backButton.innerHTML = `
       <span class="material-symbols-outlined text-[15px]">arrow_back</span>
-      <span>${fromApprovals ? "Trung tâm phê duyệt" : "Danh sách đơn từ"}</span>
+      <span>${backLabel}</span>
     `;
   }
 
