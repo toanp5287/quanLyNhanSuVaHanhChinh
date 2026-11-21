@@ -1,4 +1,5 @@
 import {
+  checkEmployeeRequest,
   createEmployeeRequest,
   createResignationRequest,
   createTemporaryLeaveRequest,
@@ -6,6 +7,7 @@ import {
   getEmployeeRequestHistory,
   listEmployeeRequests,
   processEmployeeRequest,
+  receiveEmployeeRequest,
   requestEmployeeUpdate,
   resubmitEmployeeRequest,
 } from "../../services/employee-requests/employeeRequests.service.js";
@@ -72,6 +74,18 @@ export const requestUpdate = handle(
 export const resubmitRequest = handle(
   (req) => resubmitEmployeeRequest(req.user, req.params.id, req.body),
   "Đã gửi lại hồ sơ bổ sung",
+  200,
+);
+
+export const checkRequest = handle(
+  (req) => checkEmployeeRequest(req.user, req.params.id, req.body),
+  "Đã kiểm tra hồ sơ",
+  200,
+);
+
+export const receiveRequest = handle(
+  (req) => receiveEmployeeRequest(req.user, req.params.id, req.body),
+  "Đã tiếp nhận hồ sơ bổ sung",
   200,
 );
 

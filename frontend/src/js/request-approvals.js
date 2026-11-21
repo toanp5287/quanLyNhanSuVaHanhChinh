@@ -362,6 +362,12 @@ const renderRows = () => {
         role === "DIRECTOR" && row.status === "PENDING_DIRECTOR" && !isSelf;
       const canApprove =
         canManagerApprove || canHrProcess || canDirectorApprove;
+      const approveLabel =
+        row.request_type === "RESIGNATION" && canHrProcess
+          ? "Trình GĐ"
+          : role === "MANAGER"
+            ? "Đồng ý"
+            : "Duyệt";
 
       return `
         <tr class="hover:bg-surface-container-low transition-colors">
@@ -390,23 +396,33 @@ const renderRows = () => {
                 canApprove
                   ? `<button
                       class="h-8 px-space-sm rounded bg-primary text-on-primary hover:bg-primary-container font-label-sm text-label-sm"
-                      data-approve-request-id="${escapeHtml(row.id)}"
-                      type="button"
-                    >Duyệt</button>
-                    <button
-                      class="h-8 px-space-sm rounded border border-error/40 text-error hover:bg-error-container font-label-sm text-label-sm"
-                      data-reject-request-id="${escapeHtml(row.id)}"
-                      type="button"
-                    >Từ chối</button>`
+                       data-approve-request-id="${escapeHtml(row.id)}"
+                       type="button"
+                     >${approveLabel}</button>
+                     <button
+                       class="h-8 px-space-sm rounded border border-error/40 text-error hover:bg-error-container font-label-sm text-label-sm"
+                       data-reject-request-id="${escapeHtml(row.id)}"
+                       type="button"
+                     >Từ chối</button>`
                    : ""
                }
                ${
                  canHrProcess
                    ? `<button
-                       class="h-8 px-space-sm rounded border border-orange-400 text-orange-700 hover:bg-orange-50 font-label-sm text-label-sm"
-                       data-request-update-id="${escapeHtml(row.id)}"
-                       type="button"
-                     >Yêu cầu bổ sung</button>`
+                        class="h-8 px-space-sm rounded border border-blue-300 text-blue-700 hover:bg-blue-50 font-label-sm text-label-sm"
+                        data-check-request-id="${escapeHtml(row.id)}"
+                        type="button"
+                      >Kiểm tra</button>
+                      <button
+                        class="h-8 px-space-sm rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-label-sm text-label-sm"
+                        data-receive-request-id="${escapeHtml(row.id)}"
+                        type="button"
+                      >Tiếp nhận</button>
+                      <button
+                        class="h-8 px-space-sm rounded border border-orange-400 text-orange-700 hover:bg-orange-50 font-label-sm text-label-sm"
+                        data-request-update-id="${escapeHtml(row.id)}"
+                        type="button"
+                      >Yêu cầu bổ sung</button>`
                    : ""
                }
               <button
@@ -545,14 +561,44 @@ const approveRequest = async (id, button) => {
   }
 
   try {
-    await api.post(`/employee-requests/${id}/approve`, {
+    const response = await api.post(`/employee-requests/${id}/approve`, {
       note: "Phê duyệt",
     });
-    showNotice(`Đã duyệt đơn #${id}.`, false);
+    const nextStatus = response.data?.data?.status;
+    const message =
+      nextStatus === "PENDING_DIRECTOR"
+        ? `Đã trình Giám đốc đơn #${id}.`
+        : `Đã duyệt đơn #${id}.`;
+    showNotice(message, false);
     await loadRequests();
   } catch (error) {
     showNotice(
       error.response?.data?.message || "Không thể duyệt đơn. Vui lòng thử lại.",
+      true,
+    );
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = originalHtml;
+    }
+  }
+};
+
+const runHrAction = async (id, action, button, successMessage) => {
+  hideNotice();
+  const originalHtml = button?.innerHTML || "";
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = "<span>Đang xử lý...</span>";
+  }
+
+  try {
+    await api.post(`/employee-requests/${id}/${action}`, { note: "" });
+    showNotice(successMessage(`#${id}`), false);
+    await loadRequests();
+  } catch (error) {
+    showNotice(
+      error.response?.data?.message || "Không thể thực hiện thao tác. Vui lòng thử lại.",
       true,
     );
   } finally {
@@ -699,6 +745,28 @@ const bindEvents = () => {
       approveRequest(
         approveButton.getAttribute("data-approve-request-id"),
         approveButton,
+      );
+      return;
+    }
+
+    const checkButton = event.target.closest("[data-check-request-id]");
+    if (checkButton) {
+      runHrAction(
+        checkButton.getAttribute("data-check-request-id"),
+        "check",
+        checkButton,
+        (label) => `Đã kiểm tra hồ sơ đơn ${label}.`,
+      );
+      return;
+    }
+
+    const receiveButton = event.target.closest("[data-receive-request-id]");
+    if (receiveButton) {
+      runHrAction(
+        receiveButton.getAttribute("data-receive-request-id"),
+        "receive",
+        receiveButton,
+        (label) => `Đã tiếp nhận hồ sơ bổ sung đơn ${label}.`,
       );
       return;
     }

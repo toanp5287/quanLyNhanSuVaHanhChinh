@@ -17,6 +17,8 @@ const ACTION_META = {
   REJECT: { label: "Từ chối", icon: "cancel", color: "text-red-700 bg-red-100" },
   REQUEST_UPDATE: { label: "Yêu cầu bổ sung", icon: "fact_check", color: "text-orange-700 bg-orange-100" },
   RESUBMIT: { label: "Gửi lại hồ sơ", icon: "send", color: "text-indigo-700 bg-indigo-100" },
+  CHECK: { label: "Kiểm tra hồ sơ", icon: "fact_check", color: "text-blue-700 bg-blue-100" },
+  RECEIVE: { label: "Tiếp nhận hồ sơ bổ sung", icon: "inventory_2", color: "text-emerald-700 bg-emerald-100" },
 };
 
 const WORK_STATUS_LABEL = {
@@ -326,6 +328,49 @@ const canViewHrProfile = () =>
   state.currentUser?.role_id === "HR_ADMIN" &&
   (hasPermission("HR.PROFILE_MANAGE", state.currentUser) ||
     hasPermission("HR.PROFILE_VIEW", state.currentUser));
+
+const renderHrActions = (request) => {
+  const section = document.getElementById("detailHrActionsSection");
+  const visible = canViewHrProfile() && request.status === "PENDING_HR";
+  section?.classList.toggle("hidden", !visible);
+  if (!visible) return;
+
+  setText(
+    "#btnHrForwardDetail",
+    request.request_type === "RESIGNATION" ? "Trình Giám đốc" : "Duyệt đơn",
+  );
+};
+
+const runDetailHrAction = async (action, button, message) => {
+  const id = state.request?.id;
+  if (!id) return;
+
+  hideNotice();
+  const originalHtml = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = "<span>Đang xử lý...</span>";
+
+  try {
+    const response = await api.post(`/employee-requests/${id}/${action}`, {
+      note: "",
+    });
+    const nextStatus = response.data?.data?.status;
+    const successMessage =
+      nextStatus === "PENDING_DIRECTOR"
+        ? `Đã trình Giám đốc đơn #${id}.`
+        : message(`#${id}`);
+    showNotice(successMessage, false);
+    await loadDetail(id);
+  } catch (error) {
+    showNotice(
+      error.response?.data?.message || "Không thể thực hiện thao tác. Vui lòng thử lại.",
+      true,
+    );
+  } finally {
+    button.disabled = false;
+    button.innerHTML = originalHtml;
+  }
+};
 
 const fetchProfileByEmployee = async (request) => {
   const code = request.employee_code || request.employee_code_at_submit;
@@ -658,6 +703,7 @@ const renderDetail = (request) => {
   setText("#detailSubmittedAt", formatDateTime(request.submitted_at));
   setText("#detailReason", request.reason || "—");
 
+  renderHrActions(request);
   renderHrProfile(request);
 
   const progress = document.getElementById("detailProgress");
@@ -775,6 +821,15 @@ const bindEvents = (id, user) => {
   });
   bindOnce(document.getElementById("btnReloadEmployeeRequestDetail"), "click", () => {
     loadDetail(id);
+  });
+  bindOnce(document.getElementById("btnHrCheckDetail"), "click", (event) => {
+    runDetailHrAction("check", event.currentTarget, (label) => `Đã kiểm tra hồ sơ đơn ${label}.`);
+  });
+  bindOnce(document.getElementById("btnHrReceiveDetail"), "click", (event) => {
+    runDetailHrAction("receive", event.currentTarget, (label) => `Đã tiếp nhận hồ sơ bổ sung đơn ${label}.`);
+  });
+  bindOnce(document.getElementById("btnHrForwardDetail"), "click", (event) => {
+    runDetailHrAction("approve", event.currentTarget, (label) => `Đã duyệt đơn ${label}.`);
   });
   bindOnce(document.getElementById("detailResubmitForm"), "submit", (event) => {
     submitResubmit(event, id);

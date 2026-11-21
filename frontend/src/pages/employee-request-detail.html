@@ -110,6 +110,45 @@
         </div>
       </section>
 
+      <section
+        class="hidden bg-surface-container-lowest rounded-lg shadow-sm border border-primary/30 p-space-md"
+        id="detailHrActionsSection"
+      >
+        <div class="flex items-center justify-between gap-space-sm flex-wrap mb-space-md">
+          <div>
+            <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">
+              Xử lý hồ sơ
+            </h2>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">
+              Kiểm tra, tiếp nhận bổ sung và trình Giám đốc theo nghiệp vụ.
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center flex-wrap gap-space-xs" id="detailHrActions">
+          <button
+            class="h-9 px-space-md rounded border border-blue-300 text-blue-700 hover:bg-blue-50 font-label-lg text-label-lg"
+            id="btnHrCheckDetail"
+            type="button"
+          >
+            Kiểm tra hồ sơ
+          </button>
+          <button
+            class="h-9 px-space-md rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-label-lg text-label-lg"
+            id="btnHrReceiveDetail"
+            type="button"
+          >
+            Tiếp nhận hồ sơ bổ sung
+          </button>
+          <button
+            class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container font-label-lg text-label-lg"
+            id="btnHrForwardDetail"
+            type="button"
+          >
+            Trình Giám đốc
+          </button>
+        </div>
+      </section>
+
       <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
         <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface mb-space-md">Tiến trình xử lý</h2>
         <div class="flex flex-col md:flex-row md:items-start gap-space-sm overflow-x-auto" id="detailProgress"></div>

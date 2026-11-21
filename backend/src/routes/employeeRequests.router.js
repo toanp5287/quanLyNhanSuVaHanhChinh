@@ -1,12 +1,14 @@
 import express from "express";
 import {
   approveRequest,
+  checkRequest,
   getHistory,
   getRequestDetail,
   getRequests,
   postRequest,
   postResignationRequest,
   postTemporaryLeaveRequest,
+  receiveRequest,
   rejectRequest,
   requestUpdate,
   resubmitRequest,
@@ -36,6 +38,8 @@ routerEmployeeRequests.post("/:id/approve", approveRequest);
 routerEmployeeRequests.post("/:id/reject", rejectRequest);
 routerEmployeeRequests.post("/:id/request-update", requestUpdate);
 routerEmployeeRequests.post("/:id/resubmit", resubmitRequest);
+routerEmployeeRequests.post("/:id/check", checkRequest);
+routerEmployeeRequests.post("/:id/receive", receiveRequest);
 routerEmployeeRequests.get("/:id/history", getHistory);
 
 export default routerEmployeeRequests;

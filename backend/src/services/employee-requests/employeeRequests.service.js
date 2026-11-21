@@ -354,6 +354,9 @@ const resolveNextStatus = (requestType, status, action) => {
   if (status === "PENDING_HR") {
     return requestType === "RESIGNATION" ? "PENDING_DIRECTOR" : "APPROVED";
   }
+  if (status === "PENDING_DIRECTOR" && requestType === "RESIGNATION") {
+    return "APPROVED";
+  }
   throw fail("Đơn ở trạng thái hiện tại không thể duyệt", 409);
 };
 
@@ -550,6 +553,109 @@ export const resubmitEmployeeRequest = async (user, id, payload = {}) => {
       id: requestId,
       status: "PENDING_HR",
       updated_information_requests: answered.affectedRows,
+    };
+  });
+};
+
+export const checkEmployeeRequest = async (user, id, payload = {}) => {
+  if (!hasPermission(user?.permissions, "HR.PROFILE_MANAGE")) {
+    throw fail("Chỉ HR được kiểm tra hồ sơ", 403);
+  }
+  const requestId = parsePositiveInt(id, "Mã đơn");
+  if (!requestId) throw fail("Mã đơn không hợp lệ");
+  const actorId = Number(user?.user_id ?? user?.employee_id);
+  if (!Number.isSafeInteger(actorId) || actorId <= 0) {
+    throw fail("Thông tin người dùng không hợp lệ", 403);
+  }
+  const note = parseText(payload.note, "ghi chú", { max: 1000 });
+
+  return transaction(async (connection) => {
+    const [rows] = await connection.query(
+      "SELECT id, employee_id, status FROM employee_requests WHERE id = ? FOR UPDATE",
+      [requestId],
+    );
+    if (!rows.length) throw fail("Không tìm thấy đơn", 404);
+    const request = rows[0];
+
+    if (Number(user?.employee_id) === Number(request.employee_id)) {
+      throw fail("Không thể kiểm tra đơn của chính mình", 403);
+    }
+    if (request.status !== "PENDING_HR") {
+      throw fail("Chỉ có thể kiểm tra hồ sơ khi đơn đang chờ HR", 409);
+    }
+
+    const [checked] = await connection.query(
+      `SELECT id FROM workflow_actions
+        WHERE entity_type = 'EMPLOYEE_REQUEST' AND entity_id = ?
+          AND actor_id = ? AND action = 'CHECK' AND from_status = 'PENDING_HR'
+        LIMIT 1`,
+      [requestId, actorId],
+    );
+    if (checked.length) {
+      throw fail("Bạn đã kiểm tra hồ sơ ở bước này", 409);
+    }
+
+    await connection.query(
+      `INSERT INTO workflow_actions
+        (entity_type, entity_id, actor_id, action, from_status, to_status, comment)
+        VALUES ('EMPLOYEE_REQUEST', ?, ?, 'CHECK', 'PENDING_HR', 'PENDING_HR', ?)`,
+      [requestId, actorId, note || null],
+    );
+
+    return { id: requestId, status: request.status, checked: true };
+  });
+};
+
+export const receiveEmployeeRequest = async (user, id, payload = {}) => {
+  if (!hasPermission(user?.permissions, "HR.PROFILE_MANAGE")) {
+    throw fail("Chỉ HR được tiếp nhận hồ sơ bổ sung", 403);
+  }
+  const requestId = parsePositiveInt(id, "Mã đơn");
+  if (!requestId) throw fail("Mã đơn không hợp lệ");
+  const actorId = Number(user?.user_id ?? user?.employee_id);
+  if (!Number.isSafeInteger(actorId) || actorId <= 0) {
+    throw fail("Thông tin người dùng không hợp lệ", 403);
+  }
+  const note = parseText(payload.note, "ghi chú", { max: 1000 });
+
+  return transaction(async (connection) => {
+    const [rows] = await connection.query(
+      "SELECT id, employee_id, status FROM employee_requests WHERE id = ? FOR UPDATE",
+      [requestId],
+    );
+    if (!rows.length) throw fail("Không tìm thấy đơn", 404);
+    const request = rows[0];
+
+    if (Number(user?.employee_id) === Number(request.employee_id)) {
+      throw fail("Không thể tiếp nhận đơn của chính mình", 403);
+    }
+    if (request.status !== "PENDING_HR") {
+      throw fail("Chỉ có thể tiếp nhận hồ sơ khi đơn đang chờ HR", 409);
+    }
+
+    const [submitted] = await connection.query(
+      "SELECT id FROM request_information_requests WHERE request_id = ? AND status = 'SUBMITTED' LIMIT 1",
+      [requestId],
+    );
+    if (!submitted.length) {
+      throw fail("Không có hồ sơ bổ sung nào chờ tiếp nhận", 409);
+    }
+
+    const [result] = await connection.query(
+      "UPDATE request_information_requests SET status = 'RECEIVED' WHERE request_id = ? AND status = 'SUBMITTED'",
+      [requestId],
+    );
+    await connection.query(
+      `INSERT INTO workflow_actions
+        (entity_type, entity_id, actor_id, action, from_status, to_status, comment)
+        VALUES ('EMPLOYEE_REQUEST', ?, ?, 'RECEIVE', 'PENDING_HR', 'PENDING_HR', ?)`,
+      [requestId, actorId, note || null],
+    );
+
+    return {
+      id: requestId,
+      status: request.status,
+      received: result.affectedRows,
     };
   });
 };
