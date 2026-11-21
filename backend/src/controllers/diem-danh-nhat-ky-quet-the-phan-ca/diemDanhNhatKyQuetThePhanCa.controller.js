@@ -23,6 +23,13 @@ import {
   updateWorkShift,
   validateShiftPayload,
 } from "../../services/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
+import {
+  deletePolicy,
+  getKioskConfig,
+  listPolicies,
+  savePolicy,
+  updateKioskConfig,
+} from "../../services/attendance-policy/attendancePolicy.service.js";
 
 const getEmployeeId = (req) => req.user?.employee_id;
 
@@ -60,10 +67,13 @@ export const attendanceCheckIn = async (req, res) => {
         NO_SHIFT: "Chưa cấu hình ca làm việc cho nhân viên",
         ALREADY_CHECKED_IN: "Đã chấm công vào ca hôm nay",
         CHECK_IN_WINDOW_CLOSED: "Ngoài khung giờ cho phép chấm công vào ca",
+        DOUBLE_PUNCH_TOO_FAST: `Quét quá nhanh sau lần chấm trước. Vui lòng đợi ${result.wait_seconds || 0} giây.`,
       };
       return res.status(result.error === "ALREADY_CHECKED_IN" ? 409 : 400).json({
         success: false,
         message: messages[result.error] || "Không thể chấm công vào ca",
+        code: result.error,
+        wait_seconds: result.wait_seconds || 0,
         data: result.log || null,
       });
     }
@@ -103,13 +113,16 @@ export const attendanceCheckOut = async (req, res) => {
 
     if (result.error) {
       const messages = {
-        NO_CHECK_IN: "Chưa chấm công vào ca hôm nay",
+        NO_CHECK_IN_FOUND: "Bạn chưa chấm công Vào hôm nay, không thể chấm Ra!",
         ALREADY_CHECKED_OUT: "Đã chấm công tan ca hôm nay",
         CHECK_OUT_WINDOW_CLOSED: "Ngoài khung giờ cho phép chấm công tan ca",
+        DOUBLE_PUNCH_TOO_FAST: `Quét quá nhanh sau lần chấm trước. Vui lòng đợi ${result.wait_seconds || 0} giây.`,
       };
       return res.status(result.error === "ALREADY_CHECKED_OUT" ? 409 : 400).json({
         success: false,
         message: messages[result.error] || "Không thể chấm công tan ca",
+        code: result.error,
+        wait_seconds: result.wait_seconds || 0,
         data: result.log || null,
       });
     }
@@ -394,5 +407,59 @@ export const removeWorkShift = async (req, res) => {
       .json({ success: true, message: "Đã xóa ca làm việc", data });
   } catch (error) {
     return respondError(res, error, "Không thể xóa ca làm việc");
+  }
+};
+
+export const listAttendancePoliciesHandler = async (req, res) => {
+  try {
+    return res.status(200).json({ success: true, data: await listPolicies() });
+  } catch (error) {
+    return respondError(res, error, "Không thể tải quy chế tính công");
+  }
+};
+
+export const saveAttendancePolicyHandler = async (req, res) => {
+  try {
+    const data = await savePolicy(
+      { ...(req.body || {}), updated_by: req.user?.user_id || null },
+      req.params.id || null,
+    );
+    return res.status(req.params.id ? 200 : 201).json({
+      success: true,
+      message: req.params.id ? "Đã cập nhật quy chế tính công" : "Đã tạo quy chế tính công",
+      data,
+    });
+  } catch (error) {
+    return respondError(res, error, "Không thể lưu quy chế tính công");
+  }
+};
+
+export const removeAttendancePolicyHandler = async (req, res) => {
+  try {
+    const data = await deletePolicy(req.params.id);
+    return res.status(200).json({ success: true, message: "Đã xóa quy chế tính công", data });
+  } catch (error) {
+    return respondError(res, error, "Không thể xóa quy chế tính công");
+  }
+};
+
+export const getKioskConfigHandler = async (req, res) => {
+  try {
+    return res.status(200).json({ success: true, data: await getKioskConfig() });
+  } catch (error) {
+    return respondError(res, error, "Không thể tải cấu hình máy chấm công");
+  }
+};
+
+export const updateKioskConfigHandler = async (req, res) => {
+  try {
+    const data = await updateKioskConfig(req.body || {}, req.user);
+    return res.status(200).json({
+      success: true,
+      message: "Đã cập nhật cấu hình máy chấm công",
+      data,
+    });
+  } catch (error) {
+    return respondError(res, error, "Không thể lưu cấu hình máy chấm công");
   }
 };

@@ -50,9 +50,19 @@ export const initFaceKiosk = () => {
                 <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Trạng thái chấm công</dt><dd id="kioskAttendance" class="text-right">Chưa ghi nhận</dd></div>
               </dl>
               <div class="grid gap-space-sm mt-space-md">
+                <button id="kioskAuto" class="h-12 rounded-lg bg-primary text-on-primary font-label-lg text-label-lg disabled:opacity-40">Quét FaceID • Tự động Vào/Ra</button>
                 <button id="kioskCheckIn" class="h-12 rounded-lg bg-emerald-600 text-white font-label-lg text-label-lg disabled:opacity-40">Quét FaceID • Vào ca</button>
                 <button id="kioskCheckOut" class="h-12 rounded-lg bg-primary text-on-primary font-label-lg text-label-lg disabled:opacity-40">Quét FaceID • Tan ca</button>
               </div>
+              <div id="kioskConfirm" class="hidden mt-space-md rounded-lg border border-primary bg-primary-container/30 p-space-sm">
+                <p id="kioskConfirmText" class="text-body-sm text-on-surface"></p>
+                <p id="kioskConfirmCountdown" class="text-body-sm text-on-surface-variant mt-1"></p>
+                <div class="flex gap-space-sm mt-space-sm">
+                  <button id="kioskConfirmOk" class="h-9 px-space-md rounded-lg bg-primary text-on-primary font-label-lg disabled:opacity-40" disabled>Xác nhận</button>
+                  <button id="kioskConfirmCancel" class="h-9 px-space-md rounded-lg border border-surface-variant font-label-lg">Hủy</button>
+                </div>
+              </div>
+              <p id="kioskCooldown" class="hidden mt-space-sm text-body-sm text-error"></p>
             </div>
             <div id="kioskResult" role="status" aria-live="polite" class="rounded-lg border border-surface-variant bg-surface-container-lowest shadow-sm p-space-md">
               <h2 id="kioskResultTitle" class="font-headline-sm text-headline-sm text-on-surface">Sẵn sàng điểm danh</h2>
@@ -71,7 +81,12 @@ export const initFaceKiosk = () => {
     busy = false,
     starting = false,
     session = 0,
-    resultTimer;
+    resultTimer,
+    config = null,
+    pendingAction = null,
+    confirmTimer = null,
+    cooldownTimer = null,
+    cooldownUntil = 0;
   const deviceId =
     localStorage.getItem("hrm_kiosk_device_id") || crypto.randomUUID();
   localStorage.setItem("hrm_kiosk_device_id", deviceId);
@@ -86,9 +101,102 @@ export const initFaceKiosk = () => {
   };
   const controls = () => {
     if (!active()) return;
-    el("CheckIn").disabled = busy || starting || !stream?.active;
-    el("CheckOut").disabled = busy || starting || !stream?.active;
+    const autoMode = config?.punch_mode === "AUTO_SMART";
+    el("Auto").classList.toggle("hidden", !autoMode);
+    el("CheckIn").classList.toggle("hidden", autoMode);
+    el("CheckOut").classList.toggle("hidden", autoMode);
+    const locked =
+      busy || starting || !stream?.active || Boolean(pendingAction) ||
+      Date.now() < cooldownUntil;
+    el("Auto").disabled = locked;
+    el("CheckIn").disabled = locked;
+    el("CheckOut").disabled = locked;
     el("Camera").disabled = busy || starting;
+  };
+  const beep = (ok) => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const audio = new AudioCtx();
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = ok ? 880 : 220;
+      gain.gain.value = 0.08;
+      oscillator.connect(gain);
+      gain.connect(audio.destination);
+      oscillator.start();
+      oscillator.stop(audio.currentTime + (ok ? 0.12 : 0.3));
+      oscillator.onended = () => audio.close();
+    } catch {
+      return;
+    }
+  };
+  const startCooldown = (seconds) => {
+    const wait = Math.max(0, Math.ceil(Number(seconds) || 0));
+    if (!wait) return;
+    cooldownUntil = Date.now() + wait * 1000;
+    const tick = () => {
+      if (!active()) return;
+      const left = Math.ceil((cooldownUntil - Date.now()) / 1000);
+      if (left <= 0) {
+        cooldownUntil = 0;
+        clearInterval(cooldownTimer);
+        el("Cooldown").classList.add("hidden");
+      } else {
+        el("Cooldown").classList.remove("hidden");
+        el("Cooldown").textContent = `Quét quá nhanh. Vui lòng đợi ${left} giây trước khi quét lại.`;
+      }
+      controls();
+    };
+    clearInterval(cooldownTimer);
+    tick();
+    cooldownTimer = setInterval(tick, 500);
+  };
+  const loadConfig = async () => {
+    try {
+      const response = await api.get("/attendance/kiosk/config", {
+        skipAuth: true,
+      });
+      config = response.data?.data || config;
+    } catch {
+      config = config || { punch_mode: "AUTO_SMART", checkout_confirm_seconds: 2 };
+    }
+    if (active()) controls();
+  };
+  const cancelConfirm = () => {
+    clearInterval(confirmTimer);
+    pendingAction = null;
+    if (active()) el("Confirm").classList.add("hidden");
+    controls();
+  };
+  const askConfirm = (action) => {
+    if (busy || starting || !stream?.active || Date.now() < cooldownUntil) return;
+    pendingAction = action;
+    if (active()) el("Confirm").classList.remove("hidden");
+    let remaining = Math.max(0, Number(config?.checkout_confirm_seconds) || 0);
+    const render = () => {
+      if (!active()) return;
+      el("ConfirmText").textContent =
+        action === "check-in"
+          ? "Xác nhận quét FaceID để chấm Vào ca."
+          : action === "auto"
+            ? "Xác nhận quét FaceID. Hệ thống sẽ tự chọn Vào hoặc Ra."
+            : "Xác nhận quét FaceID để chấm Ra. Ra ca không cần đúng giờ, nhưng phải đã có giờ Vào.";
+      el("ConfirmCountdown").textContent = remaining
+        ? `Vui lòng đợi ${remaining} giây...`
+        : "Sẵn sàng. Nhấn Xác nhận để quét.";
+      el("ConfirmOk").disabled = remaining > 0;
+    };
+    render();
+    clearInterval(confirmTimer);
+    if (remaining > 0)
+      confirmTimer = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) clearInterval(confirmTimer);
+        render();
+      }, 1000);
+    controls();
   };
   const stop = () => {
     session++;
@@ -219,7 +327,10 @@ export const initFaceKiosk = () => {
       );
       if (!active() || current !== session) return;
        const { employee, log, account, shift, already_recorded: alreadyRecorded, attendance_state: attendanceState } = response.data.data;
-       el("Recognition").textContent = `Đã xác nhận • ${employee.full_name}`;
+       const scannedAction = response.data.data.action || action;
+       beep(true);
+        el("Recognition").textContent = `Đã xác nhận • ${employee.full_name}`;
+
        const completed = attendanceState === "COMPLETED" || Boolean(log.check_out);
        el("Attendance").textContent = alreadyRecorded
          ? completed ? "Đã hoàn thành hôm nay" : `Đã vào ca lúc ${String(log.check_in || "—").slice(0, 5)}`
@@ -236,7 +347,8 @@ export const initFaceKiosk = () => {
       const lateMinutes = Number(log?.late_minutes || 0);
       let punctuality = "";
       let punctualityDetail = "";
-      if (action === "check-in" && checkInMin != null && startMin != null) {
+       if (scannedAction === "check-in" && checkInMin != null && startMin != null) {
+
         if (lateMinutes > 0) {
           punctuality = "Đi muộn";
           punctualityDetail = `Đi muộn ${lateMinutes} phút (quá ân hạn ${grace} phút so với giờ bắt đầu ca)`;
@@ -258,9 +370,10 @@ export const initFaceKiosk = () => {
           : response.data.message,
         alreadyRecorded
           ? response.data.message
-          : action === "check-in"
-            ? `Đã ghi nhận giờ vào ca. ${punctualityDetail || "Đúng giờ"}.`
-            : "Đã ghi nhận giờ tan ca.",
+           : scannedAction === "check-in"
+             ? `Đã ghi nhận giờ vào ca. ${punctualityDetail || "Đúng giờ"}.`
+             : "Đã ghi nhận giờ tan ca. Công đã được tính theo quy chế.",
+
       );
       for (const text of [
         `${employee.employee_code} - ${employee.full_name}`,
@@ -268,23 +381,36 @@ export const initFaceKiosk = () => {
         employee.department_name || "",
         `Giờ vào: ${String(log.check_in || "-").slice(0, 5)} - Giờ ra: ${String(log.check_out || "-").slice(0, 5)}`,
         punctualityDetail ? `Trạng thái vào ca: ${punctualityDetail}` : "",
-        `Công: ${Number(log.work_unit).toFixed(2)} - Đi muộn: ${lateMinutes} phút`,
+        `Công: ${Number(log.work_day ?? log.work_unit).toFixed(2)} - Đi muộn: ${lateMinutes} phút`,
+        ...(Number(config?.show_estimated_workday)
+          ? [`Thời gian làm ròng: ${Number(log.net_work_minutes || 0)} phút`]
+          : []),
       ].filter(Boolean)) {
         const line = document.createElement("p");
         line.textContent = text;
         el("Identity").appendChild(line);
       }
     } catch (error) {
+      beep(false);
       if (active() && current === session) {
         el("Recognition").textContent = "Không nhận diện được";
         el("Attendance").textContent = "Không ghi nhận";
       }
        if (active() && current === session) {
-         const message = error.response?.data?.message ||
-           (error.code === "ECONNABORTED"
-             ? "Máy chủ phản hồi chậm. Kiểm tra lại kết quả trước khi quét lại."
-             : error.message || "Không thể kết nối máy chủ.");
-         if (/đã vào ca hôm nay/i.test(message)) {
+          const payload = error.response?.data || {};
+          const message = payload.message ||
+            (error.code === "ECONNABORTED"
+              ? "Máy chủ phản hồi chậm. Kiểm tra lại kết quả trước khi quét lại."
+              : error.message || "Không thể kết nối máy chủ.");
+          if (payload.code === "NO_CHECK_IN_FOUND") {
+            el("Recognition").textContent = "Đã xác nhận khuôn mặt";
+            el("Attendance").textContent = "Chưa có giờ Vào";
+            status("Không thể chấm Ra", `${message} Vui lòng quét Vào ca trước.`, true);
+          } else if (payload.code === "DOUBLE_PUNCH_TOO_FAST") {
+            startCooldown(payload.wait_seconds);
+            status("Quét quá nhanh", message, true);
+          } else if (/đã vào ca hôm nay/i.test(message)) {
+
            el("Recognition").textContent = "Đã xác nhận khuôn mặt";
            el("Attendance").textContent = "Đã vào ca hôm nay";
            status("Đã vào ca hôm nay", message);
@@ -303,18 +429,28 @@ export const initFaceKiosk = () => {
         resultTimer = setTimeout(() => {
           if (active() && !busy) {
             el("Identity").replaceChildren();
-            status(
-              "Sẵn sàng cho người tiếp theo",
-              "Chọn Vào ca hoặc Tan ca để quét khuôn mặt.",
-            );
+             status(
+               "Sẵn sàng cho người tiếp theo",
+               config?.punch_mode === "AUTO_SMART"
+                 ? "Nhấn Quét FaceID để hệ thống tự chọn Vào hoặc Ra."
+                 : "Chọn Vào ca hoặc Tan ca để quét khuôn mặt.",
+             );
+
           }
         }, 15000);
     }
   };
   el("Camera").addEventListener("click", start);
   el("Stop").addEventListener("click", stop);
+  el("Auto").addEventListener("click", () => askConfirm("auto"));
   el("CheckIn").addEventListener("click", () => scan("check-in"));
-  el("CheckOut").addEventListener("click", () => scan("check-out"));
+  el("CheckOut").addEventListener("click", () => askConfirm("check-out"));
+  el("ConfirmOk").addEventListener("click", () => {
+    const action = pendingAction;
+    cancelConfirm();
+    if (action) scan(action);
+  });
+  el("ConfirmCancel").addEventListener("click", cancelConfirm);
   const tick = () => {
     if (active())
       el("Clock").textContent = new Date().toLocaleString("vi-VN", {
@@ -323,11 +459,14 @@ export const initFaceKiosk = () => {
   };
   const clock = setInterval(tick, 1000);
   tick();
+  loadConfig();
   controls();
   const cleanup = () => {
     stop();
     clearInterval(clock);
     clearTimeout(resultTimer);
+    clearInterval(confirmTimer);
+    clearInterval(cooldownTimer);
     window.removeEventListener("hashchange", cleanup);
     window.removeEventListener("pagehide", cleanup);
     document.removeEventListener("visibilitychange", visibility);

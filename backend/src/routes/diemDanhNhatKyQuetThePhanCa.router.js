@@ -27,7 +27,11 @@ import {
   cancelExplanationHandler,
   getExplanations,
   getShiftAssignments,
+  getKioskConfigHandler,
   getWorkShifts,
+  listAttendancePoliciesHandler,
+  removeAttendancePolicyHandler,
+  saveAttendancePolicyHandler,
   postExplanation,
   postShiftAssignment,
   postWorkShift,
@@ -36,6 +40,7 @@ import {
   rejectExplanationHandler,
   removeShiftAssignment,
   removeWorkShift,
+  updateKioskConfigHandler,
 } from "../controllers/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.controller.js";
 
 const router = express.Router();
@@ -101,7 +106,7 @@ router.post(
         success: true,
         message:
           data.message ||
-          (req.params.action === "check-in"
+          (data.action === "check-in"
             ? "Điểm danh vào ca thành công"
             : "Điểm danh tan ca thành công"),
         data,
@@ -113,10 +118,25 @@ router.post(
         message: error.status
           ? error.message
           : "Không thể ghi nhận chấm công. Vui lòng thử lại.",
+        code: error.code || null,
+        wait_seconds: error.wait_seconds || 0,
       });
     }
   },
 );
+
+router.get("/kiosk/config", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    const data = await getKioskConfig();
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(error.status || 500).json({
+      success: false,
+      message: error.status ? error.message : "Không thể tải cấu hình kiosk",
+    });
+  }
+});
 
 router.use(verifyToken);
 
@@ -201,6 +221,38 @@ router.delete(
   "/shifts/:id",
   requirePermission("ATT.SHIFT_OT_MANAGE"),
   removeWorkShift,
+);
+
+// Quy chế tính công & cấu hình kiosk
+router.get(
+  "/policies",
+  requireAnyPermission(["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"]),
+  listAttendancePoliciesHandler,
+);
+router.post(
+  "/policies",
+  requirePermission("ATT.SHIFT_OT_MANAGE"),
+  saveAttendancePolicyHandler,
+);
+router.put(
+  "/policies/:id",
+  requirePermission("ATT.SHIFT_OT_MANAGE"),
+  saveAttendancePolicyHandler,
+);
+router.delete(
+  "/policies/:id",
+  requirePermission("ATT.SHIFT_OT_MANAGE"),
+  removeAttendancePolicyHandler,
+);
+router.get(
+  "/kiosk-config",
+  requireAnyPermission(["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"]),
+  getKioskConfigHandler,
+);
+router.put(
+  "/kiosk-config",
+  requirePermission("ATT.SHIFT_OT_MANAGE"),
+  updateKioskConfigHandler,
 );
 
 // Phân ca nhân viên
