@@ -12,6 +12,7 @@ import routerDiemDanhNhatKyQuetThePhanCa from "./src/routes/diemDanhNhatKyQuetTh
 import routerQuanLyLamThemGio from "./src/routes/quanLyLamThemGio.router.js";
 import routerQuanLyNghiPhepVaQuyPhepNam from "./src/routes/quan-ly-nghi-phep-va-quy-phep-nam.service.js";
 import routerMyProfile from "./src/routes/myProfile.router.js";
+import routerEmployeeRequests from "./src/routes/employeeRequests.router.js";
 import connectMysql from "./src/config/database.js";
 
 dotenv.config();
@@ -41,6 +42,7 @@ app.use("/attendance", routerDiemDanhNhatKyQuetThePhanCa);
 app.use("/timesheets", routerTongHopChotCong);
 app.use("/overtime", routerQuanLyLamThemGio);
 app.use("/leave", routerQuanLyNghiPhepVaQuyPhepNam);
+app.use("/employee-requests", routerEmployeeRequests);
 app.listen(port, async () => {
   await connectMysql();
   console.log(`Server đang chạy ở http://localhost:${port}`);

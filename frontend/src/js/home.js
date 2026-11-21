@@ -64,7 +64,7 @@ const CARD_PERMISSIONS = {
   "Thu hồi khi nghỉ việc": ["ASSET.ALLOCATE_MANAGE"],
   "Báo hỏng & Đền bù": ["ASSET.VIEW_OWN", "ASSET.ALLOCATE_MANAGE"],
   "Cổng thông tin cá nhân": [],
-  "Tạo đơn từ trực tuyến": ["LEAVE.VIEW_REQUEST"],
+  "Tạo đơn từ trực tuyến": ["LEAVE.VIEW_REQUEST", "ESS.SELF_PROFILE"],
   "Trung tâm Phê duyệt": ["LEAVE.APPROVE", "ATT.SHIFT_OT_MANAGE"],
   "Bản tin & Nội quy công ty": [],
   "Dashboard Biến động nhân sự": ["BI.DASHBOARD_VIEW"],

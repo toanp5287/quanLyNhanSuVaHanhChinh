@@ -1,0 +1,195 @@
+<main class="relative pt-[100px] w-full min-h-screen bg-surface px-space-lg py-space-md">
+  <div class="flex flex-col w-full gap-space-lg pb-space-xl" id="employeeRequestDetailRoot">
+    <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-space-md">
+      <div class="flex flex-col gap-space-xs">
+        <div class="flex items-center gap-space-xs text-on-surface-variant font-label-md text-label-md">
+          <button
+            class="inline-flex items-center gap-1 hover:text-primary transition-colors"
+            id="btnBackEmployeeRequests"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[15px]">arrow_back</span>
+            <span>Danh sách đơn từ</span>
+          </button>
+          <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+          <span class="text-on-surface font-semibold">Chi tiết đơn</span>
+        </div>
+        <h1 class="font-headline-lg text-headline-lg text-on-surface" id="employeeRequestDetailTitle">
+          Chi tiết đơn từ
+        </h1>
+        <p class="font-body-md text-body-md text-on-surface-variant">
+          Theo dõi trạng thái, tiến trình xử lý và lịch sử của đơn.
+        </p>
+      </div>
+      <div class="flex items-center flex-wrap gap-space-xs" id="employeeRequestDetailHeaderBadges">
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm" id="employeeRequestDetailCode">
+          Đang tải...
+        </span>
+        <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-label-sm text-label-sm" id="employeeRequestDetailStatus">
+          —
+        </span>
+      </div>
+    </div>
+
+    <div
+      class="hidden items-start gap-space-sm rounded-lg border px-space-md py-space-sm font-body-sm text-body-sm"
+      id="employeeRequestDetailNotice"
+    ></div>
+
+    <div
+      class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant px-space-md py-space-lg text-center text-on-surface-variant"
+      id="employeeRequestDetailLoading"
+    >
+      Đang tải chi tiết đơn...
+    </div>
+
+    <div class="flex flex-col gap-space-lg hidden" id="employeeRequestDetailContent">
+      <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+        <div class="flex items-center justify-between gap-space-sm flex-wrap mb-space-md">
+          <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">Thông tin đơn</h2>
+          <span class="font-label-sm text-label-sm text-on-surface-variant" id="employeeRequestDetailUpdatedAt"></span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-space-md">
+          <div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Loại đơn</p>
+            <p class="font-body-md text-body-md text-on-surface font-semibold" id="detailType">—</p>
+          </div>
+          <div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Nhân viên</p>
+            <p class="font-body-md text-body-md text-on-surface font-semibold" id="detailEmployee">—</p>
+          </div>
+          <div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Phòng ban</p>
+            <p class="font-body-md text-body-md text-on-surface font-semibold" id="detailDepartment">—</p>
+          </div>
+          <div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Ngày bắt đầu</p>
+            <p class="font-body-md text-body-md text-on-surface font-semibold" id="detailStartDate">—</p>
+          </div>
+          <div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Ngày kết thúc</p>
+            <p class="font-body-md text-body-md text-on-surface font-semibold" id="detailEndDate">—</p>
+          </div>
+          <div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Ngày gửi</p>
+            <p class="font-body-md text-body-md text-on-surface font-semibold" id="detailSubmittedAt">—</p>
+          </div>
+        </div>
+
+        <div class="mt-space-md pt-space-md border-t border-surface-variant">
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Lý do</p>
+          <p class="whitespace-pre-wrap font-body-md text-body-md text-on-surface" id="detailReason">—</p>
+        </div>
+      </section>
+
+      <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+        <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface mb-space-md">Tiến trình xử lý</h2>
+        <div class="flex flex-col md:flex-row md:items-start gap-space-sm overflow-x-auto" id="detailProgress"></div>
+      </section>
+
+      <section
+        class="hidden rounded-lg border border-error/30 bg-error-container p-space-md"
+        id="detailRejectionBox"
+      >
+        <div class="flex items-start gap-space-sm">
+          <span class="material-symbols-outlined text-error shrink-0">cancel</span>
+          <div>
+            <h2 class="font-headline-sm text-headline-sm font-bold text-on-error-container">Lý do từ chối</h2>
+            <p class="whitespace-pre-wrap font-body-md text-body-md mt-1" id="detailRejectionReason"></p>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="hidden rounded-lg border border-orange-300 bg-orange-50 p-space-md"
+        id="detailUpdateBox"
+      >
+        <div class="flex items-start gap-space-sm">
+          <span class="material-symbols-outlined text-orange-700 shrink-0">fact_check</span>
+          <div class="w-full">
+            <h2 class="font-headline-sm text-headline-sm font-bold text-orange-900">HR yêu cầu bổ sung thông tin</h2>
+            <p class="whitespace-pre-wrap font-body-md text-body-md text-orange-900 mt-1" id="detailUpdateContent"></p>
+
+            <form class="mt-space-md flex flex-col gap-space-sm" id="detailResubmitForm">
+              <div class="flex flex-col gap-1">
+                <label class="font-label-md text-label-md font-semibold text-orange-900" for="detailResponseNote">
+                  Nội dung bổ sung <span class="text-error">*</span>
+                </label>
+                <textarea
+                  class="w-full min-h-[90px] px-3 py-2 rounded border border-orange-300 bg-white text-on-surface focus:ring-1 focus:ring-primary outline-none resize-y"
+                  id="detailResponseNote"
+                  maxlength="5000"
+                  placeholder="Nhập thông tin đã bổ sung..."
+                  required
+                ></textarea>
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <label class="font-label-md text-label-md font-semibold text-orange-900" for="detailUpdatedReason">
+                  Cập nhật lý do đơn (không bắt buộc)
+                </label>
+                <textarea
+                  class="w-full min-h-[80px] px-3 py-2 rounded border border-orange-300 bg-white text-on-surface focus:ring-1 focus:ring-primary outline-none resize-y"
+                  id="detailUpdatedReason"
+                  maxlength="5000"
+                  placeholder="Để trống nếu giữ nguyên lý do cũ..."
+                ></textarea>
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <label class="font-label-md text-label-md font-semibold text-orange-900" for="detailResubmitFiles">
+                  File bổ sung
+                </label>
+                <input
+                  class="w-full text-body-sm text-body-sm text-on-surface file:mr-3 file:rounded file:border-0 file:bg-orange-100 file:text-orange-900 file:px-3 file:py-2 file:font-semibold"
+                  id="detailResubmitFiles"
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                />
+                <p class="font-label-sm text-label-sm text-orange-900">
+                  Chưa có API lưu file; nội dung bổ sung sẽ được gửi qua mục "Nội dung bổ sung".
+                </p>
+              </div>
+
+              <div class="flex justify-end">
+                <button
+                  class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container font-label-lg text-label-lg flex items-center gap-1.5"
+                  id="btnResubmitEmployeeRequest"
+                  type="submit"
+                >
+                  <span class="material-symbols-outlined text-[18px]">send</span>
+                  <span>Gửi lại đơn</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+        <div class="flex items-center justify-between gap-space-sm flex-wrap mb-space-md">
+          <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">File đính kèm</h2>
+          <span class="font-label-sm text-label-sm text-on-surface-variant" id="detailAttachmentCount"></span>
+        </div>
+        <div class="flex flex-col gap-space-xs" id="detailAttachmentList"></div>
+      </section>
+
+      <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+        <div class="flex items-center justify-between gap-space-sm flex-wrap mb-space-md">
+          <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">Lịch sử xử lý</h2>
+          <button
+            class="h-8 px-space-sm rounded border border-surface-variant text-on-surface hover:bg-surface-container-high font-label-sm text-label-sm flex items-center gap-1"
+            id="btnReloadEmployeeRequestDetail"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[16px]">refresh</span>
+            <span>Làm mới</span>
+          </button>
+        </div>
+        <div class="flex flex-col gap-space-sm" id="detailTimeline"></div>
+      </section>
+    </div>
+  </div>
+</main>

@@ -1,0 +1,540 @@
+import { db } from "../../config/database.js";
+import {
+  assertCanApprove,
+  buildEmployeeScope,
+  hasPermission,
+} from "../../utils/helper.js";
+
+const fail = (message, status = 400) =>
+  Object.assign(new Error(message), { status });
+
+const REQUEST_TYPES = ["RESIGNATION", "TEMPORARY_LEAVE"];
+const DEFAULT_TITLES = {
+  RESIGNATION: "Đơn xin nghỉ việc",
+  TEMPORARY_LEAVE: "Đơn xin tạm nghỉ",
+};
+const ACTIVE_STATUSES = [
+  "DRAFT",
+  "PENDING_DEPARTMENT",
+  "PENDING_HR",
+  "WAITING_EMPLOYEE_UPDATE",
+  "PENDING_DIRECTOR",
+];
+const VIEW_STATUSES = [
+  ...ACTIVE_STATUSES,
+  "APPROVED",
+  "REJECTED",
+  "CANCELLED",
+];
+const REQUEST_COLUMNS = `r.id, r.employee_id, r.department_id, r.request_type,
+  r.title, r.reason,
+  DATE_FORMAT(r.start_date, '%Y-%m-%d') AS start_date,
+  DATE_FORMAT(r.last_working_date, '%Y-%m-%d') AS last_working_date,
+  DATE_FORMAT(r.end_date, '%Y-%m-%d') AS end_date,
+  r.status, r.submitted_at, r.created_at, r.updated_at,
+  e.employee_code, e.full_name,
+  COALESCE(d.department_name, d.name) AS department_name`;
+
+const parseDate = (value, field) => {
+  const text = String(value || "");
+  const parsed = new Date(`${text}T00:00:00Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(text) ||
+    !Number.isFinite(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== text
+  ) {
+    throw fail(`${field} không hợp lệ (YYYY-MM-DD)`);
+  }
+  return text;
+};
+
+const parseText = (value, field, { required = false, max = 255 } = {}) => {
+  const text = String(value ?? "").trim();
+  if (required && !text) throw fail(`Vui lòng nhập ${field}`);
+  if (text.length > max) throw fail(`${field} không được vượt quá ${max} ký tự`);
+  return text;
+};
+
+const parsePositiveInt = (value, field) => {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw fail(`${field} không hợp lệ`);
+  }
+  return number;
+};
+
+const buildListFilters = (filters = {}) => {
+  const result = {};
+  if (filters.request_type) {
+    if (!REQUEST_TYPES.includes(filters.request_type)) {
+      throw fail("Loại đơn không hợp lệ");
+    }
+    result.request_type = filters.request_type;
+  }
+  if (filters.status) {
+    if (!VIEW_STATUSES.includes(filters.status)) {
+      throw fail("Trạng thái đơn không hợp lệ");
+    }
+    result.status = filters.status;
+  }
+  result.employee_id = parsePositiveInt(filters.employee_id, "Mã nhân viên");
+  result.department_id = parsePositiveInt(filters.department_id, "Mã phòng ban");
+  result.from_date = filters.from_date
+    ? parseDate(filters.from_date, "Từ ngày")
+    : null;
+  result.to_date = filters.to_date ? parseDate(filters.to_date, "Đến ngày") : null;
+  if (result.from_date && result.to_date && result.to_date < result.from_date) {
+    throw fail("Đến ngày không được trước từ ngày");
+  }
+  result.keyword = parseText(filters.keyword || filters.q, "Từ khóa", {
+    max: 100,
+  });
+  return result;
+};
+
+const transaction = async (operation) => {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await operation(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+export const createEmployeeRequest = async (
+  user,
+  payload = {},
+  requestType,
+) => {
+  if (!REQUEST_TYPES.includes(requestType)) throw fail("Loại đơn không hợp lệ");
+
+  const employeeId = Number(user?.employee_id);
+  if (!Number.isSafeInteger(employeeId) || employeeId <= 0) {
+    throw fail("Tài khoản chưa liên kết hồ sơ nhân sự", 403);
+  }
+  const actorId = Number(user?.user_id ?? employeeId);
+  if (!Number.isSafeInteger(actorId) || actorId <= 0) {
+    throw fail("Thông tin người dùng không hợp lệ", 403);
+  }
+  if (
+    payload.employee_id &&
+    Number(payload.employee_id) !== employeeId
+  ) {
+    throw fail("Chỉ được tạo đơn cho chính mình", 403);
+  }
+
+  const title = parseText(payload.title || DEFAULT_TITLES[requestType], "tiêu đề", {
+    required: true,
+  });
+  const reason = parseText(payload.reason, "lý do", {
+    required: true,
+    max: 5000,
+  });
+
+  let startDate;
+  let lastWorkingDate = null;
+  let endDate = null;
+
+  if (requestType === "RESIGNATION") {
+    lastWorkingDate = parseDate(
+      payload.last_working_date || payload.start_date,
+      "ngày làm việc cuối",
+    );
+    startDate = payload.start_date
+      ? parseDate(payload.start_date, "ngày bắt đầu nghỉ")
+      : lastWorkingDate;
+    if (lastWorkingDate < startDate) {
+      throw fail("Ngày làm việc cuối không được trước ngày bắt đầu nghỉ");
+    }
+  } else {
+    startDate = parseDate(payload.start_date, "ngày bắt đầu tạm nghỉ");
+    endDate = parseDate(payload.end_date, "ngày kết thúc tạm nghỉ");
+    if (endDate < startDate) {
+      throw fail("Ngày kết thúc tạm nghỉ không được trước ngày bắt đầu");
+    }
+  }
+
+  return transaction(async (connection) => {
+    const [employees] = await connection.query(
+      "SELECT id, department_id FROM employees WHERE id = ? LIMIT 1",
+      [employeeId],
+    );
+    if (!employees.length) throw fail("Không tìm thấy hồ sơ nhân sự", 404);
+    const departmentId = employees[0].department_id ?? null;
+
+    const placeholders = ACTIVE_STATUSES.map(() => "?").join(", ");
+    const statusParams = [employeeId, requestType, ...ACTIVE_STATUSES];
+    const [existing] = await connection.query(
+      `SELECT id FROM employee_requests
+        WHERE employee_id = ? AND request_type = ? AND status IN (${placeholders})
+        ${requestType === "TEMPORARY_LEAVE" ? "AND start_date <= ? AND end_date >= ?" : ""}
+        LIMIT 1`,
+      requestType === "TEMPORARY_LEAVE"
+        ? [...statusParams, endDate, startDate]
+        : statusParams,
+    );
+    if (existing.length) throw fail("Đã tồn tại đơn đang xử lý trùng nội dung", 409);
+
+    const [result] = await connection.query(
+      `INSERT INTO employee_requests
+        (employee_id, department_id, request_type, title, reason, start_date, last_working_date, end_date, status, submitted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_DEPARTMENT', NOW())`,
+      [
+        employeeId,
+        departmentId,
+        requestType,
+        title,
+        reason,
+        startDate,
+        lastWorkingDate,
+        endDate,
+      ],
+    );
+
+    await connection.query(
+      `INSERT INTO workflow_actions
+        (entity_type, entity_id, actor_id, action, from_status, to_status, comment)
+        VALUES ('EMPLOYEE_REQUEST', ?, ?, 'SUBMIT', 'DRAFT', 'PENDING_DEPARTMENT', ?)`,
+      [result.insertId, actorId, title],
+    );
+
+    const [rows] = await connection.query(
+      "SELECT id, request_type, title, status, submitted_at FROM employee_requests WHERE id = ?",
+      [result.insertId],
+    );
+    return rows[0];
+  });
+};
+
+export const createResignationRequest = (user, payload = {}) =>
+  createEmployeeRequest(user, payload, "RESIGNATION");
+
+export const createTemporaryLeaveRequest = (user, payload = {}) =>
+  createEmployeeRequest(user, payload, "TEMPORARY_LEAVE");
+
+export const listEmployeeRequests = async (user, filters = {}) => {
+  const parsed = buildListFilters(filters);
+  const scope = buildEmployeeScope(user);
+  const conditions = [scope.clause || "WHERE 1 = 1"];
+  const params = [...scope.params];
+
+  if (parsed.request_type) {
+    conditions.push("r.request_type = ?");
+    params.push(parsed.request_type);
+  }
+  if (parsed.status) {
+    conditions.push("r.status = ?");
+    params.push(parsed.status);
+  }
+  if (parsed.employee_id) {
+    conditions.push("r.employee_id = ?");
+    params.push(parsed.employee_id);
+  }
+  if (parsed.department_id) {
+    conditions.push("r.department_id = ?");
+    params.push(parsed.department_id);
+  }
+  if (parsed.from_date) {
+    conditions.push("r.start_date >= ?");
+    params.push(parsed.from_date);
+  }
+  if (parsed.to_date) {
+    conditions.push("r.start_date <= ?");
+    params.push(parsed.to_date);
+  }
+  if (parsed.keyword) {
+    conditions.push(
+      "(r.title LIKE ? OR r.reason LIKE ? OR e.employee_code LIKE ? OR e.full_name LIKE ?)",
+    );
+    const pattern = `%${parsed.keyword}%`;
+    params.push(pattern, pattern, pattern, pattern);
+  }
+
+  const [rows] = await db.query(
+    `SELECT ${REQUEST_COLUMNS}
+      FROM employee_requests r
+      JOIN employees e ON e.id = r.employee_id
+      LEFT JOIN departments d ON d.id = r.department_id
+      ${conditions.join(" AND ")}
+      ORDER BY r.id DESC`,
+    params,
+  );
+
+  const summary = {
+    total: rows.length,
+    pending: rows.filter((row) => ACTIVE_STATUSES.includes(row.status)).length,
+    approved: rows.filter((row) => row.status === "APPROVED").length,
+    rejected: rows.filter((row) => row.status === "REJECTED").length,
+  };
+
+  return { total: rows.length, summary, requests: rows };
+};
+
+const selectWorkflowHistory = async (executor, requestId) => {
+  const [rows] = await executor.query(
+    `SELECT a.id, a.action, a.from_status, a.to_status, a.comment, a.created_at,
+            COALESCE(emp.full_name, u.username) AS actor_name
+      FROM workflow_actions a
+      LEFT JOIN users u ON u.id = a.actor_id
+      LEFT JOIN employees emp ON emp.id = u.employee_id
+      WHERE a.entity_type = 'EMPLOYEE_REQUEST' AND a.entity_id = ?
+      ORDER BY a.id ASC`,
+    [requestId],
+  );
+  return rows;
+};
+
+export const getEmployeeRequestDetail = async (user, id) => {
+  const requestId = parsePositiveInt(id, "Mã đơn");
+  if (!requestId) throw fail("Mã đơn không hợp lệ");
+
+  const scope = buildEmployeeScope(user);
+  const [rows] = await db.query(
+    `SELECT ${REQUEST_COLUMNS}
+      FROM employee_requests r
+      JOIN employees e ON e.id = r.employee_id
+      LEFT JOIN departments d ON d.id = r.department_id
+      ${scope.clause || "WHERE 1 = 1"} AND r.id = ?
+      LIMIT 1`,
+    [...scope.params, requestId],
+  );
+  if (!rows.length) throw fail("Không tìm thấy đơn", 404);
+
+  const timeline = await selectWorkflowHistory(db, requestId);
+  return { ...rows[0], timeline };
+};
+
+export const getEmployeeRequestHistory = async (user, id) => {
+  const requestId = parsePositiveInt(id, "Mã đơn");
+  if (!requestId) throw fail("Mã đơn không hợp lệ");
+
+  const scope = buildEmployeeScope(user);
+  const [rows] = await db.query(
+    `SELECT r.id
+      FROM employee_requests r
+      JOIN employees e ON e.id = r.employee_id
+      ${scope.clause || "WHERE 1 = 1"} AND r.id = ?
+      LIMIT 1`,
+    [...scope.params, requestId],
+  );
+  if (!rows.length) throw fail("Không tìm thấy đơn", 404);
+
+  return {
+    request_id: requestId,
+    entity_type: "EMPLOYEE_REQUEST",
+    history: await selectWorkflowHistory(db, requestId),
+  };
+};
+
+const resolveNextStatus = (requestType, status, action) => {
+  if (action === "reject") return "REJECTED";
+  if (status === "PENDING_DEPARTMENT") return "PENDING_HR";
+  if (status === "PENDING_HR") {
+    return requestType === "RESIGNATION" ? "PENDING_DIRECTOR" : "APPROVED";
+  }
+  throw fail("Đơn ở trạng thái hiện tại không thể duyệt", 409);
+};
+
+export const processEmployeeRequest = async (
+  user,
+  id,
+  action,
+  payload = {},
+) => {
+  if (!["approve", "reject"].includes(action)) throw fail("Hành động không hợp lệ");
+  const requestId = parsePositiveInt(id, "Mã đơn");
+  if (!requestId) throw fail("Mã đơn không hợp lệ");
+  const actorId = Number(user?.user_id ?? user?.employee_id);
+  if (!Number.isSafeInteger(actorId) || actorId <= 0) {
+    throw fail("Thông tin người dùng không hợp lệ", 403);
+  }
+
+  return transaction(async (connection) => {
+    const [rows] = await connection.query(
+      "SELECT * FROM employee_requests WHERE id = ? FOR UPDATE",
+      [requestId],
+    );
+    if (!rows.length) throw fail("Không tìm thấy đơn", 404);
+    const request = rows[0];
+
+    if (Number(user?.employee_id) === Number(request.employee_id)) {
+      throw fail("Không thể tự duyệt đơn của chính mình", 403);
+    }
+
+    const nextStatus = resolveNextStatus(request.request_type, request.status, action);
+
+    if (request.status === "PENDING_DIRECTOR") {
+      if (user?.role_id !== "DIRECTOR") {
+        throw fail("Chỉ Giám đốc được duyệt đơn ở bước này", 403);
+      }
+    } else if (request.status === "PENDING_HR") {
+      if (!hasPermission(user?.permissions, "HR.PROFILE_MANAGE")) {
+        throw fail("Chỉ HR được xử lý đơn ở bước này", 403);
+      }
+    } else if (request.status === "PENDING_DEPARTMENT") {
+      await assertCanApprove(connection, user, request.employee_id);
+    } else {
+      throw fail("Đơn ở trạng thái hiện tại không thể xử lý", 409);
+    }
+
+    const comment =
+      action === "reject"
+        ? parseText(payload.reject_reason || payload.reason, "lý do từ chối", {
+            required: true,
+            max: 5000,
+          })
+        : parseText(payload.note, "ghi chú", { max: 1000 });
+
+    await connection.query(
+      "UPDATE employee_requests SET status = ? WHERE id = ?",
+      [nextStatus, requestId],
+    );
+    await connection.query(
+      `INSERT INTO workflow_actions
+        (entity_type, entity_id, actor_id, action, from_status, to_status, comment)
+        VALUES ('EMPLOYEE_REQUEST', ?, ?, ?, ?, ?, ?)`,
+      [
+        requestId,
+        actorId,
+        action === "approve" ? "APPROVE" : "REJECT",
+        request.status,
+        nextStatus,
+        comment || null,
+      ],
+    );
+
+    return { id: requestId, from_status: request.status, status: nextStatus };
+  });
+};
+
+export const requestEmployeeUpdate = async (user, id, payload = {}) => {
+  if (!hasPermission(user?.permissions, "HR.PROFILE_MANAGE")) {
+    throw fail("Chỉ HR được yêu cầu bổ sung hồ sơ", 403);
+  }
+  const requestId = parsePositiveInt(id, "Mã đơn");
+  if (!requestId) throw fail("Mã đơn không hợp lệ");
+  const actorId = Number(user?.user_id ?? user?.employee_id);
+  if (!Number.isSafeInteger(actorId) || actorId <= 0) {
+    throw fail("Thông tin người dùng không hợp lệ", 403);
+  }
+  const content = parseText(payload.content, "nội dung cần bổ sung", {
+    required: true,
+    max: 5000,
+  });
+
+  return transaction(async (connection) => {
+    const [rows] = await connection.query(
+      "SELECT id, status FROM employee_requests WHERE id = ? FOR UPDATE",
+      [requestId],
+    );
+    if (!rows.length) throw fail("Không tìm thấy đơn", 404);
+    if (rows[0].status !== "PENDING_HR") {
+      throw fail("Chỉ có thể yêu cầu bổ sung khi đơn đang chờ HR kiểm tra", 409);
+    }
+
+    const [pending] = await connection.query(
+      "SELECT id FROM request_information_requests WHERE request_id = ? AND status = 'PENDING' LIMIT 1",
+      [requestId],
+    );
+    if (pending.length) {
+      throw fail("Đơn đã có yêu cầu bổ sung chưa được phản hồi", 409);
+    }
+
+    const [result] = await connection.query(
+      `INSERT INTO request_information_requests
+        (request_id, requested_by, content, status, requested_at)
+        VALUES (?, ?, ?, 'PENDING', NOW())`,
+      [requestId, actorId, content],
+    );
+    await connection.query(
+      "UPDATE employee_requests SET status = 'WAITING_EMPLOYEE_UPDATE' WHERE id = ?",
+      [requestId],
+    );
+    await connection.query(
+      `INSERT INTO workflow_actions
+        (entity_type, entity_id, actor_id, action, from_status, to_status, comment)
+        VALUES ('EMPLOYEE_REQUEST', ?, ?, 'REQUEST_UPDATE', 'PENDING_HR', 'WAITING_EMPLOYEE_UPDATE', ?)`,
+      [requestId, actorId, content],
+    );
+
+    return {
+      id: requestId,
+      status: "WAITING_EMPLOYEE_UPDATE",
+      information_request_id: result.insertId,
+    };
+  });
+};
+
+export const resubmitEmployeeRequest = async (user, id, payload = {}) => {
+  const requestId = parsePositiveInt(id, "Mã đơn");
+  if (!requestId) throw fail("Mã đơn không hợp lệ");
+  const actorId = Number(user?.user_id ?? user?.employee_id);
+  if (!Number.isSafeInteger(actorId) || actorId <= 0) {
+    throw fail("Thông tin người dùng không hợp lệ", 403);
+  }
+  const responseNote = parseText(
+    payload.response_note || payload.note,
+    "nội dung bổ sung",
+    { required: true, max: 5000 },
+  );
+
+  return transaction(async (connection) => {
+    const [rows] = await connection.query(
+      "SELECT id, employee_id, status FROM employee_requests WHERE id = ? FOR UPDATE",
+      [requestId],
+    );
+    if (!rows.length) throw fail("Không tìm thấy đơn", 404);
+    const request = rows[0];
+
+    if (Number(user?.employee_id) !== Number(request.employee_id)) {
+      throw fail("Chỉ nhân viên làm đơn được gửi lại hồ sơ", 403);
+    }
+    if (request.status !== "WAITING_EMPLOYEE_UPDATE") {
+      throw fail("Đơn hiện tại không chờ bổ sung hồ sơ", 409);
+    }
+
+    const updatedReason = payload.reason
+      ? parseText(payload.reason, "lý do", { max: 5000 })
+      : null;
+    if (updatedReason) {
+      await connection.query(
+        "UPDATE employee_requests SET reason = ? WHERE id = ?",
+        [updatedReason, requestId],
+      );
+    }
+
+    const [answered] = await connection.query(
+      `UPDATE request_information_requests
+        SET status = 'SUBMITTED', responded_at = NOW(), response_note = ?
+        WHERE request_id = ? AND status = 'PENDING'`,
+      [responseNote, requestId],
+    );
+    if (!answered.affectedRows) {
+      throw fail("Không tìm thấy yêu cầu bổ sung đang chờ", 409);
+    }
+
+    await connection.query(
+      "UPDATE employee_requests SET status = 'PENDING_HR' WHERE id = ?",
+      [requestId],
+    );
+    await connection.query(
+      `INSERT INTO workflow_actions
+        (entity_type, entity_id, actor_id, action, from_status, to_status, comment)
+        VALUES ('EMPLOYEE_REQUEST', ?, ?, 'RESUBMIT', 'WAITING_EMPLOYEE_UPDATE', 'PENDING_HR', ?)`,
+      [requestId, actorId, responseNote],
+    );
+
+    return {
+      id: requestId,
+      status: "PENDING_HR",
+      updated_information_requests: answered.affectedRows,
+    };
+  });
+};

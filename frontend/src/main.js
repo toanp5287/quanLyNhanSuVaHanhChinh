@@ -17,6 +17,14 @@ import {
   initOrganization,
 } from "./js/organization.js";
 import {
+  getEmployeeRequestTypeFromHash,
+  initEmployeeRequests,
+} from "./js/employee-requests.js";
+import {
+  getEmployeeRequestIdFromHash,
+  initEmployeeRequestDetail,
+} from "./js/employee-request-detail.js";
+import {
   clearSession,
   getCurrentUser,
   getMe,
@@ -204,6 +212,30 @@ function showContracts(user, status = "ALL") {
   initContracts(user, status);
 }
 
+function showEmployeeRequests(user, type = "ALL") {
+  if (!user || !hasPermission("ESS.SELF_PROFILE", user)) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  mountPage(homeHtml);
+  setupShell(user);
+  initEmployeeRequests(user, type);
+}
+
+function showEmployeeRequestDetail(user, id) {
+  if (!user || !hasPermission("ESS.SELF_PROFILE", user)) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  mountPage(homeHtml);
+  setupShell(user);
+  initEmployeeRequestDetail(user, id);
+}
+
 function renderRouteView(user) {
   const hash = window.location.hash;
 
@@ -218,6 +250,14 @@ function renderRouteView(user) {
     showOrganization(user, getOrganizationTabFromHash(hash));
   } else if (hash === "#/hop-dong" || hash.startsWith("#/hop-dong/")) {
     showContracts(user, getContractStatusFromHash(hash));
+  } else if (
+    hash === "#/don-tu" ||
+    hash === "#/don-tu/nghi-viec" ||
+    hash === "#/don-tu/tam-nghi"
+  ) {
+    showEmployeeRequests(user, getEmployeeRequestTypeFromHash(hash));
+  } else if (getEmployeeRequestIdFromHash(hash)) {
+    showEmployeeRequestDetail(user, getEmployeeRequestIdFromHash(hash));
   } else if (hash === "#/nhan-vien" || hash.startsWith("#/nhan-vien/")) {
     showEmployees(user, getEmployeeModeFromHash(hash));
   } else if (hash === "#/ho-so-ca-nhan") {
@@ -257,6 +297,7 @@ document.addEventListener("click", (event) => {
       "Nhân viên đang làm": "#/nhan-vien/dang-lam",
       "Nhân viên đã nghỉ": "#/nhan-vien/da-nghi",
       "Hợp đồng lao động": "#/hop-dong",
+      "Tạo đơn từ trực tuyến": "#/don-tu",
       "Sơ đồ phòng ban": "#/so-do-phong-ban",
     };
 
