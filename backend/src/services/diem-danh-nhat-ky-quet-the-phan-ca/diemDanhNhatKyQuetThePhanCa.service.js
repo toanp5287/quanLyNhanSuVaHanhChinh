@@ -1,6 +1,14 @@
 import { db } from "../../config/database.js";
 import { assertCanApprove, buildEmployeeScope } from "../../utils/helper.js";
 import { recalculateEmployeeMonth } from "../tong-hop-chot-cong/tongHopChotCong.service.js";
+import {
+  buildPolicySnapshot,
+  computeWorkDay,
+  ensureAttendancePolicySchema,
+  getKioskConfig,
+  getPolicyForShift,
+  normalizeRules,
+} from "../attendance-policy/attendancePolicy.service.js";
 
 export const attendanceError = (message, status = 400) =>
   Object.assign(new Error(message), { status });
@@ -59,6 +67,7 @@ const ensureWorkShiftSchema = async () => {
     });
   }
   await workShiftSchemaPromise;
+  await ensureAttendancePolicySchema();
 };
 
 const readFaceThreshold = (name, fallback) => {
@@ -87,7 +96,7 @@ const assertMin = (value, min, message) => {
   if (!Number.isFinite(Number(value)) || Number(value) < min)
     throw attendanceError(`${message} chưa đạt yêu cầu. Vui lòng quét lại.`, 400);
 };
-const assertCaptureMetadata = (capture, total) => {
+const assertCaptureMetadata = (capture, total, options = {}) => {
   if (!capture || typeof capture !== "object")
     throw attendanceError("Thiếu dữ liệu xác thực chất lượng khuôn mặt. Vui lòng tải lại trang và quét lại.", 400);
   if (capture.model !== FACE_CAPTURE_MODEL)
@@ -105,7 +114,12 @@ const assertCaptureMetadata = (capture, total) => {
   assertMin(quality.brightness_min, CAPTURE_MIN.brightnessMin, "Độ sáng tối thiểu");
   if (!Number.isFinite(Number(quality.brightness_max)) || Number(quality.brightness_max) > CAPTURE_MIN.brightnessMax)
     throw attendanceError("Ánh sáng quá chói. Vui lòng quét lại.", 400);
-  if (liveness.blink_verified !== true || !Number.isFinite(Number(liveness.blink_count)) || Number(liveness.blink_count) < 1)
+  if (
+    options.liveness_enabled !== false &&
+    (liveness.blink_verified !== true ||
+      !Number.isFinite(Number(liveness.blink_count)) ||
+      Number(liveness.blink_count) < 1)
+  )
     throw attendanceError("Chưa xác thực chớp mắt. Vui lòng quét lại.", 400);
   assertMin(subject.stable_frames, CAPTURE_MIN.stableFrames, "Thời gian đứng yên");
   if (!Number.isFinite(Number(subject.max_speed)) || Number(subject.max_speed) > CAPTURE_MIN.maxSpeed)
@@ -113,8 +127,11 @@ const assertCaptureMetadata = (capture, total) => {
   if (Number(capture.samples) !== Number(total))
     throw attendanceError("Số mẫu khuôn mặt không khớp. Vui lòng quét lại.", 400);
 };
-const requiredPassCount = (total) =>
-  Math.max(1, Math.ceil(total * FACE_MIN_PASS_RATIO));
+const requiredPassCount = (total, votingFrames = 0) =>
+  Math.min(
+    total,
+    Math.max(1, Math.ceil(total * FACE_MIN_PASS_RATIO), Math.round(votingFrames || 0)),
+  );
 export const l2Normalize = (vec) => {
   if (
     !Array.isArray(vec) ||
@@ -230,6 +247,7 @@ export const evaluateFullSetMatch = (
   liveEmbeddings,
   storedFaceJson,
   threshold = FACE_MATCH_THRESHOLD,
+  votingFrames = 0,
 ) => {
   const stored = parseStoredFaceData(storedFaceJson);
   const empty = {
@@ -260,7 +278,7 @@ export const evaluateFullSetMatch = (
     (scores.reduce((sum, score) => sum + score, 0) / scores.length) * 0.5 +
     centroidScore * 0.5;
   const passCount = scores.filter((score) => score >= threshold - 0.02).length;
-  const required = requiredPassCount(scores.length);
+  const required = requiredPassCount(scores.length, votingFrames);
   return {
     isMatch: avgScore >= threshold && passCount >= required,
     avgScore,
@@ -275,8 +293,9 @@ export const validateBiometricCapture = (
   blinkVerified,
   minInternalSim = 0.8,
   capture = null,
+  options = {},
 ) => {
-  if (blinkVerified !== true)
+  if (options.liveness_enabled !== false && blinkVerified !== true)
     throw attendanceError(
       "Vui lòng CHỚP MẮT trước khi quét khuôn mặt chấm công!",
       400,
@@ -285,7 +304,7 @@ export const validateBiometricCapture = (
     throw attendanceError("Cần đúng 5 mẫu khuôn mặt để xác thực", 400);
   if (embeddings.some((vector) => !Array.isArray(vector) || vector.length < 64))
     throw attendanceError("Mẫu sinh trắc học không hợp lệ", 400);
-  if (capture) assertCaptureMetadata(capture, embeddings.length);
+  if (capture) assertCaptureMetadata(capture, embeddings.length, options);
   const samples = embeddings.map(l2Normalize);
   const consistency = verifyInternalConsistency(
     samples,
@@ -294,11 +313,16 @@ export const validateBiometricCapture = (
   if (!consistency.valid) throw attendanceError(consistency.message, 400);
   return samples;
 };
-export const identifyFace = (samples, employees) => {
+export const identifyFace = (samples, employees, options = {}) => {
   const candidates = employees
     .map((employee) => ({
       employee,
-      ...evaluateFullSetMatch(samples, employee.face_descriptor),
+      ...evaluateFullSetMatch(
+        samples,
+        employee.face_descriptor,
+        Number(options.similarity_threshold) || FACE_MATCH_THRESHOLD,
+        Number(options.voting_frames) || 0,
+      ),
     }))
     .sort((left, right) => right.avgScore - left.avgScore);
   const best = candidates[0];
@@ -323,6 +347,10 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(number) ? number : fallback;
 };
 const round2 = (value) => Number(Number(value).toFixed(2));
+const normalizeWorkdayValue = (value) => {
+  const number = toNumber(value, 1);
+  return number === 0.5 ? 0.5 : 1;
+};
 const toMinutes = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const [hour, minute] = String(value)
@@ -424,7 +452,10 @@ const SHIFT_SELECT = `SELECT s.id AS shift_id, s.code AS shift_code, s.name,
   s.start_time, s.end_time, s.checkin_start, s.checkin_end,
   s.checkout_start, s.checkout_end, s.break_start, s.break_end,
   s.grace_period_minutes, s.grace_period,
-  s.min_ot_minutes, s.standard_hours, s.workday_value, s.is_default, s.is_active
+  s.min_ot_minutes, s.standard_hours, s.workday_value, s.is_default, s.is_active,
+  s.is_overnight, s.has_break, s.require_break_punch, s.standard_work_hours,
+  s.checkin_open_before_min, s.checkin_close_after_min, s.allow_checkout_anytime,
+  s.working_days, s.policy_id
   FROM work_shifts s`;
 
 export const getShiftById = async (shiftId, connection = db) => {
@@ -477,6 +508,9 @@ const getAttendanceForDate = async (
             s.checkout_start, s.checkout_end, s.break_start, s.break_end,
             s.grace_period_minutes, s.grace_period,
             s.min_ot_minutes, s.standard_hours, s.workday_value,
+            s.is_overnight, s.has_break, s.require_break_punch,
+            s.standard_work_hours, s.checkin_open_before_min,
+            s.checkin_close_after_min, s.allow_checkout_anytime, s.policy_id,
             ${withUser ? "u.username, u.role_id" : "NULL AS username, NULL AS role_id"}
        FROM attendances a
        LEFT JOIN work_shifts s ON s.id = a.shift_id
@@ -490,20 +524,29 @@ const getAttendanceForDate = async (
 
 const shiftTimeWindow = (shift, type) => {
   const shiftStart = toMinutes(shift.start_time) ?? 0;
-  const shiftEnd = toMinutes(shift.end_time) ?? 1439;
+  const rawShiftEnd = toMinutes(shift.end_time) ?? 1439;
+  const overnight =
+    Number(shift.is_overnight) && rawShiftEnd <= shiftStart ? 1 : 0;
+  const shiftEnd = overnight ? rawShiftEnd + 1440 : rawShiftEnd;
   const grace = toNumber(shift.grace_period_minutes ?? shift.grace_period, 15);
+  const wrap = (value) => ((value % 1440) + 1440) % 1440;
   if (type === "CHECK_IN") {
+    const openBefore = Math.max(0, toNumber(shift.checkin_open_before_min, 120));
+    const closeAfter = shift.checkin_close_after_min === null || shift.checkin_close_after_min === undefined
+      ? 120
+      : Math.max(0, toNumber(shift.checkin_close_after_min, 120));
     return {
-      start: toMinutes(shift.checkin_start) ?? Math.max(0, shiftStart - 120),
-      end: toMinutes(shift.checkin_end) ?? Math.min(1439, shiftStart + 120),
-      allowedLimit: shiftStart + grace,
+      start:
+        toMinutes(shift.checkin_start) ?? Math.max(0, shiftStart - openBefore),
+      end:
+        toMinutes(shift.checkin_end) ?? Math.min(1439, shiftStart + closeAfter),
+      allowedLimit: wrap(shiftStart + grace),
     };
   }
-  return {
-    start:
-      toMinutes(shift.checkout_start) ?? Math.max(shiftStart, shiftEnd - 120),
-    end: toMinutes(shift.checkout_end) ?? Math.min(1439, shiftEnd + 120),
-  };
+  const start =
+    toMinutes(shift.checkout_start) ?? wrap(Math.max(shiftStart, shiftEnd - 120));
+  const end = toMinutes(shift.checkout_end) ?? wrap(shiftEnd + 120);
+  return { start, end, wraps: start > end };
 };
 
 const shiftWithAllowedLimit = (shift) => {
@@ -513,6 +556,7 @@ const shiftWithAllowedLimit = (shift) => {
   return {
     ...shift,
     grace_period_minutes: grace,
+    workday_value: normalizeWorkdayValue(shift.workday_value),
     allowed_limit_time:
       start === null ? null : formatTime(start + grace),
   };
@@ -521,8 +565,10 @@ const shiftWithAllowedLimit = (shift) => {
 const checkScanWindow = (shift, type, scanTime) => {
   const window = shiftTimeWindow(shift, type);
   const scanMinutes = toMinutes(scanTime);
-  if (scanMinutes === null || scanMinutes < window.start || scanMinutes > window.end)
-    return { allowed: false, window };
+  const inWindow = window.wraps
+    ? scanMinutes >= window.start || scanMinutes <= window.end
+    : scanMinutes >= window.start && scanMinutes <= window.end;
+  if (scanMinutes === null || !inWindow) return { allowed: false, window };
   return { allowed: true, window };
 };
 
@@ -644,10 +690,39 @@ export const recalculateDailyAttendance = async (
   );
   const overtime = otRows[0] || null;
 
-  const shiftStart = toMinutes(attendance.start_time);
-  const shiftEnd = toMinutes(attendance.end_time);
-  const breakStart = toMinutes(attendance.break_start);
-  const breakEnd = toMinutes(attendance.break_end);
+  let snapshot = null;
+  try {
+    snapshot = attendance.policy_snapshot
+      ? typeof attendance.policy_snapshot === "string"
+        ? JSON.parse(attendance.policy_snapshot)
+        : attendance.policy_snapshot
+      : null;
+  } catch {
+    snapshot = null;
+  }
+  const policy = snapshot?.policy
+    ? null
+    : await getPolicyForShift(attendance, connection);
+  const rules = normalizeRules(snapshot?.policy || policy?.rules);
+  const shiftConfig = snapshot?.shift || attendance;
+  const hasBreak = Number(shiftConfig.has_break ?? 1) !== 0;
+
+  const shiftStart = toMinutes(shiftConfig.start_time);
+  const rawShiftEnd = toMinutes(shiftConfig.end_time);
+  const overnight =
+    Number(shiftConfig.is_overnight) &&
+    shiftStart !== null &&
+    rawShiftEnd !== null &&
+    rawShiftEnd <= shiftStart
+      ? 1
+      : 0;
+  const shiftEnd = overnight && rawShiftEnd !== null ? rawShiftEnd + 1440 : rawShiftEnd;
+  let breakStart = hasBreak ? toMinutes(shiftConfig.break_start) : null;
+  let breakEnd = hasBreak ? toMinutes(shiftConfig.break_end) : null;
+  if (overnight && breakStart !== null && breakEnd !== null && breakEnd <= shiftStart) {
+    breakStart += 1440;
+    breakEnd += 1440;
+  }
   let effectiveStart = shiftStart;
   let effectiveEnd = shiftEnd;
   if (leave?.leave_type === "MORNING" && breakEnd !== null)
@@ -656,14 +731,23 @@ export const recalculateDailyAttendance = async (
     effectiveEnd = breakStart;
 
   const checkIn = toMinutes(attendance.check_in);
-  const checkOut = toMinutes(attendance.check_out);
+  let checkOut = toMinutes(attendance.check_out);
+  if (
+    overnight &&
+    checkIn !== null &&
+    checkOut !== null &&
+    checkOut < shiftStart &&
+    checkIn >= shiftStart - 720
+  )
+    checkOut += 1440;
   const gracePeriod = toNumber(
-    attendance.grace_period_minutes ?? attendance.grace_period,
-    15,
+    shiftConfig.grace_period_minutes ?? shiftConfig.grace_period,
+    rules.grace_late_minutes,
   );
   let lateMinutes = 0;
   let earlyLeaveMinutes = 0;
   let actualWorkHours = 0;
+  let netWorkMinutes = 0;
   let baseWorkday = 0;
   let paidLeaveWorkday = leave
     ? round2(Math.min(1, toNumber(leave.paid_workday, 0)))
@@ -707,11 +791,11 @@ export const recalculateDailyAttendance = async (
       }
 
       const clampIn =
-        checkIn !== null && effectiveStart !== null
+        rules.clamp_early_in && checkIn !== null && effectiveStart !== null
           ? Math.max(checkIn, effectiveStart)
           : checkIn;
       const clampOut =
-        checkOut !== null && effectiveEnd !== null
+        rules.clamp_late_out && checkOut !== null && effectiveEnd !== null
           ? Math.min(checkOut, effectiveEnd)
           : checkOut;
       if (clampIn !== null && clampOut !== null) {
@@ -722,17 +806,14 @@ export const recalculateDailyAttendance = async (
                 Math.min(clampOut, breakEnd) - Math.max(clampIn, breakStart),
               )
             : 0;
-        const workedMinutes = Math.max(
-          0,
-          clampOut - clampIn - overlap,
-        );
-        actualWorkHours = round2(workedMinutes / 60);
-        const standardHours = toNumber(attendance.standard_hours, 8) || 8;
+        netWorkMinutes = Math.max(0, clampOut - clampIn - overlap);
+        actualWorkHours = round2(netWorkMinutes / 60);
         baseWorkday = round2(
-          Math.min(
-            toNumber(attendance.workday_value, 1) || 1,
-            actualWorkHours / standardHours,
-          ),
+          computeWorkDay({
+            netHours: actualWorkHours,
+            rules,
+            shift: shiftConfig,
+          }),
         );
       }
 
@@ -744,11 +825,15 @@ export const recalculateDailyAttendance = async (
       if (effectiveEnd !== null && checkOut > effectiveEnd)
         rawOtMinutes = checkOut - effectiveEnd;
       if (overtime && rawOtMinutes > 0) {
+        const otStartRaw = toMinutes(overtime.start_time);
+        const otEndRaw = toMinutes(overtime.end_time);
+        const adjustOt = (value) =>
+          overnight && value !== null && value <= shiftStart ? value + 1440 : value;
         const otStart = Math.max(
           effectiveEnd,
-          toMinutes(overtime.start_time) ?? effectiveEnd,
+          adjustOt(otStartRaw) ?? effectiveEnd,
         );
-        const otEnd = toMinutes(overtime.end_time) ?? 0;
+        const otEnd = adjustOt(otEndRaw) ?? 0;
         const validStart = Math.max(checkIn ?? 0, otStart);
         const validEnd = Math.min(checkOut, otEnd);
         const validMinutes = Math.max(0, validEnd - validStart);
@@ -774,13 +859,23 @@ export const recalculateDailyAttendance = async (
         toMinutes(now.now_time) !== null &&
         toMinutes(now.now_time) > checkoutWindow.end;
     }
-    if (pastCheckoutCutoff) status = "MISSING_CHECKOUT";
+    if (pastCheckoutCutoff && rules.missing_checkout_action !== "IGNORE")
+      status = "MISSING_CHECKOUT";
+  }
+
+  let snapshotJson = null;
+  if (checkIn && checkOut && !snapshot) {
+    const built = await buildPolicySnapshot(attendance, policy);
+    snapshot = built;
+    snapshotJson = JSON.stringify(built);
   }
 
   await connection.query(
     `UPDATE attendances
         SET late_minutes = ?, early_leave_minutes = ?, actual_work_hours = ?,
             base_workday = ?, paid_leave_workday = ?, total_workday = ?,
+            net_work_minutes = ?, work_day = ?, policy_snapshot = COALESCE(policy_snapshot, ?),
+            recalculated_at = NOW(),
             raw_ot_minutes = ?, approved_ot_hours = ?, ot_rate = ?, status = ?
       WHERE id = ?`,
     [
@@ -790,6 +885,9 @@ export const recalculateDailyAttendance = async (
       baseWorkday,
       paidLeaveWorkday,
       totalWorkday,
+      netWorkMinutes,
+      baseWorkday,
+      snapshotJson,
       rawOtMinutes,
       approvedOtHours,
       otRate,
@@ -803,6 +901,9 @@ export const recalculateDailyAttendance = async (
     late_minutes: lateMinutes,
     early_leave_minutes: earlyLeaveMinutes,
     actual_work_hours: actualWorkHours,
+    net_work_minutes: netWorkMinutes,
+    work_day: baseWorkday,
+    policy_snapshot: snapshot,
     base_workday: baseWorkday,
     paid_leave_workday: paidLeaveWorkday,
     total_workday: totalWorkday,
@@ -832,6 +933,8 @@ const legacyLog = (attendance, source = null) => {
     early_leave_minutes: toNumber(attendance.early_leave_minutes, 0),
     work_unit: toNumber(attendance.total_workday, 0),
     total_workday: toNumber(attendance.total_workday, 0),
+    work_day: toNumber(attendance.work_day ?? attendance.total_workday, 0),
+    net_work_minutes: toNumber(attendance.net_work_minutes, 0),
     status: LEGACY_STATUS[rawStatus] || rawStatus,
     raw_status: rawStatus,
     source:
@@ -860,6 +963,9 @@ const upsertDailyAttendance = async (
   values,
 ) => {
   const withUser = await hasColumn(connection, "attendances", "user_id");
+  const checkOutUpdate = values.overwriteCheckOut
+    ? "check_out = VALUES(check_out), check_out_ip = VALUES(check_out_ip),"
+    : "check_out = COALESCE(check_out, VALUES(check_out)), check_out_ip = COALESCE(check_out_ip, VALUES(check_out_ip)),";
   await connection.query(
     `INSERT INTO attendances
       (employee_id, ${withUser ? "user_id, " : ""}shift_id, work_date,
@@ -869,10 +975,10 @@ const upsertDailyAttendance = async (
        ${withUser ? "user_id = VALUES(user_id)," : ""}
        shift_id = VALUES(shift_id),
        check_in = COALESCE(check_in, VALUES(check_in)),
-       check_out = COALESCE(check_out, VALUES(check_out)),
-       check_in_ip = COALESCE(check_in_ip, VALUES(check_in_ip)),
-       check_out_ip = COALESCE(check_out_ip, VALUES(check_out_ip)),
-       note = COALESCE(note, VALUES(note)),
+        ${checkOutUpdate}
+        check_in_ip = COALESCE(check_in_ip, VALUES(check_in_ip)),
+        note = COALESCE(note, VALUES(note)),
+
        status = VALUES(status)`,
     [
       employeeId,
@@ -887,6 +993,33 @@ const upsertDailyAttendance = async (
       values.status,
     ],
   );
+};
+
+const assertNoDoublePunch = async (employeeId, now, connection) => {
+  const config = await getKioskConfig(connection);
+  const cooldown = toNumber(config.anti_double_punch_minutes, 3);
+  if (cooldown <= 0) return null;
+  const [rows] = await connection.query(
+    `SELECT DATE_FORMAT(MAX(scan_time), '%Y-%m-%d %H:%i:%s') AS last_scan
+       FROM attendance_logs
+      WHERE employee_id = ? AND DATE(scan_time) = ?
+        AND scan_type IN ('CHECK_IN', 'CHECK_OUT')`,
+    [employeeId, now.today],
+  );
+  const lastScan = rows[0]?.last_scan;
+  if (!lastScan) return null;
+  const diffSeconds =
+    (Date.parse(now.datetime.replace(" ", "T")) -
+      Date.parse(lastScan.replace(" ", "T"))) /
+    1000;
+  if (diffSeconds >= 0 && diffSeconds < cooldown * 60) {
+    return {
+      error: "DOUBLE_PUNCH_TOO_FAST",
+      cooldown_minutes: cooldown,
+      wait_seconds: Math.ceil(cooldown * 60 - diffSeconds),
+    };
+  }
+  return null;
 };
 
 const checkInInternal = async (employeeId, account, meta, connection) => {
@@ -908,6 +1041,8 @@ const checkInInternal = async (employeeId, account, meta, connection) => {
   const scanWindow = checkScanWindow(shift, "CHECK_IN", now.now_time);
   if (!scanWindow.allowed)
     return { error: "CHECK_IN_WINDOW_CLOSED", shift, window: scanWindow.window };
+  const doublePunch = await assertNoDoublePunch(employeeId, now, connection);
+  if (doublePunch) return { ...doublePunch, shift };
 
   await insertRawScan(
     connection,
@@ -937,8 +1072,12 @@ const checkOutInternal = async (employeeId, account, meta, connection) => {
     now.today,
     connection,
   );
-  if (!existing?.check_in) return { error: "NO_CHECK_IN" };
-  if (existing.check_out)
+  if (!existing?.check_in) return { error: "NO_CHECK_IN_FOUND" };
+  const config = await getKioskConfig(connection);
+  if (
+    existing.check_out &&
+    config.checkout_repeat_policy === "LOCK_FIRST"
+  )
     return {
       error: "ALREADY_CHECKED_OUT",
       log: legacyLog(existing, "FACE_ID"),
@@ -949,9 +1088,13 @@ const checkOutInternal = async (employeeId, account, meta, connection) => {
     (await getShiftById(existing.shift_id, connection)) ||
     (await getTodayShift(employeeId, connection, now.today));
   if (!shift) return { error: "NO_SHIFT" };
-  const scanWindow = checkScanWindow(shift, "CHECK_OUT", now.now_time);
-  if (!scanWindow.allowed)
-    return { error: "CHECK_OUT_WINDOW_CLOSED", shift, window: scanWindow.window };
+  if (Number(shift.allow_checkout_anytime ?? 1) === 0) {
+    const scanWindow = checkScanWindow(shift, "CHECK_OUT", now.now_time);
+    if (!scanWindow.allowed)
+      return { error: "CHECK_OUT_WINDOW_CLOSED", shift, window: scanWindow.window };
+  }
+  const doublePunch = await assertNoDoublePunch(employeeId, now, connection);
+  if (doublePunch) return { ...doublePunch, shift };
 
   await insertRawScan(
     connection,
@@ -968,6 +1111,7 @@ const checkOutInternal = async (employeeId, account, meta, connection) => {
     checkOutIp: meta.ip || null,
     note: existing.note || meta.note || null,
     status: existing.status,
+    overwriteCheckOut: config.checkout_repeat_policy === "OVERWRITE_LATEST",
   });
   await recalculateDailyAttendance(connection, employeeId, now.today);
   await recalculateEmployeeMonth(connection, employeeId, now.today.slice(0, 7));
@@ -985,9 +1129,16 @@ const recordSelfAttendance = async (
   if (!employeeId) return { error: "NO_EMPLOYEE" };
   await ensureWorkShiftSchema();
   await reconcileMissingCheckout(employeeId, await serverDate());
+  const aiConfig = (await getKioskConfig()).ai_config;
   const samples = verifiedIdentity?.samples
     ? verifiedIdentity.samples
-    : validateBiometricCapture(meta.embeddings, meta.blink_verified);
+    : validateBiometricCapture(
+        meta.embeddings,
+        meta.blink_verified,
+        0.8,
+        meta.capture,
+        aiConfig,
+      );
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -1011,7 +1162,12 @@ const recordSelfAttendance = async (
         403,
       );
 
-    const selfMatch = evaluateFullSetMatch(samples, current.face_descriptor);
+    const selfMatch = evaluateFullSetMatch(
+      samples,
+      current.face_descriptor,
+      Number(aiConfig.similarity_threshold) || FACE_MATCH_THRESHOLD,
+      Number(aiConfig.voting_frames) || 0,
+    );
     if (!selfMatch.isMatch)
       throw attendanceError(
         `Khuôn mặt không khớp với hồ sơ đăng ký! Độ khớp trung bình bộ mẫu: ${(selfMatch.avgScore * 100).toFixed(1)}% (${selfMatch.passCount}/${selfMatch.totalSamples} mẫu đạt ngưỡng, yêu cầu >= ${(FACE_MATCH_THRESHOLD * 100).toFixed(0)}% và >= ${selfMatch.requiredPassCount}/${selfMatch.totalSamples} mẫu).`,
@@ -1073,9 +1229,16 @@ export const kioskAttendance = async (
   deviceInfo = null,
   captureMeta = null,
 ) => {
-  if (!["check-in", "check-out"].includes(action))
+  if (!["check-in", "check-out", "auto"].includes(action))
     throw attendanceError("Thao tác chấm công không hợp lệ");
-  const samples = validateBiometricCapture(values, blinkVerified, 0.8, captureMeta);
+  const aiConfig = (await getKioskConfig()).ai_config;
+  const samples = validateBiometricCapture(
+    values,
+    blinkVerified,
+    0.8,
+    captureMeta,
+    aiConfig,
+  );
   const [employees] = await db.query(
     `SELECT e.id, e.employee_code, e.full_name, e.face_descriptor,
             COALESCE(d.department_name, d.name) AS department_name
@@ -1083,8 +1246,14 @@ export const kioskAttendance = async (
        LEFT JOIN departments d ON d.id = e.department_id
       WHERE e.work_status = 'WORKING' AND e.face_descriptor IS NOT NULL`,
   );
-  const match = identifyFace(samples, employees);
+  const match = identifyFace(samples, employees, aiConfig);
   const account = await resolveActiveAccount(db, match.employee.id);
+  let resolvedAction = action;
+  if (action === "auto") {
+    const today = await serverDate();
+    const current = await getAttendanceForDate(match.employee.id, today);
+    resolvedAction = current?.check_in ? "check-out" : "check-in";
+  }
   const result = await recordSelfAttendance(
     match.employee.id,
     {
@@ -1093,7 +1262,7 @@ export const kioskAttendance = async (
       note: `Human FaceID; similarity=${(match.avgScore * 100).toFixed(1)}%; samples=${match.passCount}/${match.totalSamples}`,
       face_score: match.avgScore,
     },
-    action === "check-in" ? checkInInternal : checkOutInternal,
+    resolvedAction === "check-in" ? checkInInternal : checkOutInternal,
     { employee: match.employee, match, samples },
     account,
   );
@@ -1118,7 +1287,7 @@ export const kioskAttendance = async (
       },
       log,
       shift,
-      action,
+      action: resolvedAction,
       already_recorded: true,
       attendance_state: completed ? "COMPLETED" : "CHECKED_IN",
       message: completed
@@ -1127,13 +1296,22 @@ export const kioskAttendance = async (
     };
   }
   const errors = {
-    NO_CHECK_IN: "Bạn chưa chấm công vào ca hôm nay.",
+    NO_CHECK_IN_FOUND: "Bạn chưa chấm công Vào hôm nay, không thể chấm Ra!",
     NO_SHIFT: "Chưa cấu hình ca làm việc cho nhân viên.",
     CHECK_IN_WINDOW_CLOSED: "Ngoài khung giờ cho phép chấm công vào ca.",
     CHECK_OUT_WINDOW_CLOSED: "Ngoài khung giờ cho phép chấm công tan ca.",
+    DOUBLE_PUNCH_TOO_FAST: `Quét quá nhanh sau lần chấm trước. Vui lòng đợi ${result.wait_seconds || 0} giây.`,
   };
-  if (result.error)
-    throw attendanceError(errors[result.error] || "Không thể chấm công", 409);
+  if (result.error) {
+    const status = result.error === "NO_CHECK_IN_FOUND" ? 400 : 409;
+    const error = attendanceError(
+      errors[result.error] || "Không thể chấm công",
+      status,
+    );
+    error.code = result.error;
+    error.wait_seconds = result.wait_seconds || 0;
+    throw error;
+  }
   return {
     employee: {
       employee_code: match.employee.employee_code,
@@ -1149,7 +1327,7 @@ export const kioskAttendance = async (
     },
     log: result.log,
     shift: shiftWithAllowedLimit(result.shift),
-    action,
+    action: resolvedAction,
   };
 };
 
@@ -1530,7 +1708,7 @@ const markEmployees = async (ids, date, type, user, skipExisting = false) => {
       const end = toMinutes(shift.end_time) ?? 1050;
       const checkOutMinutes =
         type === "HALF" ? Math.round((start + end) / 2) : end;
-      const workdayValue = toNumber(shift.workday_value, 1) || 1;
+      const workdayValue = normalizeWorkdayValue(shift.workday_value);
       const units =
         type === "ABSENT"
           ? 0
@@ -1693,7 +1871,8 @@ export const validateShiftPayload = (payload = {}) => {
   const endTime = normalizeTime(payload.end_time);
   if (!startTime || !endTime)
     return { error: "Giờ bắt đầu và giờ kết thúc phải đúng định dạng HH:MM" };
-  if (toMinutes(endTime) <= toMinutes(startTime))
+  const isOvernight = Number(payload.is_overnight) ? 1 : 0;
+  if (!isOvernight && toMinutes(endTime) <= toMinutes(startTime))
     return { error: "Giờ kết thúc phải lớn hơn giờ bắt đầu trong cùng ngày" };
 
   const checkinStart = payload.checkin_start
@@ -1769,6 +1948,44 @@ export const validateShiftPayload = (payload = {}) => {
 
   const isDefault = payload.is_default === undefined ? 0 : Number(payload.is_default) ? 1 : 0;
   const isActive = payload.is_active === undefined ? 1 : Number(payload.is_active) ? 1 : 0;
+  const hasBreak = payload.has_break === undefined ? 1 : Number(payload.has_break) ? 1 : 0;
+  const requireBreakPunch = Number(payload.require_break_punch) ? 1 : 0;
+  const allowCheckoutAnytime =
+    payload.allow_checkout_anytime === undefined
+      ? 1
+      : Number(payload.allow_checkout_anytime)
+        ? 1
+        : 0;
+  const checkinOpenBefore = Math.max(
+    0,
+    Math.min(720, Math.round(toNumber(payload.checkin_open_before_min, 120))),
+  );
+  const checkinCloseAfter =
+    payload.checkin_close_after_min === null ||
+    payload.checkin_close_after_min === undefined ||
+    payload.checkin_close_after_min === ""
+      ? null
+      : Math.max(
+          0,
+          Math.min(720, Math.round(toNumber(payload.checkin_close_after_min, 120))),
+        );
+  let workingDays = null;
+  if (Array.isArray(payload.working_days)) {
+    workingDays = JSON.stringify(payload.working_days);
+  } else if (typeof payload.working_days === "string" && payload.working_days.trim()) {
+    try {
+      const parsed = JSON.parse(payload.working_days);
+      if (!Array.isArray(parsed))
+        return { error: "Ngày làm việc phải là mảng JSON, ví dụ [1,2,3,4,5]" };
+      workingDays = JSON.stringify(parsed);
+    } catch {
+      return { error: "Ngày làm việc phải là mảng JSON, ví dụ [1,2,3,4,5]" };
+    }
+  }
+  const policyId =
+    payload.policy_id === null || payload.policy_id === undefined || payload.policy_id === ""
+      ? null
+      : Number(payload.policy_id);
 
   return {
     payload: {
@@ -1786,9 +2003,20 @@ export const validateShiftPayload = (payload = {}) => {
       grace_period_minutes: gracePeriod,
       min_ot_minutes: minOtMinutes,
       standard_hours: round2(standardHours),
+      standard_work_hours: round2(
+        toNumber(payload.standard_work_hours, standardHours),
+      ),
       workday_value: round2(workdayValue),
       is_default: isDefault,
       is_active: isActive,
+      is_overnight: isOvernight,
+      has_break: hasBreak,
+      require_break_punch: requireBreakPunch,
+      allow_checkout_anytime: allowCheckoutAnytime,
+      checkin_open_before_min: checkinOpenBefore,
+      checkin_close_after_min: checkinCloseAfter,
+      working_days: workingDays,
+      policy_id: policyId,
     },
   };
 };
@@ -1799,7 +2027,9 @@ export const listWorkShifts = async () => {
     `SELECT id, code, name, start_time, end_time, break_start, break_end,
             checkin_start, checkin_end, checkout_start, checkout_end,
             grace_period_minutes, grace_period, min_ot_minutes, standard_hours, workday_value,
-            is_default, is_active
+            is_default, is_active, is_overnight, has_break, require_break_punch,
+            standard_work_hours, checkin_open_before_min, checkin_close_after_min,
+            allow_checkout_anytime, working_days, policy_id
        FROM work_shifts
       ORDER BY is_active DESC, id ASC`,
   );
@@ -1810,9 +2040,13 @@ export const listWorkShifts = async () => {
       (toMinutes(row.break_end) ?? 0) - (toMinutes(row.break_start) ?? 0),
     grace_period_minutes: toNumber(row.grace_period_minutes, row.grace_period ?? 15),
     grace_minutes: toNumber(row.grace_period_minutes, row.grace_period ?? 15),
-    standard_work_units: row.workday_value,
+    standard_work_units: normalizeWorkdayValue(row.workday_value),
     is_default: Number(row.is_default) ? 1 : 0,
     is_active: Number(row.is_active) ? 1 : 0,
+    allow_checkout_anytime: Number(row.allow_checkout_anytime ?? 1) ? 1 : 0,
+    has_break: Number(row.has_break ?? 1) ? 1 : 0,
+    policy_id: row.policy_id ?? null,
+    standard_work_hours: toNumber(row.standard_work_hours, row.standard_hours ?? 8),
   }));
 };
 
@@ -1828,9 +2062,11 @@ export const createWorkShift = async (payload) => {
     `INSERT INTO work_shifts
       (code, name, start_time, end_time, checkin_start, checkin_end,
        checkout_start, checkout_end, break_start, break_end, grace_period,
-       grace_period_minutes,
-       min_ot_minutes, standard_hours, workday_value, is_default, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       grace_period_minutes, min_ot_minutes, standard_hours, workday_value,
+       is_default, is_active, is_overnight, has_break, require_break_punch,
+       standard_work_hours, checkin_open_before_min, checkin_close_after_min,
+       allow_checkout_anytime, working_days, policy_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       payload.code,
       payload.name,
@@ -1849,6 +2085,15 @@ export const createWorkShift = async (payload) => {
       payload.workday_value,
       payload.is_default,
       payload.is_active,
+      payload.is_overnight ?? 0,
+      payload.has_break ?? 1,
+      payload.require_break_punch ?? 0,
+      payload.standard_work_hours ?? payload.standard_hours,
+      payload.checkin_open_before_min ?? 120,
+      payload.checkin_close_after_min ?? null,
+      payload.allow_checkout_anytime ?? 1,
+      payload.working_days ?? null,
+      payload.policy_id ?? null,
     ],
   );
   return { id: result.insertId };
@@ -1873,7 +2118,10 @@ export const updateWorkShift = async (shiftId, payload) => {
             checkin_start = ?, checkin_end = ?, checkout_start = ?, checkout_end = ?,
             break_start = ?, break_end = ?, grace_period = ?, grace_period_minutes = ?,
             min_ot_minutes = ?, standard_hours = ?, workday_value = ?,
-            is_default = ?, is_active = ?
+            is_default = ?, is_active = ?, is_overnight = ?, has_break = ?,
+            require_break_punch = ?, standard_work_hours = ?,
+            checkin_open_before_min = ?, checkin_close_after_min = ?,
+            allow_checkout_anytime = ?, working_days = ?, policy_id = ?
       WHERE id = ?`,
     [
       payload.code,
@@ -1893,6 +2141,15 @@ export const updateWorkShift = async (shiftId, payload) => {
       payload.workday_value,
       payload.is_default,
       payload.is_active,
+      payload.is_overnight ?? 0,
+      payload.has_break ?? 1,
+      payload.require_break_punch ?? 0,
+      payload.standard_work_hours ?? payload.standard_hours,
+      payload.checkin_open_before_min ?? 120,
+      payload.checkin_close_after_min ?? null,
+      payload.allow_checkout_anytime ?? 1,
+      payload.working_days ?? null,
+      payload.policy_id ?? null,
       shiftId,
     ],
   );
