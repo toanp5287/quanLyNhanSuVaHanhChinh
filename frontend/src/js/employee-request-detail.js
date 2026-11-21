@@ -18,6 +18,7 @@ const ACTION_META = {
 const state = {
   request: null,
   requestSeq: 0,
+  currentUser: null,
 };
 
 export const getEmployeeRequestIdFromHash = (
@@ -307,11 +308,16 @@ const renderDetail = (request) => {
   if (statusEl) statusEl.innerHTML = statusBadge(request.status);
 
   setText("#detailType", REQUEST_TYPES[request.request_type] || request.request_type || "—");
-  setText(
-    "#detailEmployee",
-    `${request.full_name || "—"} (${request.employee_code || "—"})`,
-  );
-  setText("#detailDepartment", request.department_name || "—");
+
+  const employeeName =
+    request.full_name_at_submit || request.full_name || "—";
+  const employeeCode =
+    request.employee_code_at_submit || request.employee_code || "—";
+  const departmentName =
+    request.department_name_at_submit || request.department_name || "—";
+
+  setText("#detailEmployee", `${employeeName} (${employeeCode})`);
+  setText("#detailDepartment", departmentName);
   setText("#detailStartDate", formatDate(request.start_date));
   setText(
     "#detailEndDate",
@@ -411,9 +417,21 @@ const submitResubmit = async (event, id) => {
   }
 };
 
-const bindEvents = (id) => {
-  bindOnce(document.getElementById("btnBackEmployeeRequests"), "click", () => {
-    window.location.hash = "#/don-tu";
+const bindEvents = (id, user) => {
+  const approverRoles = ["MANAGER", "DIRECTOR", "HR_ADMIN"];
+  const fromApprovals = approverRoles.includes(user?.role_id);
+  const backHash = fromApprovals ? "#/duyet-don" : "#/don-tu";
+  const backButton = document.getElementById("btnBackEmployeeRequests");
+
+  if (backButton) {
+    backButton.innerHTML = `
+      <span class="material-symbols-outlined text-[15px]">arrow_back</span>
+      <span>${fromApprovals ? "Trung tâm phê duyệt" : "Danh sách đơn từ"}</span>
+    `;
+  }
+
+  bindOnce(backButton, "click", () => {
+    window.location.hash = backHash;
   });
   bindOnce(document.getElementById("btnReloadEmployeeRequestDetail"), "click", () => {
     loadDetail(id);
@@ -439,6 +457,7 @@ export const initEmployeeRequestDetail = (
   ensureViewMounted();
   if (!window.__HRM_SPA__) setupShell(user);
 
-  bindEvents(id);
+  state.currentUser = user;
+  bindEvents(id, user);
   loadDetail(id);
 };

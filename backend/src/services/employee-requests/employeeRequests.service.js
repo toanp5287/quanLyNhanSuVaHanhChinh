@@ -32,8 +32,12 @@ const REQUEST_COLUMNS = `r.id, r.employee_id, r.department_id, r.request_type,
   DATE_FORMAT(r.last_working_date, '%Y-%m-%d') AS last_working_date,
   DATE_FORMAT(r.end_date, '%Y-%m-%d') AS end_date,
   r.status, r.submitted_at, r.created_at, r.updated_at,
-  e.employee_code, e.full_name,
-  COALESCE(d.department_name, d.name) AS department_name`;
+  r.employee_code_snapshot AS employee_code_at_submit,
+  r.full_name_snapshot AS full_name_at_submit,
+  r.department_name_snapshot AS department_name_at_submit,
+  COALESCE(r.employee_code_snapshot, e.employee_code) AS employee_code,
+  COALESCE(r.full_name_snapshot, e.full_name) AS full_name,
+  COALESCE(r.department_name_snapshot, d.department_name, d.name) AS department_name`;
 
 const parseDate = (value, field) => {
   const text = String(value || "");
@@ -163,11 +167,18 @@ export const createEmployeeRequest = async (
 
   return transaction(async (connection) => {
     const [employees] = await connection.query(
-      "SELECT id, department_id FROM employees WHERE id = ? LIMIT 1",
+      `SELECT e.id, e.department_id, e.employee_code, e.full_name,
+              COALESCE(d.department_name, d.name) AS department_name
+         FROM employees e
+         LEFT JOIN departments d ON d.id = e.department_id
+        WHERE e.id = ? LIMIT 1`,
       [employeeId],
     );
     if (!employees.length) throw fail("Không tìm thấy hồ sơ nhân sự", 404);
     const departmentId = employees[0].department_id ?? null;
+    const employeeCodeSnapshot = employees[0].employee_code ?? null;
+    const fullNameSnapshot = employees[0].full_name ?? null;
+    const departmentNameSnapshot = employees[0].department_name ?? null;
 
     const placeholders = ACTIVE_STATUSES.map(() => "?").join(", ");
     const statusParams = [employeeId, requestType, ...ACTIVE_STATUSES];
@@ -184,11 +195,15 @@ export const createEmployeeRequest = async (
 
     const [result] = await connection.query(
       `INSERT INTO employee_requests
-        (employee_id, department_id, request_type, title, reason, start_date, last_working_date, end_date, status, submitted_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_DEPARTMENT', NOW())`,
+        (employee_id, department_id, employee_code_snapshot, full_name_snapshot, department_name_snapshot,
+         request_type, title, reason, start_date, last_working_date, end_date, status, submitted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_DEPARTMENT', NOW())`,
       [
         employeeId,
         departmentId,
+        employeeCodeSnapshot,
+        fullNameSnapshot,
+        departmentNameSnapshot,
         requestType,
         title,
         reason,
