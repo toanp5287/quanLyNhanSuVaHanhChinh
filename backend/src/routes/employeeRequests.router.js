@@ -12,13 +12,20 @@ import {
   resubmitRequest,
 } from "../controllers/employee-requests/employeeRequests.controller.js";
 import {
-  requirePermission,
+  requireAnyPermission,
   verifyToken,
 } from "../middlewares/auth.middleware.js";
 
 const routerEmployeeRequests = express.Router();
 
-routerEmployeeRequests.use(verifyToken, requirePermission("ESS.SELF_PROFILE"));
+routerEmployeeRequests.use(
+  verifyToken,
+  requireAnyPermission([
+    "ESS.SELF_PROFILE",
+    "LEAVE.APPROVE",
+    "HR.PROFILE_MANAGE",
+  ]),
+);
 
 routerEmployeeRequests.post("/", postRequest);
 routerEmployeeRequests.post("/resignation", postResignationRequest);

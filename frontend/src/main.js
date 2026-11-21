@@ -33,6 +33,7 @@ import {
   getCurrentUser,
   getMe,
   getToken,
+  hasAnyPermission,
   hasPermission,
   logout,
 } from "./services/auth.service.js";
@@ -217,7 +218,13 @@ function showContracts(user, status = "ALL") {
 }
 
 function showEmployeeRequests(user, type = "ALL") {
-  if (!user || !hasPermission("ESS.SELF_PROFILE", user)) {
+  if (
+    !user ||
+    !hasAnyPermission(
+      ["ESS.SELF_PROFILE", "LEAVE.APPROVE", "HR.PROFILE_MANAGE"],
+      user,
+    )
+  ) {
     clearHash();
     showHome(user);
     return;
@@ -229,7 +236,13 @@ function showEmployeeRequests(user, type = "ALL") {
 }
 
 function showEmployeeRequestDetail(user, id) {
-  if (!user || !hasPermission("ESS.SELF_PROFILE", user)) {
+  if (
+    !user ||
+    !hasAnyPermission(
+      ["ESS.SELF_PROFILE", "LEAVE.APPROVE", "HR.PROFILE_MANAGE"],
+      user,
+    )
+  ) {
     clearHash();
     showHome(user);
     return;
@@ -244,8 +257,12 @@ function showRequestApprovals(user, status = "ALL") {
   const approverRoles = ["MANAGER", "DIRECTOR", "HR_ADMIN"];
   if (
     !user ||
-    !hasPermission("ESS.SELF_PROFILE", user) ||
-    !approverRoles.includes(user.role_id)
+    !hasAnyPermission(
+      ["ESS.SELF_PROFILE", "LEAVE.APPROVE", "HR.PROFILE_MANAGE"],
+      user,
+    ) ||
+    !approverRoles.includes(user.role_id) ||
+    user.data_scope === "SELF"
   ) {
     clearHash();
     showHome(user);

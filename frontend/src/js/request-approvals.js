@@ -134,6 +134,26 @@ const visibleRequests = () => {
   });
 };
 
+const renderScopeBadge = (user) => {
+  const badge = document.getElementById("requestApprovalsScopeBadge");
+  if (!badge) return;
+
+  const labels = {
+    ALL: "Toàn hệ thống",
+    DEPARTMENT: "Phòng ban & trực thuộc",
+    SELF: "Cá nhân",
+  };
+  const scope = labels[user?.data_scope] || "Cá nhân";
+  const department = user?.department_name
+    ? ` • ${escapeHtml(user.department_name)}`
+    : "";
+
+  badge.innerHTML = `
+    <span class="material-symbols-outlined text-[14px]">domain</span>
+    Phạm vi: ${escapeHtml(scope)}${department}
+  `;
+};
+
 const renderSummary = () => {
   const counts = countsByStatus();
   setText("#countApprovalPendingDepartment", String(counts.PENDING_DEPARTMENT || 0));
@@ -232,7 +252,7 @@ const renderRows = () => {
                 class="h-8 px-space-sm rounded border border-surface-variant text-primary hover:bg-primary-fixed font-label-sm text-label-sm"
                 data-view-approval-id="${escapeHtml(row.id)}"
                 type="button"
-              >Xem</button>
+              >Lịch sử</button>
             </div>
             ${
               isSelf && row.status === "PENDING_DEPARTMENT"
@@ -320,6 +340,20 @@ const setStatus = (status) => {
   renderAll();
 };
 
+const showRejectError = (message) => {
+  const error = document.getElementById("rejectRequestError");
+  if (!error) return;
+  error.textContent = message;
+  error.classList.remove("hidden");
+};
+
+const hideRejectError = () => {
+  const error = document.getElementById("rejectRequestError");
+  if (!error) return;
+  error.textContent = "";
+  error.classList.add("hidden");
+};
+
 const openRejectModal = (id) => {
   const modal = document.getElementById("modal-reject-request");
   const form = document.getElementById("rejectRequestForm");
@@ -327,6 +361,7 @@ const openRejectModal = (id) => {
 
   state.rejectId = id;
   form.reset();
+  hideRejectError();
   setText("#rejectRequestSubtitle", `Đơn #${id}`);
   modal.classList.remove("hidden");
   modal.classList.add("flex");
@@ -340,8 +375,14 @@ const closeRejectModal = () => {
   modal.classList.remove("flex");
 };
 
-const approveRequest = async (id) => {
+const approveRequest = async (id, button) => {
   hideNotice();
+  const originalHtml = button?.innerHTML || "";
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = "<span>Đang xử lý...</span>";
+  }
+
   try {
     await api.post(`/employee-requests/${id}/approve`, {
       note: "Phê duyệt",
@@ -353,6 +394,11 @@ const approveRequest = async (id) => {
       error.response?.data?.message || "Không thể duyệt đơn. Vui lòng thử lại.",
       true,
     );
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = originalHtml;
+    }
   }
 };
 
@@ -360,9 +406,10 @@ const submitReject = async (event) => {
   event.preventDefault();
   if (!state.rejectId) return;
 
+  hideRejectError();
   const reason = document.getElementById("rejectRequestReason")?.value.trim();
   if (!reason) {
-    showNotice("Vui lòng nhập lý do từ chối.", true);
+    showRejectError("Vui lòng nhập lý do từ chối.");
     return;
   }
 
@@ -382,9 +429,8 @@ const submitReject = async (event) => {
     showNotice(`Đã từ chối đơn #${id}.`, false);
     await loadRequests();
   } catch (error) {
-    showNotice(
+    showRejectError(
       error.response?.data?.message || "Không thể từ chối đơn. Vui lòng thử lại.",
-      true,
     );
   } finally {
     if (button) {
@@ -417,7 +463,10 @@ const bindEvents = () => {
   bindOnce(document.getElementById("requestApprovalsBody"), "click", (event) => {
     const approveButton = event.target.closest("[data-approve-request-id]");
     if (approveButton) {
-      approveRequest(approveButton.getAttribute("data-approve-request-id"));
+      approveRequest(
+        approveButton.getAttribute("data-approve-request-id"),
+        approveButton,
+      );
       return;
     }
 
@@ -477,6 +526,7 @@ export const initRequestApprovals = (
   if (type) type.value = "";
 
   bindEvents();
+  renderScopeBadge(user);
   renderTabs();
   loadRequests();
 };

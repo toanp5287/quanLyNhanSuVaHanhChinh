@@ -13,6 +13,15 @@
         <p class="font-body-md text-body-md text-on-surface-variant" id="requestApprovalsSubtitle">
           Xem và xử lý các đơn từ trong phạm vi phụ trách.
         </p>
+        <div class="flex items-center flex-wrap gap-space-xs mt-1">
+          <span
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm"
+            id="requestApprovalsScopeBadge"
+          >
+            <span class="material-symbols-outlined text-[14px]">domain</span>
+            Phạm vi: -
+          </span>
+        </div>
       </div>
       <div class="flex items-center flex-wrap gap-space-xs">
         <button
@@ -216,6 +225,10 @@
     </div>
 
     <form class="p-space-md flex flex-col gap-space-sm" id="rejectRequestForm">
+      <div
+        class="hidden rounded-lg border border-error/30 bg-error-container px-space-md py-space-sm font-body-sm text-body-sm text-on-error-container"
+        id="rejectRequestError"
+      ></div>
       <div class="flex flex-col gap-1">
         <label class="font-label-md text-label-md font-semibold text-on-surface" for="rejectRequestReason">
           Lý do từ chối <span class="text-error">*</span>
