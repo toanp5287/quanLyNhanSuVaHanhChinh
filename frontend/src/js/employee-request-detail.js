@@ -1,6 +1,10 @@
 import employeeRequestDetailHtml from "../pages/employee-request-detail.html?raw";
 import api from "../services/api.js";
-import { getCurrentUser, logout } from "../services/auth.service.js";
+import {
+  getCurrentUser,
+  hasPermission,
+  logout,
+} from "../services/auth.service.js";
 import { setupShell } from "./home.js";
 import {
   REQUEST_TYPES,
@@ -13,6 +17,25 @@ const ACTION_META = {
   REJECT: { label: "Từ chối", icon: "cancel", color: "text-red-700 bg-red-100" },
   REQUEST_UPDATE: { label: "Yêu cầu bổ sung", icon: "fact_check", color: "text-orange-700 bg-orange-100" },
   RESUBMIT: { label: "Gửi lại hồ sơ", icon: "send", color: "text-indigo-700 bg-indigo-100" },
+};
+
+const WORK_STATUS_LABEL = {
+  WORKING: "Đang làm việc",
+  MATERNITY: "Nghỉ thai sản",
+  RESIGNED: "Đã nghỉ việc",
+};
+
+const CONTRACT_STATUS_META = {
+  ACTIVE: { label: "Hiệu lực", badge: "bg-emerald-100 text-emerald-700" },
+  EXPIRING_SOON: { label: "Sắp hết hạn", badge: "bg-amber-100 text-amber-700" },
+  EXPIRED: { label: "Hết hạn", badge: "bg-red-100 text-red-700" },
+  TERMINATED: { label: "Chấm dứt", badge: "bg-surface-container-high text-on-surface-variant" },
+};
+
+const LEAVE_STATUS_META = {
+  PENDING: { label: "Chờ duyệt", badge: "bg-amber-100 text-amber-700" },
+  APPROVED: { label: "Đã duyệt", badge: "bg-emerald-100 text-emerald-700" },
+  REJECTED: { label: "Từ chối", badge: "bg-red-100 text-red-700" },
 };
 
 const state = {
@@ -55,6 +78,16 @@ const formatDateTime = (value) => {
     minute: "2-digit",
   });
 };
+
+const formatMoney = (value) => {
+  if (value === null || value === undefined || value === "") return "—";
+  const number = Number(value);
+  if (Number.isNaN(number)) return escapeHtml(value);
+  return `${new Intl.NumberFormat("vi-VN").format(number)} đ`;
+};
+
+const errorMessage = (reason, fallback) =>
+  reason?.response?.data?.message || fallback;
 
 const setText = (selector, value) => {
   const element = document.querySelector(selector);
@@ -289,6 +322,301 @@ const renderResubmitSection = (request) => {
   );
 };
 
+const canViewHrProfile = () =>
+  state.currentUser?.role_id === "HR_ADMIN" &&
+  (hasPermission("HR.PROFILE_MANAGE", state.currentUser) ||
+    hasPermission("HR.PROFILE_VIEW", state.currentUser));
+
+const fetchProfileByEmployee = async (request) => {
+  const code = request.employee_code || request.employee_code_at_submit;
+  const response = await api.get("/employees", {
+    params: {
+      status: "ALL",
+      ...(code ? { keyword: code } : {}),
+    },
+  });
+  const employees = response.data?.data?.employees || [];
+  return (
+    employees.find(
+      (employee) => Number(employee.id) === Number(request.employee_id),
+    ) ||
+    employees.find((employee) => employee.employee_code === code) ||
+    null
+  );
+};
+
+const fetchContractsByEmployee = async (request) => {
+  const code = request.employee_code || request.employee_code_at_submit;
+  const response = await api.get("/contracts", {
+    params: code ? { keyword: code } : {},
+  });
+  const contracts = response.data?.data?.contracts || [];
+  return contracts.filter(
+    (contract) =>
+      Number(contract.employee_id) === Number(request.employee_id) ||
+      contract.employee_code === code,
+  );
+};
+
+const fetchLeaveBalance = async (request) => {
+  const response = await api.get("/leave/balances", {
+    params: {
+      employee_id: request.employee_id,
+      year: new Date().getFullYear(),
+    },
+  });
+  const data = response.data?.data;
+  return Array.isArray(data) ? data[0] || null : data || null;
+};
+
+const fetchLeaveRequests = async (request) => {
+  const response = await api.get("/leave/requests", {
+    params: { employee_id: request.employee_id },
+  });
+  const data = response.data?.data;
+  return Array.isArray(data) ? data : [];
+};
+
+const settledValue = (result, fallback = null) =>
+  result?.status === "fulfilled" ? result.value : fallback;
+
+const settledError = (result, fallback) =>
+  result?.status === "rejected" ? errorMessage(result.reason, fallback) : null;
+
+const hrNoteBlock = (title, message) => `
+  <div class="rounded-lg border border-surface-variant p-space-md">
+    <h3 class="font-label-lg text-label-lg font-bold text-on-surface mb-1">${escapeHtml(title)}</h3>
+    <p class="font-body-sm text-body-sm text-on-surface-variant">${escapeHtml(message)}</p>
+  </div>
+`;
+
+const renderHrInfoBlock = (employee, error) => {
+  if (error) return hrNoteBlock("Thông tin hồ sơ", error);
+  if (!employee) {
+    return hrNoteBlock("Thông tin hồ sơ", "Không tìm thấy hồ sơ nhân viên tương ứng.");
+  }
+
+  const rows = [
+    ["Họ tên", employee.full_name],
+    ["Mã nhân viên", employee.employee_code],
+    ["Chức danh", employee.position_title || employee.position_name],
+    ["Phòng ban", employee.department_name],
+    [
+      "Trạng thái",
+      WORK_STATUS_LABEL[employee.work_status] || employee.work_status,
+    ],
+    ["Ngày vào làm", formatDate(employee.hire_date)],
+    ["Điện thoại", employee.phone],
+    ["Email", employee.email],
+    ["Cấp bậc", employee.grade_level],
+    ["CCCD/Hộ chiếu", employee.citizen_id],
+  ];
+
+  return `
+    <div class="rounded-lg border border-surface-variant p-space-md">
+      <h3 class="font-label-lg text-label-lg font-bold text-on-surface mb-space-sm">
+        Thông tin hồ sơ
+      </h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-space-md">
+        ${rows
+          .map(
+            ([label, value]) => `
+              <div>
+                <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">${escapeHtml(label)}</p>
+                <p class="font-body-md text-body-md text-on-surface font-semibold">${escapeHtml(value ?? "—")}</p>
+              </div>
+            `,
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+};
+
+const renderHrContractsBlock = (contracts, error, canView) => {
+  if (!canView) {
+    return hrNoteBlock(
+      "Hợp đồng lao động",
+      "Bạn không có quyền xem hợp đồng của nhân viên.",
+    );
+  }
+  if (error) return hrNoteBlock("Hợp đồng lao động", error);
+
+  const rows = (contracts || [])
+    .slice()
+    .sort((a, b) => String(b.start_date).localeCompare(String(a.start_date)))
+    .slice(0, 3);
+
+  if (!rows.length) {
+    return hrNoteBlock("Hợp đồng lao động", "Không có hợp đồng nào được ghi nhận.");
+  }
+
+  return `
+    <div class="rounded-lg border border-surface-variant p-space-md">
+      <h3 class="font-label-lg text-label-lg font-bold text-on-surface mb-space-sm">
+        Hợp đồng lao động gần đây
+      </h3>
+      <div class="flex flex-col gap-space-xs">
+        ${rows
+          .map((contract) => {
+            const meta = CONTRACT_STATUS_META[contract.status] || {
+              label: contract.status || "—",
+              badge: "bg-surface-container-high text-on-surface-variant",
+            };
+            return `
+              <div class="flex items-center justify-between gap-space-sm rounded bg-surface-container-low px-space-sm py-space-xs">
+                <div>
+                  <p class="font-body-md text-body-md font-semibold text-on-surface">
+                    ${escapeHtml(contract.contract_code || "Hợp đồng")} • ${escapeHtml(contract.contract_type || "—")}
+                  </p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant">
+                    ${formatDate(contract.start_date)} — ${formatDate(contract.end_date)} • ${formatMoney(contract.signed_salary)}
+                  </p>
+                </div>
+                <span class="inline-flex items-center rounded-full px-2 py-0.5 font-label-sm text-label-sm ${meta.badge}">
+                  ${escapeHtml(meta.label)}
+                </span>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
+};
+
+const renderHrLeaveBlock = (balance, leaves, balanceError, leaveError, canView) => {
+  if (!canView) {
+    return hrNoteBlock(
+      "Quỹ phép & đơn nghỉ",
+      "Bạn không có quyền xem quỹ phép của nhân viên.",
+    );
+  }
+
+  const balanceContent = balanceError
+    ? `<p class="font-body-sm text-body-sm text-error">${escapeHtml(balanceError)}</p>`
+    : balance
+      ? `
+        <div class="grid grid-cols-3 gap-space-xs">
+          ${[
+            ["Quỹ năm", balance.annual_quota],
+            ["Đã dùng", balance.used_days],
+            ["Còn lại", balance.remaining_days],
+          ]
+            .map(
+              ([label, value]) => `
+                <div class="rounded bg-surface-container-low px-space-sm py-space-xs text-center">
+                  <p class="font-label-sm text-label-sm text-on-surface-variant">${escapeHtml(label)}</p>
+                  <p class="font-headline-sm text-headline-sm font-bold text-on-surface">${value ?? "—"}</p>
+                </div>
+              `,
+            )
+            .join("")}
+        </div>
+      `
+      : `<p class="font-body-sm text-body-sm text-on-surface-variant">Chưa có dữ liệu quỹ phép cho năm hiện tại.</p>`;
+
+  const leaveContent = leaveError
+    ? `<p class="font-body-sm text-body-sm text-error">${escapeHtml(leaveError)}</p>`
+    : (leaves || []).length
+      ? `
+        <div class="flex flex-col gap-space-xs">
+          ${[...leaves]
+            .sort((a, b) => String(b.from_date).localeCompare(String(a.from_date)))
+            .slice(0, 3)
+            .map((leave) => {
+              const meta = LEAVE_STATUS_META[leave.status] || {
+                label: leave.status || "—",
+                badge: "bg-surface-container-high text-on-surface-variant",
+              };
+              return `
+                <div class="flex items-center justify-between gap-space-sm rounded bg-surface-container-low px-space-sm py-space-xs">
+                  <div>
+                    <p class="font-body-md text-body-md font-semibold text-on-surface">
+                      ${escapeHtml(leave.request_code || leave.leave_type || "Đơn nghỉ")}
+                    </p>
+                    <p class="font-label-sm text-label-sm text-on-surface-variant">
+                      ${formatDate(leave.from_date)} — ${formatDate(leave.to_date)} • ${leave.total_days ?? "—"} ngày
+                    </p>
+                  </div>
+                  <span class="inline-flex items-center rounded-full px-2 py-0.5 font-label-sm text-label-sm ${meta.badge}">
+                    ${escapeHtml(meta.label)}
+                  </span>
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+      `
+      : `<p class="font-body-sm text-body-sm text-on-surface-variant">Không có đơn nghỉ nào được ghi nhận.</p>`;
+
+  return `
+    <div class="rounded-lg border border-surface-variant p-space-md">
+      <h3 class="font-label-lg text-label-lg font-bold text-on-surface mb-space-sm">
+        Quỹ phép & đơn nghỉ gần đây
+      </h3>
+      <div class="flex flex-col gap-space-sm">
+        ${balanceContent}
+        ${leaveContent}
+      </div>
+    </div>
+  `;
+};
+
+const renderHrProfile = async (request) => {
+  const section = document.getElementById("detailHrProfileSection");
+  const content = document.getElementById("detailHrProfileContent");
+  if (!section || !content || !canViewHrProfile()) {
+    section?.classList.add("hidden");
+    return;
+  }
+
+  section.classList.remove("hidden");
+  setText(
+    "#detailHrProfileEmployee",
+    `${request.full_name_at_submit || request.full_name || "—"} (${request.employee_code_at_submit || request.employee_code || "—"})`,
+  );
+  content.innerHTML = `
+    <p class="font-body-sm text-body-sm text-on-surface-variant">Đang tải hồ sơ liên quan...</p>
+  `;
+
+  const sequence = state.requestSeq;
+  const canViewContracts = hasPermission(
+    "HR.CONTRACT_MANAGE",
+    state.currentUser,
+  );
+  const canViewLeave = hasPermission("ESS.SELF_PROFILE", state.currentUser);
+
+  const [profileResult, contractsResult, balanceResult, leaveResult] =
+    await Promise.allSettled([
+      fetchProfileByEmployee(request),
+      canViewContracts ? fetchContractsByEmployee(request) : Promise.resolve(null),
+      canViewLeave ? fetchLeaveBalance(request) : Promise.resolve(null),
+      canViewLeave ? fetchLeaveRequests(request) : Promise.resolve([]),
+    ]);
+
+  if (sequence !== state.requestSeq) return;
+
+  content.innerHTML = [
+    renderHrInfoBlock(
+      settledValue(profileResult),
+      settledError(profileResult, "Không thể tải hồ sơ nhân viên."),
+    ),
+    renderHrContractsBlock(
+      settledValue(contractsResult, []),
+      settledError(contractsResult, "Không thể tải hợp đồng lao động."),
+      canViewContracts,
+    ),
+    renderHrLeaveBlock(
+      settledValue(balanceResult),
+      settledValue(leaveResult, []),
+      settledError(balanceResult, "Không thể tải quỹ phép."),
+      settledError(leaveResult, "Không thể tải đơn nghỉ."),
+      canViewLeave,
+    ),
+  ].join("");
+};
+
 const renderDetail = (request) => {
   state.request = request;
 
@@ -329,6 +657,8 @@ const renderDetail = (request) => {
   );
   setText("#detailSubmittedAt", formatDateTime(request.submitted_at));
   setText("#detailReason", request.reason || "—");
+
+  renderHrProfile(request);
 
   const progress = document.getElementById("detailProgress");
   if (progress) progress.innerHTML = buildProgressSteps(request).join("");
