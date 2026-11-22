@@ -2,6 +2,7 @@ import { db } from "../../config/database.js";
 import { buildEmployeeScope } from "../../utils/helper.js";
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
+const round2 = (value) => Math.round(Number(value || 0) * 100) / 100;
 const validateMonth = (value) => {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(value || ""))) throw fail("Kỳ công không hợp lệ (YYYY-MM)");
   return value;
@@ -51,9 +52,17 @@ export const recalculateEmployeeMonth = async (connection, employeeId, month) =>
     paid += paidUnit;
     unpaid += Math.min(available - paidUnit, leave.unpaid);
   }
-  const [overtime] = await connection.query(`SELECT ot_type, COALESCE(SUM(TIME_TO_SEC(TIMEDIFF(end_time, start_time)) / 3600 * ot_rate), 0) AS hours FROM overtime_requests
-    WHERE employee_id = ? AND status = 'APPROVED' AND work_date >= CONCAT(?, '-01') AND work_date <= LAST_DAY(CONCAT(?, '-01')) GROUP BY ot_type`, [employeeId, month, month]);
-  const ot = Object.fromEntries(overtime.map(row => [row.ot_type, Number(row.hours)]));
+  const [overtime] = await connection.query(`SELECT ot_rate, ROUND(SUM(approved_ot_hours), 2) AS hours
+    FROM attendances
+    WHERE employee_id = ? AND work_date >= CONCAT(?, '-01') AND work_date <= LAST_DAY(CONCAT(?, '-01'))
+      AND approved_ot_hours > 0
+    GROUP BY ot_rate`, [employeeId, month, month]);
+  const ot = { WEEKDAY: 0, WEEKEND: 0, HOLIDAY: 0 };
+  for (const row of overtime) {
+    const rate = Number(row.ot_rate);
+    const key = rate >= 2.5 ? "HOLIDAY" : rate >= 1.75 ? "WEEKEND" : "WEEKDAY";
+    ot[key] = round2(ot[key] + Number(row.hours || 0));
+  }
   await connection.query(`INSERT INTO monthly_timesheets
     (employee_id, month_year, standard_days, actual_work_days, paid_leave_days, unpaid_leave_days, total_payable_days,
      late_count, total_late_minutes, ot_hours_150, ot_hours_200, ot_hours_300, status)
@@ -63,7 +72,7 @@ export const recalculateEmployeeMonth = async (connection, employeeId, month) =>
       late_count = VALUES(late_count), total_late_minutes = VALUES(total_late_minutes), ot_hours_150 = VALUES(ot_hours_150),
       ot_hours_200 = VALUES(ot_hours_200), ot_hours_300 = VALUES(ot_hours_300)`,
   [employeeId, month, standardDays(month), actual, paid, unpaid, actual + paid, lateCount, lateMinutes,
-    ot.WEEKDAY || 0, ot.WEEKEND || 0, ot.HOLIDAY || 0]);
+    ot.WEEKDAY, ot.WEEKEND, ot.HOLIDAY]);
 };
 
 export const listMonthlyTimesheets = async (month, user) => {

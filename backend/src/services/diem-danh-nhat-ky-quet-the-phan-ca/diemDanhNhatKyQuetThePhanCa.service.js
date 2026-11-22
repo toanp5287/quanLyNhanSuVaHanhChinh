@@ -9,6 +9,10 @@ import {
   getPolicyForShift,
   normalizeRules,
 } from "../attendance-policy/attendancePolicy.service.js";
+import {
+  notifyEmployee,
+  publishNotificationRow,
+} from "../notifications/notification.service.js";
 
 export const attendanceError = (message, status = 400) =>
   Object.assign(new Error(message), { status });
@@ -68,6 +72,53 @@ const ensureWorkShiftSchema = async () => {
   }
   await workShiftSchemaPromise;
   await ensureAttendancePolicySchema();
+};
+
+let overtimeSchemaPromise;
+export const ensureOvertimeSchema = async () => {
+  if (!overtimeSchemaPromise) {
+    overtimeSchemaPromise = (async () => {
+      await db.query(
+        `CREATE TABLE IF NOT EXISTS holidays (
+           id INT AUTO_INCREMENT PRIMARY KEY,
+           holiday_date DATE NOT NULL UNIQUE,
+           name VARCHAR(150) NOT NULL,
+           ot_rate DECIMAL(3,2) NOT NULL DEFAULT 3.00,
+           is_paid TINYINT(1) NOT NULL DEFAULT 1,
+           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+      );
+      const columns = [
+        ["requested_hours", "DECIMAL(4,2) NULL DEFAULT NULL AFTER end_time"],
+        ["actual_ot_hours", "DECIMAL(4,2) NULL DEFAULT NULL AFTER requested_hours"],
+        ["reject_reason", "VARCHAR(255) NULL DEFAULT NULL AFTER approved_at"],
+      ];
+      for (const [column, definition] of columns) {
+        if (await hasColumn(db, "overtime_requests", column)) continue;
+        await db.query(
+          `ALTER TABLE overtime_requests ADD COLUMN ${column} ${definition}`,
+        );
+        columnCache.delete(`overtime_requests.${column}`);
+      }
+      const [indexRows] = await db.query(
+        `SELECT COUNT(*) AS total FROM information_schema.STATISTICS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'overtime_requests'
+            AND INDEX_NAME = 'idx_ot_emp_date_status'`,
+      );
+      if (!Number(indexRows[0]?.total)) {
+        await db.query(
+          `CREATE INDEX idx_ot_emp_date_status
+             ON overtime_requests (employee_id, work_date, status)`,
+        );
+      }
+    })().catch((error) => {
+      overtimeSchemaPromise = null;
+      throw error;
+    });
+  }
+  await overtimeSchemaPromise;
 };
 
 const readFaceThreshold = (name, fallback) => {
@@ -374,6 +425,78 @@ const formatDateOnly = (value) => {
     }).format(value);
   return String(value).slice(0, 10);
 };
+
+const OT_TYPE_RATES = { WEEKDAY: 1.5, WEEKEND: 2, HOLIDAY: 3 };
+const DAY_NAME_CODES = {
+  SUN: 0,
+  MON: 1,
+  TUE: 2,
+  WED: 3,
+  THU: 4,
+  FRI: 5,
+  SAT: 6,
+};
+
+export const resolveOvertimeType = async (connection, employeeId, workDate) => {
+  await ensureOvertimeSchema();
+  const date = formatDateOnly(workDate);
+  const [holidays] = await connection.query(
+    "SELECT ot_rate FROM holidays WHERE holiday_date = ? LIMIT 1",
+    [date],
+  );
+  if (holidays.length) {
+    const rate = toNumber(holidays[0].ot_rate, OT_TYPE_RATES.HOLIDAY);
+    return {
+      ot_type: "HOLIDAY",
+      ot_rate: rate > 0 ? rate : OT_TYPE_RATES.HOLIDAY,
+    };
+  }
+
+  const parsedDate = new Date(`${date}T00:00:00Z`);
+  const jsDay = parsedDate.getUTCDay();
+  const isoDay = jsDay === 0 ? 7 : jsDay;
+  let isWorkingDay = jsDay !== 0 && jsDay !== 6;
+  let shiftRows = [];
+  try {
+    [shiftRows] = await connection.query(
+      `SELECT s.working_days
+         FROM work_shifts s
+         INNER JOIN employee_shifts es ON es.shift_id = s.id
+        WHERE es.employee_id = ? AND es.effective_from <= ?
+          AND (es.effective_to IS NULL OR es.effective_to >= ?)
+          AND s.is_active = 1
+        ORDER BY es.effective_from DESC, es.id DESC
+        LIMIT 1`,
+      [employeeId, date, date],
+    );
+  } catch {
+    shiftRows = [];
+  }
+  let workingDays = null;
+  try {
+    const raw = shiftRows[0]?.working_days;
+    if (Array.isArray(raw)) workingDays = raw;
+    else if (typeof raw === "string") workingDays = JSON.parse(raw);
+  } catch {
+    workingDays = null;
+  }
+  if (Array.isArray(workingDays) && workingDays.length) {
+    const configured = workingDays
+      .map((value) => {
+        if (typeof value === "number" && Number.isFinite(value)) {
+          if (value >= 1 && value <= 7) return value;
+          return value === 0 ? 7 : null;
+        }
+        const code = DAY_NAME_CODES[String(value).toUpperCase().slice(0, 3)];
+        return code === undefined ? null : code === 0 ? 7 : code;
+      })
+      .filter((value) => value !== null);
+    if (configured.length) isWorkingDay = configured.includes(isoDay);
+  }
+  const ot_type = isWorkingDay ? "WEEKDAY" : "WEEKEND";
+  return { ot_type, ot_rate: OT_TYPE_RATES[ot_type] };
+};
+
 const LEGACY_STATUS = {
   IN_PROGRESS: "IN_PROGRESS",
   MISSING_CHECKOUT: "MISSING_CHECKOUT",
@@ -614,6 +737,18 @@ const reconcileMissingCheckout = async (employeeId, workDate) => {
       workDate.slice(0, 7),
     );
     await connection.commit();
+    const notificationRows = await notifyEmployee(db, employeeId, {
+      type: "MISSING_CHECKOUT",
+      title: "Quên chấm công ra ca",
+      message: `Ngày ${workDate} bạn có giờ vào nhưng chưa có giờ ra. Vui lòng liên hệ HR để điều chỉnh.`,
+      priority: "HIGH",
+      action_url: "#/diem-danh",
+      action_label: "Xem chấm công",
+      require_action: true,
+      dedupe_key: `MISSING_CHECKOUT:${employeeId}:${workDate}:${today}`,
+      payload: { work_date: workDate, employee_id: employeeId },
+    });
+    notificationRows.forEach(publishNotificationRow);
     return { ...attendance, status: "MISSING_CHECKOUT" };
   } catch (error) {
     await connection.rollback();
@@ -668,6 +803,7 @@ export const recalculateDailyAttendance = async (
   employeeId,
   workDate,
 ) => {
+  await ensureOvertimeSchema();
   const attendance = await getAttendanceForDate(
     employeeId,
     workDate,
@@ -685,10 +821,9 @@ export const recalculateDailyAttendance = async (
   const [otRows] = await connection.query(
     `SELECT * FROM overtime_requests
       WHERE employee_id = ? AND work_date = ? AND status = 'APPROVED'
-      ORDER BY id LIMIT 1`,
+      ORDER BY start_time, id`,
     [employeeId, workDate],
   );
-  const overtime = otRows[0] || null;
 
   let snapshot = null;
   try {
@@ -756,6 +891,9 @@ export const recalculateDailyAttendance = async (
   let rawOtMinutes = 0;
   let approvedOtHours = 0;
   let otRate = toNumber(attendance.ot_rate, 1.5) || 1.5;
+  const minimumOtMinutes = Math.max(0, toNumber(attendance.min_ot_minutes, 30));
+  const otDetails = [];
+  let overtimeType = null;
   let status = "IN_PROGRESS";
 
   if (leave?.leave_type === "FULL_DAY") {
@@ -798,15 +936,19 @@ export const recalculateDailyAttendance = async (
         rules.clamp_late_out && checkOut !== null && effectiveEnd !== null
           ? Math.min(checkOut, effectiveEnd)
           : checkOut;
-      if (clampIn !== null && clampOut !== null) {
+      const workEnd =
+        effectiveEnd !== null && clampOut !== null
+          ? Math.min(clampOut, effectiveEnd)
+          : clampOut;
+      if (clampIn !== null && workEnd !== null) {
         const overlap =
           breakStart !== null && breakEnd !== null
             ? Math.max(
                 0,
-                Math.min(clampOut, breakEnd) - Math.max(clampIn, breakStart),
+                Math.min(workEnd, breakEnd) - Math.max(clampIn, breakStart),
               )
             : 0;
-        netWorkMinutes = Math.max(0, clampOut - clampIn - overlap);
+        netWorkMinutes = Math.max(0, workEnd - clampIn - overlap);
         actualWorkHours = round2(netWorkMinutes / 60);
         baseWorkday = round2(
           computeWorkDay({
@@ -824,22 +966,30 @@ export const recalculateDailyAttendance = async (
 
       if (effectiveEnd !== null && checkOut > effectiveEnd)
         rawOtMinutes = checkOut - effectiveEnd;
-      if (overtime && rawOtMinutes > 0) {
-        const otStartRaw = toMinutes(overtime.start_time);
-        const otEndRaw = toMinutes(overtime.end_time);
-        const adjustOt = (value) =>
-          overnight && value !== null && value <= shiftStart ? value + 1440 : value;
-        const otStart = Math.max(
-          effectiveEnd,
-          adjustOt(otStartRaw) ?? effectiveEnd,
+      if (otRows.length && rawOtMinutes > 0) {
+        overtimeType = await resolveOvertimeType(
+          connection,
+          employeeId,
+          workDate,
         );
-        const otEnd = adjustOt(otEndRaw) ?? 0;
-        const validStart = Math.max(checkIn ?? 0, otStart);
-        const validEnd = Math.min(checkOut, otEnd);
-        const validMinutes = Math.max(0, validEnd - validStart);
-        if (validMinutes >= toNumber(attendance.min_ot_minutes, 30)) {
-          approvedOtHours = round2(validMinutes / 60);
-          otRate = toNumber(overtime.ot_rate, 1.5) || 1.5;
+        otRate = overtimeType.ot_rate;
+        const adjustOt = (value) =>
+          overnight && value !== null && shiftStart !== null && value <= shiftStart
+            ? value + 1440
+            : value;
+        for (const overtime of otRows) {
+          let otStart = adjustOt(toMinutes(overtime.start_time));
+          if (effectiveEnd !== null)
+            otStart = Math.max(effectiveEnd, otStart ?? effectiveEnd);
+          const otEnd = adjustOt(toMinutes(overtime.end_time)) ?? 0;
+          const validStart = Math.max(checkIn ?? 0, otStart ?? 0);
+          const validEnd = Math.min(checkOut, otEnd);
+          const validMinutes = Math.max(0, Math.round(validEnd - validStart));
+          if (validMinutes >= minimumOtMinutes) {
+            const hours = round2(validMinutes / 60);
+            otDetails.push({ id: overtime.id, hours });
+            approvedOtHours = round2(approvedOtHours + hours);
+          }
         }
       }
 
@@ -861,6 +1011,21 @@ export const recalculateDailyAttendance = async (
     }
     if (pastCheckoutCutoff && rules.missing_checkout_action !== "IGNORE")
       status = "MISSING_CHECKOUT";
+  }
+
+  await connection.query(
+    "UPDATE overtime_requests SET actual_ot_hours = 0 WHERE employee_id = ? AND work_date = ?",
+    [employeeId, workDate],
+  );
+  if (otDetails.length && overtimeType) {
+    for (const detail of otDetails) {
+      await connection.query(
+        `UPDATE overtime_requests
+            SET actual_ot_hours = ?, ot_type = ?, ot_rate = ?
+          WHERE id = ?`,
+        [detail.hours, overtimeType.ot_type, overtimeType.ot_rate, detail.id],
+      );
+    }
   }
 
   let snapshotJson = null;
@@ -1459,6 +1624,66 @@ export const listAttendanceByDate = async (date, user) => {
         explanation,
       };
     }),
+  };
+};
+
+const HISTORY_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+export const getMyAttendanceHistory = async (user, monthValue) => {
+  if (!user?.employee_id) {
+    throw attendanceError("Tài khoản chưa liên kết hồ sơ nhân sự", 404);
+  }
+  const month = String(monthValue || "").trim();
+  if (!HISTORY_MONTH_PATTERN.test(month)) {
+    throw attendanceError("Tháng không hợp lệ (YYYY-MM)");
+  }
+  const employeeId = Number(user.employee_id);
+  const [employees] = await db.query(
+    `SELECT e.id, e.employee_code, e.full_name,
+            COALESCE(d.department_name, d.name) AS department_name
+       FROM employees e
+       LEFT JOIN departments d ON d.id = e.department_id
+      WHERE e.id = ?
+      LIMIT 1`,
+    [employeeId],
+  );
+  if (!employees.length) {
+    throw attendanceError("Không tìm thấy hồ sơ nhân sự", 404);
+  }
+
+  const [attendances] = await db.query(
+    `SELECT DATE_FORMAT(a.work_date, '%Y-%m-%d') AS work_date,
+            TIME_FORMAT(a.check_in, '%H:%i') AS check_in,
+            TIME_FORMAT(a.check_out, '%H:%i') AS check_out,
+            a.check_in_ip, a.status, a.actual_work_hours, a.base_workday,
+            a.paid_leave_workday, a.total_workday, a.late_minutes,
+            a.early_leave_minutes, a.raw_ot_minutes, a.approved_ot_hours,
+            a.ot_rate, a.note,
+            ws.code AS shift_code,
+            TIME_FORMAT(ws.start_time, '%H:%i') AS start_time,
+            TIME_FORMAT(ws.end_time, '%H:%i') AS end_time
+       FROM attendances a
+       LEFT JOIN work_shifts ws ON ws.id = a.shift_id
+      WHERE a.employee_id = ? AND DATE_FORMAT(a.work_date, '%Y-%m') = ?
+      ORDER BY a.work_date`,
+    [employeeId, month],
+  );
+
+  const [leaves] = await db.query(
+    `SELECT DATE_FORMAT(work_date, '%Y-%m-%d') AS work_date,
+            leave_type, reason, paid_workday, exempt_minutes
+       FROM leave_requests
+      WHERE employee_id = ? AND status = 'APPROVED'
+        AND DATE_FORMAT(work_date, '%Y-%m') = ?
+      ORDER BY work_date`,
+    [employeeId, month],
+  );
+
+  return {
+    month,
+    employee: employees[0],
+    rows: attendances,
+    leaves,
   };
 };
 

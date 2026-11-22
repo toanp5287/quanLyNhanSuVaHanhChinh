@@ -12,6 +12,7 @@ import routerDiemDanhNhatKyQuetThePhanCa from "./src/routes/diemDanhNhatKyQuetTh
 import routerQuanLyLamThemGio from "./src/routes/quanLyLamThemGio.router.js";
 import routerQuanLyNghiPhepVaQuyPhepNam from "./src/routes/quan-ly-nghi-phep-va-quy-phep-nam.service.js";
 import routerMyProfile from "./src/routes/myProfile.router.js";
+import routerNotifications from "./src/routes/notifications.router.js";
 import connectMysql from "./src/config/database.js";
 
 dotenv.config();
@@ -25,7 +26,7 @@ if (trustProxy) {
 app.use(
   cors({
     origin: "http://localhost:5173",
-    methods: ["GET, POST, PUT, PATCH, DELETE"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     credentials: true,
   }),
 );
@@ -40,7 +41,10 @@ app.use("/my-profile", routerMyProfile);
 app.use("/attendance", routerDiemDanhNhatKyQuetThePhanCa);
 app.use("/timesheets", routerTongHopChotCong);
 app.use("/overtime", routerQuanLyLamThemGio);
+app.use("/api/v1/overtime-requests", routerQuanLyLamThemGio);
 app.use("/leave", routerQuanLyNghiPhepVaQuyPhepNam);
+app.use("/notifications", routerNotifications);
+app.use("/api/v1/notifications", routerNotifications);
 app.listen(port, async () => {
   await connectMysql();
   console.log(`Server đang chạy ở http://localhost:${port}`);

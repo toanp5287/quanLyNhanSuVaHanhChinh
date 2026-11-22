@@ -20,6 +20,7 @@ import {
   attendanceDetail,
   attendanceList,
   attendanceManualUpdate,
+  attendanceMyHistory,
   attendanceQuickMark,
   attendanceQuickMarkAll,
   attendanceRecalculateDate,
@@ -174,6 +175,11 @@ router.post(
   attendanceCheckOut,
 );
 
+router.get(
+  "/my-history",
+  requirePermission("ESS.SELF_PROFILE"),
+  attendanceMyHistory,
+);
 router.get(
   "/logs",
   requireAnyPermission(["ATT.VIEW", "HR.PROFILE_MANAGE"]),

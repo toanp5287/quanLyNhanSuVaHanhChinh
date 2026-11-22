@@ -2,6 +2,11 @@ import { db } from "../../config/database.js";
 import { assertCanApprove, buildEmployeeScope } from "../../utils/helper.js";
 import { recalculateEmployeeMonth } from "../tong-hop-chot-cong/tongHopChotCong.service.js";
 import { recalculateDailyAttendance } from "../diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
+import {
+  notifyApprovers,
+  notifyEmployee,
+  publishNotificationRow,
+} from "../notifications/notification.service.js";
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const LEGACY_REASONS = {
@@ -181,6 +186,18 @@ export const createLeaveRequest = async (user, payload = {}) => {
     const balance = await recalculateLeaveBalance(connection, employeeId, Number(workDate.slice(0, 4)));
     if (reasonCategory === "ANNUAL_LEAVE" && balance.remaining_days < 0) throw fail("Quỹ phép năm không đủ", 409);
     const row = { id: result.insertId, employee_id: employeeId, work_date: workDate };
+    const notificationRows = await notifyApprovers(connection, employeeId, {
+      type: "LEAVE_PENDING",
+      title: "Đơn nghỉ chờ duyệt",
+      message: `Có đơn nghỉ ngày ${workDate} (${totalDays} ngày) đang chờ phê duyệt.`,
+      priority: "HIGH",
+      action_url: "#/trang-chu",
+      action_label: "Xem đơn nghỉ",
+      require_action: true,
+      dedupe_key: `LEAVE_PENDING:${result.insertId}`,
+      payload: { leave_request_id: result.insertId, work_date: workDate, employee_id: employeeId },
+    });
+    setImmediate(() => notificationRows.forEach(publishNotificationRow));
     return { id: result.insertId, request_code: requestCode(row), status: "PENDING", total_days: totalDays, is_paid: paid ? 1 : 0 };
   });
 };
@@ -197,6 +214,7 @@ export const processLeaveRequest = async (user, id, action, payload = {}) => tra
   const request = rows[0];
   if (request.status !== "PENDING") throw fail("Đơn nghỉ đã được xử lý", 409);
   const workDate = String(request.work_date).slice(0, 10);
+  let rejection = "";
   if (action === "cancel") {
     if (Number(user?.employee_id) !== Number(request.employee_id)) throw fail("Chỉ được hủy đơn của chính mình", 403);
     await assertOpen(connection, request.employee_id, workDate);
@@ -204,12 +222,29 @@ export const processLeaveRequest = async (user, id, action, payload = {}) => tra
   } else {
     await assertCanApprove(connection, user, request.employee_id);
     await assertOpen(connection, request.employee_id, workDate);
-    const rejection = String(payload.reject_reason || payload.reason || "").trim();
+    rejection = String(payload.reject_reason || payload.reason || "").trim();
     if (action === "reject" && !rejection) throw fail("Vui lòng nhập lý do từ chối");
     await connection.query("UPDATE leave_requests SET status = ?, approved_by = ?, approved_at = NOW(), reason = ? WHERE id = ?", [action === "approve" ? "APPROVED" : "REJECTED", user.employee_id, action === "reject" ? `${request.reason} | Từ chối: ${rejection}`.slice(0, 255) : request.reason, requestId]);
     await recalculateDailyAttendance(connection, request.employee_id, workDate);
     await recalculateEmployeeMonth(connection, request.employee_id, workDate.slice(0, 7));
   }
   await recalculateLeaveBalance(connection, request.employee_id, Number(workDate.slice(0, 4)));
+  let notificationRows = [];
+  if (action === "approve" || action === "reject") {
+    const approved = action === "approve";
+    notificationRows = await notifyEmployee(connection, request.employee_id, {
+      type: approved ? "LEAVE_APPROVED" : "LEAVE_REJECTED",
+      title: approved ? "Đơn nghỉ đã được duyệt" : "Đơn nghỉ bị từ chối",
+      message: approved
+        ? `Đơn nghỉ ngày ${workDate} đã được phê duyệt.`
+        : `Đơn nghỉ ngày ${workDate} bị từ chối: ${rejection}`,
+      priority: "MEDIUM",
+      action_url: "#/trang-chu",
+      action_label: "Xem chi tiết",
+      dedupe_key: `LEAVE_${approved ? "APPROVED" : "REJECTED"}:${requestId}`,
+      payload: { leave_request_id: requestId, work_date: workDate },
+    });
+    setImmediate(() => notificationRows.forEach(publishNotificationRow));
+  }
   return { id: requestId, status: action === "cancel" ? "CANCELLED" : action === "approve" ? "APPROVED" : "REJECTED" };
 });

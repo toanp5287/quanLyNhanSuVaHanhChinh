@@ -5,8 +5,11 @@ import { initHome, setupShell } from "./js/home.js";
 import { initPermissions } from "./js/permissions.js";
 import { initMyProfile } from "./js/my-profile.js";
 import { initChamCong } from "./js/cham-cong.js";
+import { initLichSuChamCong } from "./js/lich-su-cham-cong.js";
 import { initQuanLyCaLam } from "./js/quan-ly-ca-lam.js";
+import { initQuanLyLamThemGio } from "./js/quan-ly-lam-them-gio.js";
 import { initFaceKiosk } from "./js/diem-danh-nhat-ky-quet-the-phan-ca.js";
+import { initNotifications, mountBell } from "./js/notifications.js";
 import { getEmployeeModeFromHash, initEmployees } from "./js/employees.js";
 import {
   getContractStatusFromHash,
@@ -158,6 +161,28 @@ function showQuanLyCaLam(user) {
   initQuanLyCaLam(user);
 }
 
+function showQuanLyLamThemGio(user) {
+  if (!user || !hasPermission("ESS.SELF_PROFILE", user)) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+  mountPage(homeHtml);
+  setupShell(user);
+  initQuanLyLamThemGio(user);
+}
+
+function showLichSuChamCong(user) {
+  if (!user || !hasPermission("ESS.SELF_PROFILE", user)) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+  mountPage(homeHtml);
+  setupShell(user);
+  initLichSuChamCong(user);
+}
+
 function showEmployees(user, mode = "all") {
   if (!user || !hasPermission("HR.PROFILE_VIEW", user)) {
     clearHash();
@@ -226,6 +251,10 @@ function renderRouteView(user) {
     showDiemDanh(user);
   } else if (hash === "#/quan-ly-ca-lam") {
     showQuanLyCaLam(user);
+  } else if (hash === "#/lam-them-gio") {
+    showQuanLyLamThemGio(user);
+  } else if (hash === "#/lich-su-cham-cong") {
+    showLichSuChamCong(user);
   } else if (hash === "#/cham-cong" || hash === "#/cham-cong/thang") {
     showDiemDanh(user, "monthly");
   } else if (hash === "#/trang-chu") {
@@ -238,7 +267,10 @@ function renderRouteView(user) {
 }
 
 function renderRoute(user) {
-  transitionTo(() => renderRouteView(user));
+  transitionTo(() => {
+    renderRouteView(user);
+    mountBell();
+  });
 }
 
 document.addEventListener("click", (event) => {
@@ -253,6 +285,8 @@ document.addEventListener("click", (event) => {
         "Bảng chấm công tháng": "#/cham-cong/thang",
       "Quản lý ca làm việc": "#/quan-ly-ca-lam",
       "Phân ca làm việc": "#/quan-ly-ca-lam",
+      "Làm thêm giờ (OT)": "#/lam-them-gio",
+      "Lịch sử chấm công": "#/lich-su-cham-cong",
       "Tất cả nhân viên": "#/nhan-vien",
       "Nhân viên đang làm": "#/nhan-vien/dang-lam",
       "Nhân viên đã nghỉ": "#/nhan-vien/da-nghi",
@@ -286,6 +320,11 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (path === "lam-them-gio-ot-phu-troi") {
+    window.location.hash = "#/lam-them-gio";
+    return;
+  }
+
   if (path === "menu-launcher") {
     window.location.hash = "#/trang-chu";
   }
@@ -311,7 +350,11 @@ window.addEventListener("hrm:login-success", (event) => {
     clearHash();
   }
 
-  transitionTo(() => showHome(event.detail));
+  transitionTo(() => {
+    showHome(event.detail);
+    mountBell();
+    initNotifications(event.detail);
+  });
 });
 
 const showLogoutConfirm = (onConfirm) => {
@@ -377,6 +420,7 @@ async function bootstrap() {
 
   try {
     const user = await getMe();
+    initNotifications(user);
     renderRoute(user);
   } catch {
     clearSession();

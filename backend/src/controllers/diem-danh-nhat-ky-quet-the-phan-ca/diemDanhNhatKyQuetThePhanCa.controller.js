@@ -8,6 +8,7 @@ import {
   deleteShiftAssignment,
   deleteWorkShift,
   getAttendanceDetail,
+  getMyAttendanceHistory,
   getTodayStatus,
   listAttendanceByDate,
   listExplanations,
@@ -163,6 +164,15 @@ export const attendanceList = async (req, res) => {
     return res.status(200).json({ success: true, data });
   } catch (error) {
     return respondError(res, error, "Không thể tải danh sách chấm công");
+  }
+};
+
+export const attendanceMyHistory = async (req, res) => {
+  try {
+    const data = await getMyAttendanceHistory(req.user, req.query?.month);
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return respondError(res, error, "Không thể tải lịch sử chấm công");
   }
 };
 

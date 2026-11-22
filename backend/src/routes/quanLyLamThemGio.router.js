@@ -14,7 +14,9 @@ routerQuanLyLamThemGio.get("/", listOvertime);
 routerQuanLyLamThemGio.get("/my", myOvertime);
 routerQuanLyLamThemGio.post("/", createOvertime);
 routerQuanLyLamThemGio.post("/:id/approve", approveOvertime);
+routerQuanLyLamThemGio.patch("/:id/approve", approveOvertime);
 routerQuanLyLamThemGio.post("/:id/reject", rejectOvertime);
+routerQuanLyLamThemGio.patch("/:id/reject", rejectOvertime);
 routerQuanLyLamThemGio.delete("/:id", cancelOvertime);
 
 
