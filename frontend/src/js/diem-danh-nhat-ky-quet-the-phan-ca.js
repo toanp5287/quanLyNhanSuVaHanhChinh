@@ -451,11 +451,19 @@ export const initFaceKiosk = () => {
     if (action) scan(action);
   });
   el("ConfirmCancel").addEventListener("click", cancelConfirm);
+  const clockFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
   const tick = () => {
     if (active())
-      el("Clock").textContent = new Date().toLocaleString("vi-VN", {
-        timeZone: "Asia/Ho_Chi_Minh",
-      });
+      el("Clock").textContent = clockFormatter.format(new Date()).replace(",", "");
   };
   const clock = setInterval(tick, 1000);
   tick();

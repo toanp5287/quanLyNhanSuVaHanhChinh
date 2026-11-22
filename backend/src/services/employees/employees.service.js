@@ -1,6 +1,10 @@
 import { db } from "../../config/database.js";
 import { buildEmployeeScope } from "../../utils/helper.js";
 import { attendanceError } from "../diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
+import {
+  notifyEmployee,
+  publishNotificationRow,
+} from "../notifications/notification.service.js";
 
 const STATUS_FILTERS = ["ALL", "ACTIVE", "WORKING", "MATERNITY", "RESIGNED"];
 
@@ -168,6 +172,18 @@ export const resetEmployeeFace = async (employeeId, resetBy, reason) => {
      FROM employees WHERE id = ?`,
     [id],
   );
+  const notificationRows = await notifyEmployee(db, id, {
+    type: "FACE_RESET",
+    title: "FaceID đã được reset",
+    message: `Quản trị viên đã reset FaceID của bạn. Lý do: ${text}. Vui lòng đăng ký lại để tiếp tục điểm danh.`,
+    priority: "CRITICAL",
+    action_url: "#/ho-so-ca-nhan",
+    action_label: "Đăng ký lại",
+    require_action: true,
+    dedupe_key: `FACE_RESET:${id}:${Date.now()}`,
+    payload: { employee_id: id, reason: text },
+  });
+  notificationRows.forEach(publishNotificationRow);
   return rows[0];
 };
 

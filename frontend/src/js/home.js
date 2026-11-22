@@ -28,7 +28,7 @@ const CARD_PERMISSIONS = {
   "Phân ca làm việc": ["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"],
   "Quản lý ca làm việc": ["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"],
   "Dữ liệu máy chấm công": ["ATT.VIEW"],
-  "Làm thêm giờ (OT)": ["ATT.SHIFT_OT_MANAGE"],
+  "Làm thêm giờ (OT)": ["ATT.SHIFT_OT_MANAGE", "ESS.SELF_PROFILE"],
   "Giải trình đi muộn/về sớm": ["ATT.VIEW"],
   "Quỹ phép năm": ["LEAVE.QUOTA_MANAGE", "LEAVE.VIEW_REQUEST"],
   "Đơn xin nghỉ phép": ["LEAVE.VIEW_REQUEST", "LEAVE.APPROVE"],
@@ -64,6 +64,7 @@ const CARD_PERMISSIONS = {
   "Thu hồi khi nghỉ việc": ["ASSET.ALLOCATE_MANAGE"],
   "Báo hỏng & Đền bù": ["ASSET.VIEW_OWN", "ASSET.ALLOCATE_MANAGE"],
   "Cổng thông tin cá nhân": [],
+  "Lịch sử chấm công": ["ESS.SELF_PROFILE"],
   "Tạo đơn từ trực tuyến": ["LEAVE.VIEW_REQUEST"],
   "Trung tâm Phê duyệt": ["LEAVE.APPROVE", "ATT.SHIFT_OT_MANAGE"],
   "Bản tin & Nội quy công ty": [],
@@ -1265,6 +1266,7 @@ const saveFaceDescriptor = async () => {
       face_enrolled_at: response.data?.data?.face_enrolled_at || null,
     });
     closeFaceEnrollModal();
+    window.dispatchEvent(new CustomEvent("hrm:face-updated", { detail: updated }));
     showToast("Cập nhật mẫu khuôn mặt FaceID thành công.");
     const btn = document.getElementById("btnFaceEnrollHeader");
     if (btn) {

@@ -1,22 +1,27 @@
 import jwt from "jsonwebtoken";
 import { hasAnyPermission, hasPermission } from "../utils/helper.js";
 
-export const verifyToken = (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
+const extractToken = (req) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.split(" ")[1];
+  }
+  if (req.query?.token) return String(req.query.token);
+  return null;
+};
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+const authorizeRequest = (req, res, next) => {
+  try {
+    const token = extractToken(req);
+
+    if (!token) {
       return res.status(401).json({
         success: false,
         message: "Bạn chưa đăng nhập",
       });
     }
 
-    const token = authHeader.split(" ")[1];
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    req.user = decoded;
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
 
     next();
   } catch (error) {
@@ -29,6 +34,10 @@ export const verifyToken = (req, res, next) => {
     });
   }
 };
+
+export const verifyToken = authorizeRequest;
+
+export const verifyStreamToken = authorizeRequest;
 
 export const requireRole = (roleId) => {
   return (req, res, next) => {

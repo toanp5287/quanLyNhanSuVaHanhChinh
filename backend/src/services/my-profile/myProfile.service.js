@@ -11,6 +11,10 @@ import {
   DUPLICATE_FACE_THRESHOLD,
   FACE_STORAGE_MODEL,
 } from "../diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
+import {
+  publishFaceResolved,
+  resolveFaceAlertsForEmployee,
+} from "../notifications/notification.service.js";
 
 const EMPLOYEE_QUERY = `
   SELECT
@@ -302,6 +306,8 @@ export const updateSelfFaceDescriptor = async (employeeId, values, password, bli
         [employeeId],
       );
       await connection.commit();
+      await resolveFaceAlertsForEmployee(connection, employeeId);
+      await publishFaceResolved(employeeId);
       return {
         has_face_descriptor: true,
         face_status: updated[0]?.face_status || "ACTIVE",

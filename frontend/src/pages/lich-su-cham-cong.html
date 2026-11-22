@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lịch sử chấm công</title>
+</head>
+<body>
+  <section id="historyWorkspace" class="flex flex-col gap-4 pb-6">
+    <div class="flex flex-wrap items-center justify-between gap-3 bg-white rounded-xl p-5 shadow-sm">
+      <div>
+        <a href="#/trang-chu" class="text-sm text-primary">Trang chủ / Lịch sử chấm công</a>
+        <h1 class="text-2xl font-bold text-on-surface mt-1">Lịch sử chấm công cá nhân</h1>
+        <p id="historyEmployee" class="text-sm text-on-surface-variant mt-1"></p>
+      </div>
+      <a href="#/diem-danh" class="rounded border border-primary text-primary px-4 py-2 text-sm font-semibold">Mở kiosk FaceID</a>
+    </div>
+
+    <div class="bg-white rounded-xl p-4 shadow-sm flex flex-col gap-3">
+      <div class="flex flex-wrap items-end gap-2">
+        <button id="historyPrev" type="button" class="rounded border border-outline-variant px-3 py-2 text-sm" aria-label="Tháng trước">‹</button>
+        <label class="text-sm">Tháng
+          <input id="historyMonth" type="month" class="block rounded border border-outline-variant px-3 py-2 mt-1" />
+        </label>
+        <button id="historyNext" type="button" class="rounded border border-outline-variant px-3 py-2 text-sm" aria-label="Tháng sau">›</button>
+        <button id="historyRefresh" type="button" class="rounded bg-primary text-white px-4 py-2 text-sm font-semibold">Làm mới</button>
+      </div>
+      <div id="historyMonthButtons" class="flex flex-wrap gap-1.5"></div>
+    </div>
+
+    <div id="historyNotice" role="status" aria-live="polite" class="hidden rounded p-3 text-sm"></div>
+
+    <div id="historyMetrics" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3"></div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div class="bg-white rounded-xl shadow-sm p-4 xl:col-span-2">
+        <div class="flex items-center justify-between mb-3">
+          <h2 id="historyCalendarTitle" class="font-bold"></h2>
+          <div class="flex flex-wrap gap-2 text-[11px] text-on-surface-variant">
+            <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1"></span>Có mặt</span>
+            <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 mr-1"></span>Muộn / thiếu ra</span>
+            <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-sky-500 mr-1"></span>Nghỉ</span>
+            <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-slate-300 mr-1"></span>Chưa điểm danh</span>
+          </div>
+        </div>
+        <div id="historyCalendar" class="grid grid-cols-7 gap-1.5"></div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm p-4">
+        <h2 class="font-bold mb-3">Chi tiết ngày</h2>
+        <div id="historyDetail"></div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div class="p-4 border-b flex justify-between items-center gap-3">
+        <h2 class="font-bold">Bảng lịch sử theo ngày</h2>
+        <span id="historyCount" class="text-xs text-on-surface-variant"></span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left whitespace-nowrap">
+          <thead id="historyTableHead" class="bg-surface-container-low text-on-surface-variant"></thead>
+          <tbody id="historyTableBody" class="divide-y"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</body>
+</html>
