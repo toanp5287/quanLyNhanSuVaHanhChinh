@@ -432,7 +432,7 @@ export const initFaceKiosk = () => {
       const permission = await checkDevicePermission("attendance");
       if (!permission.allowed) {
         setScanState("ERROR", permission.message);
-        status("Thiết bị chưa được phép", permission.message, true);
+        status("Thiết bị chưa được cấp phép", permission.message, true, "warn");
         showDeviceBlocked(permission, () => start());
         return;
       }
@@ -703,7 +703,7 @@ export const initFaceKiosk = () => {
       return;
     }
     setScanState("ERROR", permission.message);
-    status("Thiết bị chưa được phép", permission.message, true);
+    status("Thiết bị chưa được cấp phép", permission.message, true, "warn");
     showDeviceBlocked(permission, () => start());
   });
   const cleanup = () => {

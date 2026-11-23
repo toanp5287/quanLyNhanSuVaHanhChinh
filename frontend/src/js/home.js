@@ -1233,7 +1233,7 @@ const enableFaceEnrollCamera = async () => {
   if (startBtn) startBtn.disabled = true;
   const deviceAllowed = await requireDevicePermission("face_enroll", async () => {});
   if (!deviceAllowed) {
-    setFaceEnrollStatus("Thiết bị chưa được phép", "Vui lòng liên hệ Admin để cấp quyền FaceID cho máy này.");
+    setFaceEnrollStatus("Thiết bị chưa được cấp phép", "Máy này chưa được cấp quyền FaceID. Vui lòng liên hệ quản trị viên để được hỗ trợ.");
     if (startBtn) startBtn.disabled = false;
     return;
   }
