@@ -3,6 +3,7 @@ import loginHtml from "./pages/login.html?raw";
 import { initLogin } from "./js/login.js";
 import { initHome, setupShell } from "./js/home.js";
 import { initPermissions } from "./js/permissions.js";
+import { initQuanLyThietBi } from "./js/quan-ly-thiet-bi.js";
 import { initMyProfile } from "./js/my-profile.js";
 import { initChamCong } from "./js/cham-cong.js";
 import { initLichSuChamCong } from "./js/lich-su-cham-cong.js";
@@ -128,6 +129,18 @@ function showPermissions(user) {
   initPermissions(user);
 }
 
+function showDevicesAdmin(user) {
+  if (!user || user.role_id !== "SUPER_ADMIN") {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  mountPage(homeHtml);
+  setupShell(user);
+  initQuanLyThietBi(user);
+}
+
 function showMyProfile(user) {
   if (!user || !hasPermission("ESS.SELF_PROFILE", user)) {
     clearHash();
@@ -236,6 +249,8 @@ function renderRouteView(user) {
     initFaceKiosk();
   } else if (hash === "#/phan-quyen") {
     showPermissions(user);
+  } else if (hash === "#/quan-ly-thiet-bi") {
+    showDevicesAdmin(user);
   } else if (
     hash === "#/so-do-phong-ban" ||
     hash.startsWith("#/so-do-phong-ban/")
@@ -317,6 +332,11 @@ document.addEventListener("click", (event) => {
 
   if (path === "phan-quyen") {
     window.location.hash = "#/phan-quyen";
+    return;
+  }
+
+  if (path === "quan-ly-thiet-bi") {
+    window.location.hash = "#/quan-ly-thiet-bi";
     return;
   }
 

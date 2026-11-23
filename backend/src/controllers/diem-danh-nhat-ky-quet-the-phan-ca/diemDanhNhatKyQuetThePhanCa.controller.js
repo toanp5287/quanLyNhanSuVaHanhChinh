@@ -71,8 +71,10 @@ export const attendanceCheckIn = async (req, res) => {
       challengeToken: req.body?.challengeToken,
       liveness: req.body?.liveness,
       snapshot: req.body?.snapshot,
-      ip: req.ip,
+      ip: req.clientIp || req.ip,
       device_info: req.body?.device_info || req.headers["x-device-id"] || null,
+      device_id: req.authorizedDevice?.id || null,
+      client_ip: req.clientIp || null,
       user_id: req.user?.user_id,
       note: req.body?.note,
     });
@@ -123,8 +125,10 @@ export const attendanceCheckOut = async (req, res) => {
       challengeToken: req.body?.challengeToken,
       liveness: req.body?.liveness,
       snapshot: req.body?.snapshot,
-      ip: req.ip,
+      ip: req.clientIp || req.ip,
       device_info: req.body?.device_info || req.headers["x-device-id"] || null,
+      device_id: req.authorizedDevice?.id || null,
+      client_ip: req.clientIp || null,
       user_id: req.user?.user_id,
       note: req.body?.note,
     });

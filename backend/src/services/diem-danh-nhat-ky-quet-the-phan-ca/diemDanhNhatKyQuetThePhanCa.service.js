@@ -1008,19 +1008,34 @@ const insertRawScan = async (
   faceScore = null,
 ) => {
   const withUser = await hasColumn(connection, "attendance_logs", "user_id");
+  const withDevice = await hasColumn(connection, "attendance_logs", "device_id");
+  const withClientIp = await hasColumn(connection, "attendance_logs", "client_ip");
+  const columns = ["employee_id"];
+  const values = [employeeId];
+  const placeholders = ["?"];
+  if (withUser) {
+    columns.push("user_id");
+    values.push(account.user_id);
+    placeholders.push("?");
+  }
+  columns.push("scan_time");
+  placeholders.push("NOW()");
+  columns.push("scan_type", "face_score", "ip_address", "device_info", "is_valid", "reject_reason");
+  values.push(scanType, faceScore, meta.ip || null, meta.device_info || null);
+  placeholders.push("?", "?", "?", "?", "1", "NULL");
+  if (withDevice) {
+    columns.push("device_id");
+    values.push(meta.device_id || null);
+    placeholders.push("?");
+  }
+  if (withClientIp) {
+    columns.push("client_ip");
+    values.push(meta.client_ip || null);
+    placeholders.push("?");
+  }
   await connection.query(
-    `INSERT INTO attendance_logs
-      (employee_id, ${withUser ? "user_id, " : ""}scan_time, scan_type,
-       face_score, ip_address, device_info, is_valid, reject_reason)
-     VALUES (?, ${withUser ? "?, " : ""}NOW(), ?, ?, ?, ?, 1, NULL)`,
-    [
-      employeeId,
-      ...(withUser ? [account.user_id] : []),
-      scanType,
-      faceScore,
-      meta.ip || null,
-      meta.device_info || null,
-    ],
+    `INSERT INTO attendance_logs (${columns.join(", ")}) VALUES (${placeholders.join(", ")})`,
+    values,
   );
 };
 
@@ -1622,6 +1637,8 @@ export const kioskAttendance = async (
   deviceInfo = null,
   captureMeta = null,
   attendancePayload = null,
+  authorizedDeviceId = null,
+  clientIp = null,
 ) => {
   if (!["check-in", "check-out", "auto"].includes(action))
     throw attendanceError("Thao tác chấm công không hợp lệ");
@@ -1654,6 +1671,8 @@ export const kioskAttendance = async (
     {
       ip,
       device_info: deviceInfo,
+      device_id: authorizedDeviceId,
+      client_ip: clientIp,
       note: `Human FaceID zero-action; similarity=${(match.score * 100).toFixed(1)}%; frames=${match.perFrame.map((score) => (score * 100).toFixed(1)).join("/")}`,
       face_score: match.score,
     },

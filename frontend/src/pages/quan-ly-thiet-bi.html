@@ -1,0 +1,102 @@
+<div id="deviceWorkspace" class="flex flex-col gap-space-lg">
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-space-md">
+    <div>
+      <p class="font-body-sm text-body-sm text-on-surface-variant">Hệ thống & Cấu hình / Quản lý thiết bị & Mạng</p>
+      <h1 class="font-headline-sm text-headline-sm font-bold text-on-surface mt-1">Quản lý thiết bị & Mạng</h1>
+      <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Cấp phép máy điểm danh, kiểm soát quyền kích hoạt FaceID và khóa IP văn phòng.</p>
+    </div>
+    <button id="deviceRefreshBtn" type="button" class="h-10 px-space-md rounded-lg bg-primary text-white font-label-lg text-label-lg hover:opacity-90 flex items-center gap-2 self-start">
+      <span class="material-symbols-outlined text-[18px]">refresh</span>Làm mới dữ liệu
+    </button>
+  </div>
+
+  <div id="deviceNotice" class="hidden rounded-lg p-3 text-sm"></div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-space-lg">
+    <section class="bg-white rounded-xl shadow-sm p-space-lg">
+      <div class="flex items-start gap-space-md">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-primary-container text-on-primary-container">
+          <span class="material-symbols-outlined text-[22px]">devices</span>
+        </span>
+        <div>
+          <h2 class="font-headline-sm text-headline-sm font-semibold text-on-surface">Cấp phép thiết bị hiện tại</h2>
+          <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Thiết bị này sẽ nhận một Device Token duy nhất qua cookie HttpOnly.</p>
+        </div>
+      </div>
+      <p id="deviceCurrentStatus" class="mt-space-md rounded bg-surface-container-low px-3 py-2 font-body-sm text-body-sm text-on-surface-variant">Đang kiểm tra trạng thái thiết bị...</p>
+      <div class="mt-space-md grid grid-cols-1 gap-space-md">
+        <label class="flex flex-col gap-1">
+          <span class="font-label-lg text-label-lg text-on-surface-variant">Tên máy</span>
+          <input id="deviceName" type="text" maxlength="100" placeholder="VD: Kiosk lễ tân 01" class="h-10 rounded border border-outline-variant px-3 font-body-sm text-body-sm text-on-surface bg-surface-container-lowest focus:border-primary outline-none" />
+        </label>
+        <div class="flex flex-col gap-2">
+          <label class="flex items-center gap-2 font-body-sm text-body-sm text-on-surface">
+            <input id="deviceAllowAttendance" type="checkbox" checked class="h-4 w-4 accent-[var(--md-sys-color-primary)]" />Quyền Điểm danh
+          </label>
+          <label class="flex items-center gap-2 font-body-sm text-body-sm text-on-surface">
+            <input id="deviceAllowFaceEnroll" type="checkbox" class="h-4 w-4 accent-[var(--md-sys-color-primary)]" />Quyền Kích hoạt Face ID
+          </label>
+        </div>
+        <label class="flex flex-col gap-1">
+          <span class="font-label-lg text-label-lg text-on-surface-variant">Ghi chú MAC (tùy chọn)</span>
+          <input id="deviceMacNote" type="text" maxlength="32" placeholder="VD: AA:BB:CC:DD:EE:FF" class="h-10 rounded border border-outline-variant px-3 font-body-sm text-body-sm text-on-surface bg-surface-container-lowest focus:border-primary outline-none" />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="font-label-lg text-label-lg text-on-surface-variant">Ghi chú (tùy chọn)</span>
+          <input id="deviceNote" type="text" maxlength="255" placeholder="Vị trí, người quản lý..." class="h-10 rounded border border-outline-variant px-3 font-body-sm text-body-sm text-on-surface bg-surface-container-lowest focus:border-primary outline-none" />
+        </label>
+        <button id="deviceApproveBtn" type="button" class="h-10 rounded-lg bg-primary text-white font-label-lg text-label-lg hover:opacity-90">Cấp phép cho máy này</button>
+      </div>
+    </section>
+
+    <section class="bg-white rounded-xl shadow-sm p-space-lg">
+      <div class="flex items-start gap-space-md">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-tertiary-container text-on-tertiary-container">
+          <span class="material-symbols-outlined text-[22px]">public</span>
+        </span>
+        <div>
+          <h2 class="font-headline-sm text-headline-sm font-semibold text-on-surface">Cấu hình khóa IP văn phòng</h2>
+          <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">IP hiện tại của bạn (để đối soát): <span id="deviceCurrentIp" class="font-semibold text-on-surface">—</span></p>
+        </div>
+      </div>
+      <div class="mt-space-md flex flex-wrap gap-2">
+        <button id="deviceAddIpBtn" type="button" class="h-9 px-space-md rounded bg-secondary-container text-on-secondary-container font-label-lg text-label-lg hover:opacity-90">Thêm IP mạng hiện tại</button>
+        <button id="deviceRefreshIpBtn" type="button" class="h-9 px-space-md rounded border border-outline-variant text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high">Cập nhật IP</button>
+      </div>
+      <div id="deviceIpsList" class="mt-space-md flex flex-col gap-2"></div>
+      <label class="mt-space-lg flex items-center justify-between gap-space-md rounded bg-surface-container-low px-3 py-3">
+        <span>
+          <span class="block font-body-sm text-body-sm font-semibold text-on-surface">Bắt buộc đúng IP văn phòng (<code>require_ip_check</code>)</span>
+          <span class="block font-body-sm text-body-sm text-on-surface-variant">Khi bật, cần ít nhất 1 IP trong danh sách.</span>
+        </span>
+        <input id="deviceRequireIpCheck" type="checkbox" class="h-5 w-5 accent-[var(--md-sys-color-primary)]" />
+      </label>
+      <button id="deviceSaveSettingsBtn" type="button" class="mt-space-md h-10 w-full rounded-lg bg-primary text-white font-label-lg text-label-lg hover:opacity-90">Lưu cấu hình IP</button>
+    </section>
+  </div>
+
+  <section class="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div class="p-space-lg border-b border-outline-variant">
+      <h2 class="font-headline-sm text-headline-sm font-semibold text-on-surface">Danh sách thiết bị được quản lý</h2>
+      <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Bật/tắt quyền hoặc khóa thiết bị. Token bị thu hồi ngay khi khóa/xóa.</p>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead class="bg-surface-container-low text-on-surface-variant">
+          <tr>
+            <th class="py-3 px-3 font-label-lg text-label-lg">Tên máy</th>
+            <th class="py-3 px-3 font-label-lg text-label-lg">Điểm danh</th>
+            <th class="py-3 px-3 font-label-lg text-label-lg">Face ID</th>
+            <th class="py-3 px-3 font-label-lg text-label-lg">Trạng thái</th>
+            <th class="py-3 px-3 font-label-lg text-label-lg">Lần dùng gần nhất</th>
+            <th class="py-3 px-3 font-label-lg text-label-lg">IP cuối</th>
+            <th class="py-3 px-3 font-label-lg text-label-lg"></th>
+          </tr>
+        </thead>
+        <tbody id="devicesTableBody" class="divide-y divide-outline-variant">
+          <tr><td colspan="7" class="py-4 px-3 text-center text-on-surface-variant">Đang tải danh sách thiết bị...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

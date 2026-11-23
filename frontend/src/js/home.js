@@ -6,6 +6,7 @@ import {
   updateCurrentUser,
 } from "../services/auth.service.js";
 import api from "../services/api.js";
+import { requireDevicePermission } from "../services/deviceSecurity.js";
 import { Human } from "@vladmandic/human";
 
 const ROLE_LABELS = {
@@ -423,18 +424,23 @@ const applyNavPermissions = (user) => {
 
 const ensurePermissionsNav = (user) => {
   const nav = document.querySelector("aside nav");
-  if (!nav || nav.querySelector('[data-path="phan-quyen"]')) return;
+  if (!nav || user?.role_id !== "SUPER_ADMIN") return;
 
-  if (user.role_id !== "SUPER_ADMIN") return;
-
-  nav.insertAdjacentHTML(
-    "beforeend",
-    `
-      <a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="phan-quyen" href="#" title="Phân quyền" data-tooltip="Phân quyền" aria-label="Phân quyền">
-        <span class="material-symbols-outlined text-[20px]">admin_panel_settings</span>
+  const adminLinks = [
+    { path: "phan-quyen", title: "Phân quyền", icon: "admin_panel_settings" },
+    { path: "quan-ly-thiet-bi", title: "Thiết bị & Mạng", icon: "router" },
+  ];
+  adminLinks.forEach((link) => {
+    if (nav.querySelector(`[data-path="${link.path}"]`)) return;
+    nav.insertAdjacentHTML(
+      "beforeend",
+      `
+      <a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="${link.path}" href="#" title="${link.title}" data-tooltip="${link.title}" aria-label="${link.title}">
+        <span class="material-symbols-outlined text-[20px]">${link.icon}</span>
       </a>
     `,
-  );
+    );
+  });
 };
 
 const showToast = (message, options = {}) => {
@@ -1225,6 +1231,12 @@ const enableFaceEnrollCamera = async () => {
   video?.classList.remove("hidden");
   setFaceEnrollStatus("Đang mở camera...", "Cho phép trình duyệt sử dụng webcam nếu được hỏi.");
   if (startBtn) startBtn.disabled = true;
+  const deviceAllowed = await requireDevicePermission("face_enroll", async () => {});
+  if (!deviceAllowed) {
+    setFaceEnrollStatus("Thiết bị chưa được phép", "Vui lòng liên hệ Admin để cấp quyền FaceID cho máy này.");
+    if (startBtn) startBtn.disabled = false;
+    return;
+  }
   try {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       throw new Error("Camera cần trang HTTPS hoặc localhost và trình duyệt hỗ trợ webcam.");
@@ -1279,6 +1291,8 @@ export const openFaceEnrollModal = async () => {
     showToast(`Tài khoản đã kích hoạt FaceID${enrolledAt}. Liên hệ Admin/HR nếu cần cấp lại.`, { duration: 5500 });
     return;
   }
+  const deviceAllowed = await requireDevicePermission("face_enroll", async () => {});
+  if (!deviceAllowed) return;
   void ensureEnrollFaceModels().catch(() => undefined);
 
   modal.classList.remove("hidden");
