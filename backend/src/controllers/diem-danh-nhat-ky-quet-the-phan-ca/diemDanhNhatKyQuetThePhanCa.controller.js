@@ -23,6 +23,7 @@ import {
   updateShiftAssignment,
   updateWorkShift,
   validateShiftPayload,
+  logAttendanceFraud,
 } from "../../services/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 import {
   deletePolicy,
@@ -35,10 +36,20 @@ import {
 const getEmployeeId = (req) => req.user?.employee_id;
 
 const respondError = (res, error, fallback) => {
+  if (error.fraud)
+    logAttendanceFraud({
+      reason: error.code || "ATTENDANCE_FRAUD",
+      scores: error.scores || null,
+      ip: res.req?.ip,
+      deviceId: res.req?.headers?.["x-device-id"] || null,
+      path: res.req?.originalUrl,
+      userAgent: res.req?.headers?.["user-agent"] || null,
+    });
   if (!error.status) console.error(fallback, error);
   return res.status(error.status || 500).json({
     success: false,
     message: error.status ? error.message : fallback,
+    code: error.code || null,
   });
 };
 
@@ -57,6 +68,9 @@ export const attendanceCheckIn = async (req, res) => {
     const result = await checkIn(employeeId, {
       embeddings: req.body?.embeddings,
       blink_verified: req.body?.blink_verified,
+      challengeToken: req.body?.challengeToken,
+      liveness: req.body?.liveness,
+      snapshot: req.body?.snapshot,
       ip: req.ip,
       device_info: req.body?.device_info || req.headers["x-device-id"] || null,
       user_id: req.user?.user_id,
@@ -106,6 +120,9 @@ export const attendanceCheckOut = async (req, res) => {
     const result = await checkOut(employeeId, {
       embeddings: req.body?.embeddings,
       blink_verified: req.body?.blink_verified,
+      challengeToken: req.body?.challengeToken,
+      liveness: req.body?.liveness,
+      snapshot: req.body?.snapshot,
       ip: req.ip,
       device_info: req.body?.device_info || req.headers["x-device-id"] || null,
       user_id: req.user?.user_id,
