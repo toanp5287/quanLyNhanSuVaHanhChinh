@@ -11,12 +11,11 @@ import {
 } from "../services/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 import {
-  requireAllowedAttendanceDevice,
-  requireAllowedAttendanceIp,
   requireAnyPermission,
   requirePermission,
   verifyToken,
 } from "../middlewares/auth.middleware.js";
+import { verifyAuthorizedDevice } from "../middlewares/deviceSecurity.middleware.js";
 import {
   approveExplanationHandler,
   attendanceCheckIn,
@@ -93,8 +92,7 @@ const faceEnrollLimiter = createFailureLimiter(
 
 router.get(
   "/challenge",
-  requireAllowedAttendanceIp,
-  requireAllowedAttendanceDevice,
+  verifyAuthorizedDevice("attendance"),
   async (req, res) => {
     res.set("Cache-Control", "no-store");
     return res.json({ success: true, data: createAttendanceChallenge() });
@@ -103,8 +101,7 @@ router.get(
 
 router.post(
   "/kiosk/:action",
-  requireAllowedAttendanceIp,
-  requireAllowedAttendanceDevice,
+  verifyAuthorizedDevice("attendance"),
   kioskLimiter,
   async (req, res) => {
     res.set("Cache-Control", "no-store");
@@ -112,10 +109,12 @@ router.post(
       const data = await kioskAttendance(
         req.params.action,
         req.body?.embeddings,
-        req.ip,
+        req.clientIp || req.ip,
         req.headers["x-device-id"] || null,
         req.body?.capture,
         req.body || {},
+        req.authorizedDevice?.id || null,
+        req.clientIp || null,
       );
       res.json({
         success: true,
@@ -167,33 +166,34 @@ router.get("/today", requirePermission("ESS.SELF_PROFILE"), attendanceToday);
 router.post(
   "/verify-face-password",
   requirePermission("ESS.SELF_PROFILE"),
+  verifyAuthorizedDevice("face_enroll"),
   faceAuthLimiter,
   verifyMyFacePassword,
 );
 router.post(
   "/check-face-owner",
   requirePermission("ESS.SELF_PROFILE"),
+  verifyAuthorizedDevice("face_enroll"),
   faceAuthLimiter,
   checkMyFaceOwner,
 );
 router.post(
   "/register-face",
   requirePermission("ESS.SELF_PROFILE"),
+  verifyAuthorizedDevice("face_enroll"),
   faceEnrollLimiter,
   updateMyFaceDescriptor,
 );
 router.post(
   "/check-in",
   requirePermission("ESS.SELF_PROFILE"),
-  requireAllowedAttendanceIp,
-  requireAllowedAttendanceDevice,
+  verifyAuthorizedDevice("attendance"),
   attendanceCheckIn,
 );
 router.post(
   "/check-out",
   requirePermission("ESS.SELF_PROFILE"),
-  requireAllowedAttendanceIp,
-  requireAllowedAttendanceDevice,
+  verifyAuthorizedDevice("attendance"),
   attendanceCheckOut,
 );
 

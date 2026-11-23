@@ -19,6 +19,18 @@ import {
   resolveFaceAlertsForEmployee,
 } from "../notifications/notification.service.js";
 
+const hasEmployeeColumn = async (connection, columnName) => {
+  const [rows] = await connection.query(
+    `SELECT COUNT(*) AS total
+       FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'employees'
+        AND COLUMN_NAME = ?`,
+    [columnName],
+  );
+  return Number(rows[0]?.total) > 0;
+};
+
 const EMPLOYEE_QUERY = `
   SELECT
     e.id,
@@ -295,7 +307,7 @@ const normalizeEnrollmentSamples = (values, blinkVerified, capture) => {
 const enrollmentError = (message, status, errorCode, extra = {}) =>
   Object.assign(attendanceError(message, status), { error_code: errorCode, ...extra });
 
-export const updateSelfFaceDescriptor = async (employeeId, values, password, blinkVerified, capture = null) => {
+export const updateSelfFaceDescriptor = async (employeeId, values, password, blinkVerified, capture = null, securityMeta = {}) => {
   if (!employeeId) return null;
   const prepared = normalizeEnrollmentSamples(values, blinkVerified, capture);
   if (typeof password !== "string" || !password)
@@ -372,11 +384,26 @@ export const updateSelfFaceDescriptor = async (employeeId, values, password, bli
             "SIMILAR_FACE_REVIEW_REQUIRED",
           );
 
+        const withDevice = await hasEmployeeColumn(connection, "device_id");
+        const withClientIp = await hasEmployeeColumn(connection, "client_ip");
+        const sets = [
+          "face_descriptor = ?",
+          "face_status = 'ACTIVE'",
+          "face_enrolled_at = NOW()",
+        ];
+        const params = [descriptorJson];
+        if (withDevice) {
+          sets.push("device_id = ?");
+          params.push(securityMeta.device_id || null);
+        }
+        if (withClientIp) {
+          sets.push("client_ip = ?");
+          params.push(securityMeta.client_ip || null);
+        }
+        params.push(employeeId);
         const [result] = await connection.query(
-          `UPDATE employees
-           SET face_descriptor = ?, face_status = 'ACTIVE', face_enrolled_at = NOW()
-           WHERE id = ? AND face_status = 'UNREGISTERED'`,
-          [descriptorJson, employeeId],
+          `UPDATE employees SET ${sets.join(", ")} WHERE id = ? AND face_status = 'UNREGISTERED'`,
+          params,
         );
         if (result.affectedRows !== 1)
           throw enrollmentError("Trạng thái FaceID vừa thay đổi. Vui lòng tải lại trang và thử lại.", 409, "FACE_STATUS_CONFLICT");

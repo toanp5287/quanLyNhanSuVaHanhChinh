@@ -1,5 +1,10 @@
 import api from "../services/api.js";
 import {
+  checkDevicePermission,
+  hideDeviceBlocked,
+  showDeviceBlocked,
+} from "../services/deviceSecurity.js";
+import {
   ATTENDANCE_CAMERA_CONFIG,
   ensureAttendanceFaceModels,
   openAttendanceCamera,
@@ -41,13 +46,13 @@ export const initFaceKiosk = () => {
             </div>
             <div>
               <p class="text-sm font-semibold text-white">HRM FaceID</p>
-              <p class="text-xs text-slate-400">?i?m danh nhanh, kh?ng c?n thao t?c ph?c t?p</p>
+              <p class="text-xs text-slate-400">Điểm danh nhanh, không cần thao tác phức tạp</p>
             </div>
           </div>
           <div class="flex items-center gap-2">
             <time id="kioskClock" class="hidden rounded-full bg-white/5 px-3 py-1 text-xs text-slate-300 sm:block"></time>
             <button id="kioskDebugToggle" type="button" class="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:bg-white/5">Debug</button>
-            <a href="#/dang-nhap" class="rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/15">??ng nh?p</a>
+            <a href="#/dang-nhap" class="rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/15">Đăng nhập</a>
           </div>
         </div>
       </header>
@@ -58,9 +63,9 @@ export const initFaceKiosk = () => {
             <div class="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
               <div class="flex items-center gap-2">
                 <span id="kioskStateDot" class="h-2.5 w-2.5 rounded-full bg-slate-500"></span>
-                <span id="kioskCameraLabel" class="text-sm font-medium text-slate-200">Camera ch?a b?t</span>
+                <span id="kioskCameraLabel" class="text-sm font-medium text-slate-200">Camera chưa bật</span>
               </div>
-              <span id="kioskState" class="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">S?n s?ng</span>
+              <span id="kioskState" class="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">Sẵn sàng</span>
             </div>
 
             <div class="relative aspect-[4/3] bg-slate-950 sm:aspect-[16/10] lg:aspect-[4/3]">
@@ -69,23 +74,23 @@ export const initFaceKiosk = () => {
               <div id="kioskOval" class="pointer-events-none absolute inset-[12%] rounded-[38%] border-[3px] transition-all duration-300 sm:inset-[14%]" style="border-color:#64748b;box-shadow:0 0 0 9999px rgba(2,6,23,0.12)"></div>
               <div class="absolute inset-x-0 bottom-0 p-4 sm:p-5">
                 <div class="mx-auto max-w-xl rounded-2xl bg-slate-950/70 px-4 py-3 text-center backdrop-blur">
-                  <p id="kioskCameraHint" class="text-sm font-medium text-white sm:text-base">B?t camera, nh?n th?ng v?o khung ?? ?i?m danh</p>
-                  <p class="mt-1 text-xs text-slate-300">Ch? c?n 1 ng??i trong khung, gi? y?n kho?ng 1 gi?y.</p>
+                  <p id="kioskCameraHint" class="text-sm font-medium text-white sm:text-base">Bật camera, nhìn thẳng vào khung để điểm danh</p>
+                  <p class="mt-1 text-xs text-slate-300">Chỉ cần 1 người trong khung, giữ yên khoảng 1 giây.</p>
                 </div>
               </div>
             </div>
 
             <div class="grid gap-2 p-4 sm:grid-cols-2">
               <button id="kioskCamera" class="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">
-                <span class="material-symbols-outlined text-[20px]">videocam</span>B?t camera
+                <span class="material-symbols-outlined text-[20px]">videocam</span>Bật camera
               </button>
               <button id="kioskStop" class="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-40">
-                <span class="material-symbols-outlined text-[20px]">videocam_off</span>T?t camera
+                <span class="material-symbols-outlined text-[20px]">videocam_off</span>Tắt camera
               </button>
             </div>
 
             <div id="kioskDebugPanel" class="hidden border-t border-white/10 bg-slate-950/50 px-4 py-3">
-              <p class="text-xs font-medium text-slate-400">Debug qu?t</p>
+              <p class="text-xs font-medium text-slate-400">Debug quét</p>
               <pre id="kioskDebugContent" class="mt-2 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-slate-300"></pre>
             </div>
           </section>
@@ -97,9 +102,9 @@ export const initFaceKiosk = () => {
                   <span class="material-symbols-outlined text-[24px]">schedule</span>
                 </div>
                 <div class="min-w-0 flex-1">
-                  <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">Tr?ng th?i</p>
-                  <h2 id="kioskResultTitle" class="mt-1 text-xl font-semibold text-white">S?n s?ng ?i?m danh</h2>
-                  <p id="kioskResultText" class="mt-2 text-sm leading-6 text-slate-300">B?t camera, sau ?? b?m m?t n?t ?i?m danh. H? th?ng s? t? nh?n di?n.</p>
+                  <p class="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">Trạng thái</p>
+                  <h2 id="kioskResultTitle" class="mt-1 text-xl font-semibold text-white">Sẵn sàng điểm danh</h2>
+                  <p id="kioskResultText" class="mt-2 text-sm leading-6 text-slate-300">Bật camera, sau đó bấm một nút điểm danh. Hệ thống sẽ tự nhận diện.</p>
                 </div>
               </div>
               <div id="kioskIdentity" class="mt-4 space-y-1 text-sm text-slate-200"></div>
@@ -107,15 +112,15 @@ export const initFaceKiosk = () => {
             </div>
 
             <div class="rounded-3xl border border-white/10 bg-slate-900 p-5">
-              <p class="text-sm font-semibold text-white">Ch?n ?i?m danh</p>
-              <p class="mt-1 text-xs leading-5 text-slate-400">Sau khi camera s?n s?ng, ch?n ??ng thao t?c. H?u h?t tr??ng h?p d?ng n?t t? ??ng.</p>
+              <p class="text-sm font-semibold text-white">Chọn điểm danh</p>
+              <p class="mt-1 text-xs leading-5 text-slate-400">Sau khi camera sẵn sàng, chọn đúng thao tác. Hầu hết trường hợp dùng nút tự động.</p>
               <div class="mt-4 grid gap-3">
                 <button id="kioskAuto" class="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 text-base font-semibold text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40">
-                  <span class="material-symbols-outlined text-[22px]">fingerprint</span>Qu?t FaceID t? ??ng
+                  <span class="material-symbols-outlined text-[22px]">fingerprint</span>Quét FaceID tự động
                 </button>
                 <div class="grid grid-cols-2 gap-3">
                   <button id="kioskCheckIn" class="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-sky-500 px-4 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40">
-                    <span class="material-symbols-outlined text-[20px]">login</span>V?o ca
+                    <span class="material-symbols-outlined text-[20px]">login</span>Vào ca
                   </button>
                   <button id="kioskCheckOut" class="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-amber-400 px-4 text-sm font-semibold text-slate-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40">
                     <span class="material-symbols-outlined text-[20px]">logout</span>Tan ca
@@ -127,24 +132,24 @@ export const initFaceKiosk = () => {
                 <p id="kioskConfirmText" class="text-sm font-medium text-amber-100"></p>
                 <p id="kioskConfirmCountdown" class="mt-1 text-xs text-amber-200/80"></p>
                 <div class="mt-3 flex gap-2">
-                  <button id="kioskConfirmOk" class="h-10 flex-1 rounded-xl bg-amber-400 text-sm font-semibold text-slate-950 disabled:opacity-40" disabled>X?c nh?n</button>
-                  <button id="kioskConfirmCancel" class="h-10 flex-1 rounded-xl border border-white/10 text-sm font-medium text-white hover:bg-white/5">H?y</button>
+                  <button id="kioskConfirmOk" class="h-10 flex-1 rounded-xl bg-amber-400 text-sm font-semibold text-slate-950 disabled:opacity-40" disabled>Xác nhận</button>
+                  <button id="kioskConfirmCancel" class="h-10 flex-1 rounded-xl border border-white/10 text-sm font-medium text-white hover:bg-white/5">Hủy</button>
                 </div>
               </div>
             </div>
 
             <details class="rounded-3xl border border-white/10 bg-slate-900/70 p-4">
-              <summary class="cursor-pointer list-none text-sm font-medium text-slate-300">Chi ti?t k? thu?t</summary>
+              <summary class="cursor-pointer list-none text-sm font-medium text-slate-300">Chi tiết kỹ thuật</summary>
               <dl class="mt-3 space-y-2 text-xs text-slate-400">
-                <div class="flex justify-between gap-3"><dt>Khu?n m?t</dt><dd id="kioskSubject" class="text-right text-slate-200">Ch?a ph?t hi?n</dd></div>
-                <div class="flex justify-between gap-3"><dt>Ch?t l??ng</dt><dd id="kioskQuality" class="text-right text-slate-200">Ch?a ki?m tra</dd></div>
-                <div class="flex justify-between gap-3"><dt>Ki?m tra s?ng</dt><dd id="kioskLiveness" class="text-right text-slate-200">Ch?a th?c hi?n</dd></div>
-                <div class="flex justify-between gap-3"><dt>Nh?n di?n</dt><dd id="kioskRecognition" class="text-right text-slate-200">Ch?a qu?t</dd></div>
-                <div class="flex justify-between gap-3"><dt>Ch?m c?ng</dt><dd id="kioskAttendance" class="text-right text-slate-200">Ch?a ghi nh?n</dd></div>
+                <div class="flex justify-between gap-3"><dt>Khuôn mặt</dt><dd id="kioskSubject" class="text-right text-slate-200">Chưa phát hiện</dd></div>
+                <div class="flex justify-between gap-3"><dt>Chất lượng</dt><dd id="kioskQuality" class="text-right text-slate-200">Chưa kiểm tra</dd></div>
+                <div class="flex justify-between gap-3"><dt>Kiểm tra sống</dt><dd id="kioskLiveness" class="text-right text-slate-200">Chưa thực hiện</dd></div>
+                <div class="flex justify-between gap-3"><dt>Nhận diện</dt><dd id="kioskRecognition" class="text-right text-slate-200">Chưa quét</dd></div>
+                <div class="flex justify-between gap-3"><dt>Chấm công</dt><dd id="kioskAttendance" class="text-right text-slate-200">Chưa ghi nhận</dd></div>
               </dl>
             </details>
 
-            <p class="px-1 text-xs leading-5 text-slate-500">Ch?a c? FaceID? ??ng nh?p h? s? c? nh?n ?? ??ng k? tr??c khi ?i?m danh.</p>
+            <p class="px-1 text-xs leading-5 text-slate-500">Chưa có FaceID? Đăng nhập hồ sơ cá nhân để đăng ký trước khi điểm danh.</p>
           </section>
         </div>
       </div>
@@ -420,6 +425,20 @@ export const initFaceKiosk = () => {
     try {
       status(
         "Đang chuẩn bị",
+        "Đang kiểm tra quyền thiết bị...",
+        false,
+        "scan",
+      );
+      const permission = await checkDevicePermission("attendance");
+      if (!permission.allowed) {
+        setScanState("ERROR", permission.message);
+        status("Thiết bị chưa được phép", permission.message, true);
+        showDeviceBlocked(permission, () => start());
+        return;
+      }
+      hideDeviceBlocked();
+      status(
+        "Đang mở camera",
         "Đang mở camera và tải mô hình nhận diện khuôn mặt...",
         false,
         "scan",
@@ -678,7 +697,17 @@ export const initFaceKiosk = () => {
   setDebugVisible(debugVisible);
   setScanState("IDLE", "Bật camera để bắt đầu");
   controls();
+  void checkDevicePermission("attendance").then((permission) => {
+    if (!active() || permission.allowed) {
+      hideDeviceBlocked();
+      return;
+    }
+    setScanState("ERROR", permission.message);
+    status("Thiết bị chưa được phép", permission.message, true);
+    showDeviceBlocked(permission, () => start());
+  });
   const cleanup = () => {
+    hideDeviceBlocked();
     stop();
     clearInterval(clock);
     clearInterval(challengeTimer);

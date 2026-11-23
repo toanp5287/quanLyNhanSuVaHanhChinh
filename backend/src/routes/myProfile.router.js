@@ -4,6 +4,7 @@ import {
   requirePermission,
   verifyToken,
 } from "../middlewares/auth.middleware.js";
+import { verifyAuthorizedDevice } from "../middlewares/deviceSecurity.middleware.js";
 import {
   getMyProfile,
   resetMyFaceDescriptor,
@@ -19,7 +20,15 @@ routerMyProfile.use(verifyToken, requirePermission("ESS.SELF_PROFILE"));
 routerMyProfile.get("/", getMyProfile);
 routerMyProfile.put("/contact", updateMyContact);
 routerMyProfile.put("/password", updateMyPassword);
-routerMyProfile.put("/face-descriptor", updateMyFaceDescriptor);
-routerMyProfile.delete("/face-descriptor", resetMyFaceDescriptor);
+routerMyProfile.put(
+  "/face-descriptor",
+  verifyAuthorizedDevice("face_enroll"),
+  updateMyFaceDescriptor,
+);
+routerMyProfile.delete(
+  "/face-descriptor",
+  verifyAuthorizedDevice("face_enroll"),
+  resetMyFaceDescriptor,
+);
 
 export default routerMyProfile;
