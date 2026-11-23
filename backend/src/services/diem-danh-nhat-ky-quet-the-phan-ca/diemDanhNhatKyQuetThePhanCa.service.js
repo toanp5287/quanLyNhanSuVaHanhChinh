@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { db } from "../../config/database.js";
 import { assertCanApprove, buildEmployeeScope } from "../../utils/helper.js";
 import { recalculateEmployeeMonth } from "../tong-hop-chot-cong/tongHopChotCong.service.js";
@@ -16,6 +17,58 @@ import {
 
 export const attendanceError = (message, status = 400) =>
   Object.assign(new Error(message), { status });
+
+const ATTENDANCE_CHALLENGE_TTL_MS = 30000;
+const attendanceChallenges = new Map();
+
+export const ATTENDANCE_LIVENESS_CONFIG = Object.freeze({
+  realMedianMin: 0.55,
+  liveMedianMin: 0.5,
+  staticVectorMax: 0.9988,
+  unstableVectorMin: 0.76,
+  margin: 0.08,
+});
+
+const fraudError = (code, message, scores = null, status = 403) =>
+  Object.assign(attendanceError(message, status), { code, fraud: true, scores });
+
+export const logAttendanceFraud = ({ reason, scores = null, ip = null, deviceId = null, path = null, userAgent = null }) => {
+  console.warn("[ATTENDANCE_FRAUD]", JSON.stringify({
+    reason: reason || "UNKNOWN",
+    scores,
+    ip,
+    deviceId,
+    path,
+    userAgent,
+    timestamp: new Date().toISOString(),
+  }));
+};
+
+export const createAttendanceChallenge = () => {
+  const now = Date.now();
+  for (const [token, challenge] of attendanceChallenges)
+    if (challenge.expiresAt <= now) attendanceChallenges.delete(token);
+  const token = randomBytes(24).toString("hex");
+  const challenge = {
+    token,
+    expiresAt: now + ATTENDANCE_CHALLENGE_TTL_MS,
+  };
+  attendanceChallenges.set(token, challenge);
+  return {
+    challengeToken: token,
+    expiresIn: ATTENDANCE_CHALLENGE_TTL_MS / 1000,
+  };
+};
+
+export const consumeAttendanceChallenge = (token) => {
+  const challenge = attendanceChallenges.get(String(token || ""));
+  if (!challenge)
+    throw fraudError("CHALLENGE_INVALID", "Phiên xác thực không hợp lệ hoặc đã được sử dụng");
+  attendanceChallenges.delete(String(token));
+  if (challenge.expiresAt <= Date.now())
+    throw fraudError("CHALLENGE_EXPIRED", "Phiên xác thực đã hết hạn. Vui lòng quét lại");
+  return challenge;
+};
 
 const columnCache = new Map();
 let workShiftSchemaPromise;
@@ -132,6 +185,16 @@ export const FACE_STORAGE_MODEL = "human-faceres1024-subjectlock-v2";
 export const FACE_MIN_PASS_RATIO = 0.8;
 export const FACE_AMBIGUITY_MARGIN = 0.06;
 export const FACE_CAPTURE_MODEL = "human-faceres1024-subjectlock-v3";
+export const FACE_ENROLLMENT_CONFIG = Object.freeze({
+  sampleCount: 5,
+  vectorDimension: 1024,
+  duplicateHardThreshold: 0.72,
+  duplicateWarnThreshold: 0.64,
+  intraMin: 0.84,
+  staticSampleMax: 0.9988,
+  minReal: 0.72,
+  minLive: 0.68,
+});
 const CAPTURE_MIN = {
   score: 0.85,
   real: 0.7,
@@ -172,7 +235,8 @@ const assertCaptureMetadata = (capture, total, options = {}) => {
       Number(liveness.blink_count) < 1)
   )
     throw attendanceError("Chưa xác thực chớp mắt. Vui lòng quét lại.", 400);
-  assertMin(subject.stable_frames, CAPTURE_MIN.stableFrames, "Thời gian đứng yên");
+  if (options.liveness_enabled !== false)
+    assertMin(subject.stable_frames, CAPTURE_MIN.stableFrames, "Thời gian đứng yên");
   if (!Number.isFinite(Number(subject.max_speed)) || Number(subject.max_speed) > CAPTURE_MIN.maxSpeed)
     throw attendanceError("Người quét di chuyển quá nhiều. Vui lòng đứng yên và quét lại.", 400);
   if (Number(capture.samples) !== Number(total))
@@ -287,6 +351,48 @@ export const findDuplicateFace = (
     thresholdUsed: threshold,
   };
 };
+
+export const evaluateEnrollmentDuplicate = (
+  incomingCentroid,
+  incomingSamples,
+  employees,
+  config = FACE_ENROLLMENT_CONFIG,
+) => {
+  const centroid = l2Normalize(incomingCentroid);
+  const samples = Array.isArray(incomingSamples) ? incomingSamples.map(l2Normalize) : [];
+  let best = null;
+  for (const employee of employees || []) {
+    const stored = parseStoredFaceData(employee.face_descriptor);
+    if (!stored) continue;
+    const centroidScore = cosineSimilarity(centroid, stored.centroid);
+    const sampleScore = stored.samples.reduce(
+      (max, sample) => Math.max(max, cosineSimilarity(centroid, sample)),
+      -1,
+    );
+    const score = Math.max(centroidScore, sampleScore);
+    if (!Number.isFinite(score)) continue;
+    if (!best || score > best.score) {
+      best = {
+        employee,
+        score,
+        centroidScore,
+        sampleScore,
+        comparedSamples: samples.length,
+      };
+    }
+  }
+  const bestMatchScore = best?.score ?? 0;
+  const hard = bestMatchScore >= config.duplicateHardThreshold;
+  const warn = !hard && bestMatchScore >= config.duplicateWarnThreshold;
+  return {
+    status: hard ? "DUPLICATE_FACE_DETECTED" : warn ? "SIMILAR_FACE_REVIEW_REQUIRED" : "OK",
+    isDuplicate: hard || warn,
+    bestMatchScore,
+    matchedEmployeeId: best?.employee?.id ?? null,
+    matchedEmployee: best?.employee ?? null,
+    thresholdUsed: hard ? config.duplicateHardThreshold : config.duplicateWarnThreshold,
+  };
+};
 export const computeIntraFaceScore = (embeddings) => {
   const centroid = computeCentroid(embeddings);
   return embeddings.reduce(
@@ -388,6 +494,119 @@ export const identifyFace = (samples, employees, options = {}) => {
   )
     throw attendanceError(
       "Bộ mẫu khớp với nhiều hồ sơ và chưa đủ rõ để phân biệt. Vui lòng cập nhật lại FaceID.",
+      409,
+    );
+  return best;
+};
+
+const assertAttendanceCaptureMetadata = (capture) => {
+  if (!capture || typeof capture !== "object")
+    throw attendanceError("Thiếu dữ liệu xác thực chất lượng khuôn mặt. Vui lòng quét lại.", 400);
+  if (capture.model !== FACE_CAPTURE_MODEL)
+    throw attendanceError("Phiên bản mô hình nhận diện không khớp. Vui lòng tải lại trang.", 400);
+  if (capture.face_only !== true || capture.subject?.locked !== true)
+    throw attendanceError("Chưa khóa đúng khuôn mặt. Vui lòng quét lại.", 400);
+  if (Number(capture.samples) !== 3)
+    throw attendanceError("Cần đúng 3 khung hình xác thực", 400);
+  const quality = capture.quality || {};
+  if (!Number.isFinite(Number(quality.min_score)) || Number(quality.min_score) < 0.7)
+    throw attendanceError("Độ tin cậy khuôn mặt chưa đạt yêu cầu", 400);
+  if (!Number.isFinite(Number(quality.min_box_score)) || Number(quality.min_box_score) < 0.7)
+    throw attendanceError("Khuôn mặt chưa rõ, tiến gần hơn", 400);
+  if (!Number.isFinite(Number(quality.min_sharpness)) || Number(quality.min_sharpness) < 10)
+    throw attendanceError("Giữ yên mặt 1 giây", 400);
+  if (!Number.isFinite(Number(quality.brightness_min)) || Number(quality.brightness_min) < 40)
+    throw attendanceError("Thiếu sáng. Vui lòng quét lại.", 400);
+  if (!Number.isFinite(Number(quality.brightness_max)) || Number(quality.brightness_max) > 230)
+    throw attendanceError("Ánh sáng quá chói. Vui lòng quét lại.", 400);
+  if (!Number.isFinite(Number(quality.glare_ratio_max)) || Number(quality.glare_ratio_max) > 0.25)
+    throw attendanceError("Bị chói sáng, vui lòng điều chỉnh ánh sáng", 400);
+};
+
+export const validateAttendanceCapture = (payload) => {
+  const { embeddings, capture, liveness } = payload || {};
+  if (!Array.isArray(embeddings) || embeddings.length !== 3)
+    throw attendanceError("Cần đúng 3 mẫu khuôn mặt để xác thực", 400);
+  if (embeddings.some((vector) => !Array.isArray(vector) || vector.length < 64))
+    throw attendanceError("Mẫu sinh trắc học không hợp lệ", 400);
+  const samples = embeddings.map(l2Normalize);
+  const scores = {
+    s12: Number(cosineSimilarity(samples[0], samples[1]).toFixed(6)),
+    s23: Number(cosineSimilarity(samples[1], samples[2]).toFixed(6)),
+    s13: Number(cosineSimilarity(samples[0], samples[2]).toFixed(6)),
+  };
+  if (Math.max(scores.s12, scores.s23, scores.s13) > ATTENDANCE_LIVENESS_CONFIG.staticVectorMax)
+    throw fraudError("SPOOF_STATIC_VECTOR", "Phát hiện ảnh tĩnh không hợp lệ", scores);
+  if (Math.min(scores.s12, scores.s23, scores.s13) < ATTENDANCE_LIVENESS_CONFIG.unstableVectorMin) {
+    const error = attendanceError("Khuôn mặt chưa ổn định, giữ yên 1 giây", 400);
+    error.code = "UNSTABLE_FACE";
+    error.scores = scores;
+    throw error;
+  }
+  assertAttendanceCaptureMetadata(capture);
+  const realMedian = Number(liveness?.realMedian);
+  const liveMedian = Number(liveness?.liveMedian);
+  const livenessScores = { ...scores, realMedian, liveMedian };
+  if (
+    !Number.isFinite(realMedian) || !Number.isFinite(liveMedian) ||
+    realMedian < ATTENDANCE_LIVENESS_CONFIG.realMedianMin ||
+    liveMedian < ATTENDANCE_LIVENESS_CONFIG.liveMedianMin
+  )
+    throw fraudError("SPOOF_DETECTED", "Phát hiện hình ảnh/màn hình không hợp lệ", livenessScores);
+  return {
+    samples,
+    scores,
+    liveness: {
+      realMedian,
+      liveMedian,
+      gateReason: liveness?.gateReason || "Đạt",
+      windowSize: Number(liveness?.windowSize) || 5,
+      motion: liveness?.motion || null,
+    },
+  };
+};
+
+export const prepareAttendanceVerification = (meta) => {
+  if (!meta?.challengeToken) return null;
+  consumeAttendanceChallenge(meta.challengeToken);
+  return validateAttendanceCapture(meta);
+};
+
+export const identifyAttendanceFace = (samples, employees, options = {}) => {
+  const threshold = Number(options.similarity_threshold) || FACE_MATCH_THRESHOLD;
+  const candidates = (employees || [])
+    .map((employee) => {
+      const stored = parseStoredFaceData(employee.face_descriptor);
+      if (!stored || samples.some((sample) => sample.length !== stored.centroid.length)) return null;
+      const perFrame = samples.map((sample) =>
+        Math.max(
+          cosineSimilarity(sample, stored.centroid),
+          ...stored.samples.map((storedSample) => cosineSimilarity(sample, storedSample)),
+        ));
+      const centroidScore = cosineSimilarity(computeCentroid(samples), stored.centroid);
+      const score = Math.min(...perFrame, centroidScore);
+      return {
+        employee,
+        score,
+        perFrame: perFrame.map((value) => Number(value.toFixed(6))),
+        centroidScore: Number(centroidScore.toFixed(6)),
+        passCount: perFrame.filter((value) => value >= threshold).length,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.score - left.score);
+  const best = candidates[0];
+  if (!best || best.score < threshold || best.passCount !== samples.length)
+    throw attendanceError(
+      `Không tìm thấy khuôn mặt đã đăng ký phù hợp. Độ khớp cao nhất: ${((best?.score || 0) * 100).toFixed(1)}%, cần ${(threshold * 100).toFixed(1)}% trên cả 3 khung hình.`,
+      403,
+    );
+  const second = candidates[1];
+  if (second && best.score - second.score < ATTENDANCE_LIVENESS_CONFIG.margin)
+    throw fraudError(
+      "AMBIGUOUS_FACE",
+      "Khuôn mặt khớp với nhiều hồ sơ, chưa đủ rõ để phân biệt. Vui lòng quét lại.",
+      { top1Score: best.score, top2Score: second.score },
       409,
     );
   return best;
@@ -655,15 +874,12 @@ const shiftTimeWindow = (shift, type) => {
   const wrap = (value) => ((value % 1440) + 1440) % 1440;
   if (type === "CHECK_IN") {
     const openBefore = Math.max(0, toNumber(shift.checkin_open_before_min, 120));
-    const closeAfter = shift.checkin_close_after_min === null || shift.checkin_close_after_min === undefined
-      ? 120
-      : Math.max(0, toNumber(shift.checkin_close_after_min, 120));
     return {
       start:
         toMinutes(shift.checkin_start) ?? Math.max(0, shiftStart - openBefore),
-      end:
-        toMinutes(shift.checkin_end) ?? Math.min(1439, shiftStart + closeAfter),
+      end: toMinutes(shift.checkin_end),
       allowedLimit: wrap(shiftStart + grace),
+      wraps: false,
     };
   }
   const start =
@@ -688,10 +904,20 @@ const shiftWithAllowedLimit = (shift) => {
 const checkScanWindow = (shift, type, scanTime) => {
   const window = shiftTimeWindow(shift, type);
   const scanMinutes = toMinutes(scanTime);
-  const inWindow = window.wraps
-    ? scanMinutes >= window.start || scanMinutes <= window.end
-    : scanMinutes >= window.start && scanMinutes <= window.end;
-  if (scanMinutes === null || !inWindow) return { allowed: false, window };
+  if (scanMinutes === null) return { allowed: false, window };
+  const hasStart = window.start !== null && window.start !== undefined;
+  const hasEnd = window.end !== null && window.end !== undefined;
+  let inWindow = true;
+  if (hasStart && hasEnd) {
+    inWindow = window.wraps
+      ? scanMinutes >= window.start || scanMinutes <= window.end
+      : scanMinutes >= window.start && scanMinutes <= window.end;
+  } else if (hasStart) {
+    inWindow = scanMinutes >= window.start;
+  } else if (hasEnd) {
+    inWindow = scanMinutes <= window.end;
+  }
+  if (!inWindow) return { allowed: false, window };
   return { allowed: true, window };
 };
 
@@ -1295,15 +1521,18 @@ const recordSelfAttendance = async (
   await ensureWorkShiftSchema();
   await reconcileMissingCheckout(employeeId, await serverDate());
   const aiConfig = (await getKioskConfig()).ai_config;
+  const verification = !verifiedIdentity?.samples ? prepareAttendanceVerification(meta) : null;
   const samples = verifiedIdentity?.samples
     ? verifiedIdentity.samples
-    : validateBiometricCapture(
-        meta.embeddings,
-        meta.blink_verified,
-        0.8,
-        meta.capture,
-        aiConfig,
-      );
+    : verification
+      ? verification.samples
+      : validateBiometricCapture(
+          meta.embeddings,
+          meta.blink_verified,
+          0.8,
+          meta.capture,
+          aiConfig,
+        );
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -1390,20 +1619,21 @@ export const kioskAttendance = async (
   action,
   values,
   ip,
-  blinkVerified,
   deviceInfo = null,
   captureMeta = null,
+  attendancePayload = null,
 ) => {
   if (!["check-in", "check-out", "auto"].includes(action))
     throw attendanceError("Thao tác chấm công không hợp lệ");
   const aiConfig = (await getKioskConfig()).ai_config;
-  const samples = validateBiometricCapture(
-    values,
-    blinkVerified,
-    0.8,
-    captureMeta,
-    aiConfig,
-  );
+  const verification = prepareAttendanceVerification({
+    ...(attendancePayload || {}),
+    embeddings: values,
+    capture: captureMeta,
+  });
+  if (!verification)
+    throw fraudError("CHALLENGE_REQUIRED", "Thiếu phiên xác thực. Vui lòng quét lại", null, 400);
+  const samples = verification.samples;
   const [employees] = await db.query(
     `SELECT e.id, e.employee_code, e.full_name, e.face_descriptor,
             COALESCE(d.department_name, d.name) AS department_name
@@ -1411,7 +1641,7 @@ export const kioskAttendance = async (
        LEFT JOIN departments d ON d.id = e.department_id
       WHERE e.work_status = 'WORKING' AND e.face_descriptor IS NOT NULL`,
   );
-  const match = identifyFace(samples, employees, aiConfig);
+  const match = identifyAttendanceFace(samples, employees, aiConfig);
   const account = await resolveActiveAccount(db, match.employee.id);
   let resolvedAction = action;
   if (action === "auto") {
@@ -1424,8 +1654,8 @@ export const kioskAttendance = async (
     {
       ip,
       device_info: deviceInfo,
-      note: `Human FaceID; similarity=${(match.avgScore * 100).toFixed(1)}%; samples=${match.passCount}/${match.totalSamples}`,
-      face_score: match.avgScore,
+      note: `Human FaceID zero-action; similarity=${(match.score * 100).toFixed(1)}%; frames=${match.perFrame.map((score) => (score * 100).toFixed(1)).join("/")}`,
+      face_score: match.score,
     },
     resolvedAction === "check-in" ? checkInInternal : checkOutInternal,
     { employee: match.employee, match, samples },
@@ -2065,7 +2295,13 @@ export const recalculateDateAttendance = async (
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 const SHIFT_CODE_PATTERN = /^[A-Z0-9_]{2,20}$/;
 
+const isBlankTimeInput = (value) => {
+  const text = String(value ?? "").trim();
+  return !text || /^[-–—:.\s]*(AM|PM|SA|CH|NG)?$/i.test(text);
+};
+
 const normalizeTime = (value) => {
+  if (isBlankTimeInput(value)) return null;
   const text = String(value ?? "").trim();
   if (!TIME_PATTERN.test(text)) return null;
   return text.length === 5 ? `${text}:00` : text;
@@ -2100,23 +2336,23 @@ export const validateShiftPayload = (payload = {}) => {
   if (!isOvernight && toMinutes(endTime) <= toMinutes(startTime))
     return { error: "Giờ kết thúc phải lớn hơn giờ bắt đầu trong cùng ngày" };
 
-  const checkinStart = payload.checkin_start
-    ? normalizeTime(payload.checkin_start)
-    : null;
-  const checkinEnd = payload.checkin_end
-    ? normalizeTime(payload.checkin_end)
-    : null;
-  const checkoutStart = payload.checkout_start
-    ? normalizeTime(payload.checkout_start)
-    : null;
-  const checkoutEnd = payload.checkout_end
-    ? normalizeTime(payload.checkout_end)
-    : null;
+  const checkinStart = isBlankTimeInput(payload.checkin_start)
+    ? null
+    : normalizeTime(payload.checkin_start);
+  const checkinEnd = isBlankTimeInput(payload.checkin_end)
+    ? null
+    : normalizeTime(payload.checkin_end);
+  const checkoutStart = isBlankTimeInput(payload.checkout_start)
+    ? null
+    : normalizeTime(payload.checkout_start);
+  const checkoutEnd = isBlankTimeInput(payload.checkout_end)
+    ? null
+    : normalizeTime(payload.checkout_end);
   if (
-    (payload.checkin_start && !checkinStart) ||
-    (payload.checkin_end && !checkinEnd) ||
-    (payload.checkout_start && !checkoutStart) ||
-    (payload.checkout_end && !checkoutEnd)
+    (!isBlankTimeInput(payload.checkin_start) && !checkinStart) ||
+    (!isBlankTimeInput(payload.checkin_end) && !checkinEnd) ||
+    (!isBlankTimeInput(payload.checkout_start) && !checkoutStart) ||
+    (!isBlankTimeInput(payload.checkout_end) && !checkoutEnd)
   )
     return { error: "Khung giờ quét vào/ra phải đúng định dạng HH:MM" };
   if (checkinStart && checkinEnd && toMinutes(checkinEnd) < toMinutes(checkinStart))

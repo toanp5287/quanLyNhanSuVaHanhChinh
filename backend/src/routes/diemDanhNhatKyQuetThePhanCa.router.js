@@ -4,7 +4,11 @@ import {
   updateMyFaceDescriptor,
   verifyMyFacePassword,
 } from "../controllers/my-profile/myProfile.controller.js";
-import { kioskAttendance } from "../services/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
+import {
+  createAttendanceChallenge,
+  kioskAttendance,
+  logAttendanceFraud,
+} from "../services/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 import {
   requireAllowedAttendanceDevice,
@@ -87,6 +91,16 @@ const faceEnrollLimiter = createFailureLimiter(
   "Quá nhiều lần đăng ký FaceID chưa thành công. Vui lòng chờ một phút rồi thử lại.",
 );
 
+router.get(
+  "/challenge",
+  requireAllowedAttendanceIp,
+  requireAllowedAttendanceDevice,
+  async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    return res.json({ success: true, data: createAttendanceChallenge() });
+  },
+);
+
 router.post(
   "/kiosk/:action",
   requireAllowedAttendanceIp,
@@ -99,9 +113,9 @@ router.post(
         req.params.action,
         req.body?.embeddings,
         req.ip,
-        req.body?.blink_verified,
         req.headers["x-device-id"] || null,
         req.body?.capture,
+        req.body || {},
       );
       res.json({
         success: true,
@@ -113,6 +127,15 @@ router.post(
         data,
       });
     } catch (error) {
+      if (error.fraud)
+        logAttendanceFraud({
+          reason: error.code || "ATTENDANCE_FRAUD",
+          scores: error.scores || null,
+          ip: req.ip,
+          deviceId: req.headers["x-device-id"] || null,
+          path: req.originalUrl,
+          userAgent: req.headers["user-agent"] || null,
+        });
       if (!error.status) console.error("Lỗi FaceID kiosk:", error);
       res.status(error.status || 500).json({
         success: false,
@@ -129,8 +152,7 @@ router.post(
 router.get("/kiosk/config", async (req, res) => {
   res.set("Cache-Control", "no-store");
   try {
-    const data = await getKioskConfig();
-    res.json({ success: true, data });
+    return await getKioskConfigHandler(req, res);
   } catch (error) {
     res.status(error.status || 500).json({
       success: false,
