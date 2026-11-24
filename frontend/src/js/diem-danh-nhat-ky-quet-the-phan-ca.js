@@ -56,6 +56,42 @@ export const initFaceKiosk = () => {
           </div>
         </div>
       </header>
+<<<<<<< HEAD
+      <div class="max-w-5xl mx-auto px-space-lg py-space-md">
+        <div class="mb-space-md">
+          <h1 class="font-headline-lg text-headline-lg text-on-surface">Điểm danh bằng FaceID</h1>
+          <p class="text-on-surface-variant text-body-sm mt-1">Không cần đăng nhập. Hệ thống nhận diện khuôn mặt đã đăng ký để ghi nhận đúng người.</p>
+        </div>
+        <div class="grid lg:grid-cols-[minmax(0,720px)_minmax(300px,1fr)] gap-space-lg items-start">
+          <section class="rounded-lg border border-surface-variant bg-surface-container-lowest shadow-sm overflow-hidden">
+            <div class="px-space-md py-space-sm bg-surface-container-low flex items-center justify-between gap-space-sm border-b border-surface-variant">
+              <span id="kioskCameraLabel" class="font-label-lg text-label-lg text-on-surface">Camera chưa bật</span>
+              <time id="kioskClock" class="font-label-sm text-label-sm text-on-surface-variant"></time>
+            </div>
+            <div class="relative aspect-[4/3] bg-surface-container-high flex items-center justify-center">
+              <video id="kioskVideo" autoplay muted playsinline class="w-full h-full object-cover" style="transform:scaleX(-1)"></video>
+              <div class="absolute pointer-events-none inset-[16%] border-2 border-primary/70 rounded-[32%]"></div>
+              <span id="kioskCameraHint" class="absolute bottom-space-sm left-1/2 -translate-x-1/2 max-w-[90%] rounded-lg bg-inverse-surface text-inverse-on-surface px-space-sm py-1 text-body-sm text-center">Đứng một mình trước camera, nhìn thẳng và đủ ánh sáng</span>
+            </div>
+            <div class="p-space-md flex flex-wrap gap-space-sm">
+              <button id="kioskCamera" class="h-10 px-space-md rounded-lg bg-primary text-on-primary font-label-lg text-label-lg hover:bg-primary-container">Bật camera</button>
+              <button id="kioskStop" class="h-10 px-space-md rounded-lg border border-surface-variant bg-surface-container-lowest text-on-surface font-label-lg text-label-lg hover:bg-surface-container-high">Tắt camera</button>
+            </div>
+          </section>
+          <section class="flex flex-col gap-space-md">
+            <div class="rounded-lg border border-surface-variant bg-surface-container-lowest shadow-sm p-space-md">
+              <h2 class="font-headline-md text-headline-md text-on-surface">Chọn thao tác điểm danh</h2>
+              <p class="text-on-surface-variant text-body-sm mt-1 leading-6">Hệ thống nhận diện khuôn mặt đã đăng ký để ghi nhận đúng người.</p>
+              <dl class="mt-space-sm space-y-1 text-body-sm">
+                <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Chất lượng khuôn mặt</dt><dd id="kioskQuality" class="text-right">Chưa kiểm tra</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Xác minh chớp mắt</dt><dd id="kioskBlink" class="text-right">Chưa thực hiện</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Nhận diện</dt><dd id="kioskRecognition" class="text-right">Chưa quét</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-on-surface-variant">Trạng thái chấm công</dt><dd id="kioskAttendance" class="text-right">Chưa ghi nhận</dd></div>
+              </dl>
+              <div class="grid gap-space-sm mt-space-md">
+                <button id="kioskCheckIn" class="h-12 rounded-lg bg-emerald-600 text-white font-label-lg text-label-lg disabled:opacity-40">Quét FaceID • Vào ca</button>
+                <button id="kioskCheckOut" class="h-12 rounded-lg bg-primary text-on-primary font-label-lg text-label-lg disabled:opacity-40">Quét FaceID • Tan ca</button>
+=======
 
       <div class="mx-auto max-w-6xl px-4 py-4 md:py-6">
         <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6">
@@ -77,6 +113,7 @@ export const initFaceKiosk = () => {
                   <p id="kioskCameraHint" class="text-sm font-medium text-white sm:text-base">Bật camera, nhìn thẳng vào khung để điểm danh</p>
                   <p class="mt-1 text-xs text-slate-300">Chỉ cần 1 người trong khung, giữ yên khoảng 1 giây.</p>
                 </div>
+>>>>>>> origin/main
               </div>
             </div>
 
@@ -454,15 +491,22 @@ export const initFaceKiosk = () => {
       await ensureAttendanceFaceModels();
       if (!active() || current !== session) return;
       el("CameraLabel").textContent = "Camera sẵn sàng";
+<<<<<<< HEAD
+=======
       el("Subject").textContent = "Chưa phát hiện";
+>>>>>>> origin/main
       el("Quality").textContent = "Đang chờ khuôn mặt";
       el("Liveness").textContent = "Chưa thực hiện";
       setScanState("IDLE", "Đứng yên, nhìn thẳng vào khung oval rồi chọn Vào ca hoặc Tan ca");
       status(
         "Sẵn sàng điểm danh",
+<<<<<<< HEAD
+        "Chọn Vào ca hoặc Tan ca. Chỉ một người đứng trước camera.",
+=======
         "Nhìn thẳng vào khung, chọn Vào ca, Tan ca hoặc Tự động.",
         false,
         "ready",
+>>>>>>> origin/main
       );
       scheduleChallenge();
     } catch (error) {
@@ -495,12 +539,42 @@ export const initFaceKiosk = () => {
     const current = session;
     let usedToken = null;
     try {
+<<<<<<< HEAD
+      status(
+        "Đang quét khuôn mặt",
+        "Giữ khuôn mặt trong khung hình. Hệ thống đang lấy 5 mẫu để đối chiếu.",
+      );
+=======
       setScanState("SCANNING", "Đứng yên, nhìn thẳng vào khung oval");
       status("Đang quét khuôn mặt", "Giữ yên 1 giây, nhìn thẳng vào khung.", false, "scan");
       el("Subject").textContent = "Đang phát hiện";
+>>>>>>> origin/main
       el("Quality").textContent = "Đang kiểm tra";
       el("Liveness").textContent = "Chưa thực hiện";
       el("Recognition").textContent = "Đang chờ xác minh";
+<<<<<<< HEAD
+      el("Attendance").textContent = "Chưa ghi nhận";
+      const capture = await captureFaceSamples(
+        video,
+        (count, total) => {
+          el("Quality").textContent = `Đạt • ${count}/${total} mẫu`;
+          el("Blink").textContent = "Đã xác minh";
+          status(
+            "Đang quét khuôn mặt",
+            `Đang quét mẫu: ${count}/${total} (${Math.round((count / total) * 100)}%)`,
+          );
+        },
+        () => active() && current === session && Boolean(stream?.active),
+        (text) => {
+          el("Quality").textContent = text;
+          if (text.includes("CHỚP MẮT"))
+            el("Blink").textContent = "Đang chờ thao tác";
+          if (text.includes("Đã xác thực chớp mắt"))
+            el("Blink").textContent = "Đã xác minh";
+          status("Xác thực khuôn mặt", text);
+        },
+      );
+=======
       el("Attendance").textContent = "Đang xác thực...";
       await getChallenge();
       const capture = await runAttendanceFaceScan(video, {
@@ -525,6 +599,7 @@ export const initFaceKiosk = () => {
       el("Subject").textContent = "1 khuôn mặt • đã khóa";
       el("Liveness").textContent =
         `real ${capture.liveness?.realMedian} • live ${capture.liveness?.liveMedian} • 5 khung • motion ${capture.liveness?.motion?.mean ?? 0}`;
+>>>>>>> origin/main
       if (!active() || current !== session) return;
       setScanState("VERIFYING", "Đang đối chiếu hồ sơ và ghi nhận giờ");
       status(
@@ -544,6 +619,16 @@ export const initFaceKiosk = () => {
         },
       );
       if (!active() || current !== session) return;
+<<<<<<< HEAD
+      const { employee, log, account } = response.data.data;
+      el("Recognition").textContent = `Đã xác nhận • ${employee.full_name}`;
+      el("Attendance").textContent = "Đã ghi nhận thành công";
+      status(
+        response.data.message,
+        action === "check-in"
+          ? "Đã ghi nhận giờ vào ca. Chúc bạn một ngày làm việc hiệu quả."
+          : "Đã ghi nhận giờ tan ca.",
+=======
       const { employee, log, account, shift, already_recorded: alreadyRecorded, attendance_state: attendanceState } = response.data.data;
       const scannedAction = response.data.data.action || action;
       beep(true);
@@ -587,11 +672,17 @@ export const initFaceKiosk = () => {
             : "Đã ghi nhận giờ tan ca. Công đã được tính theo quy chế.",
         false,
         "success",
+>>>>>>> origin/main
       );
       for (const text of [
-        `${employee.employee_code} - ${employee.full_name}`,
-        `Tài khoản: ${account?.username || employee.username || "-"}`,
+        `${employee.employee_code} • ${employee.full_name}`,
+        `Tài khoản: ${account?.username || employee.username || "—"}`,
         employee.department_name || "",
+<<<<<<< HEAD
+        `Giờ vào: ${log.check_in || "—"} • Giờ ra: ${log.check_out || "—"}`,
+        `Công: ${Number(log.work_unit).toFixed(2)} • Đi muộn: ${Number(log.late_minutes || 0)} phút`,
+      ]) {
+=======
         `Giờ vào: ${String(log.check_in || "-").slice(0, 5)} - Giờ ra: ${String(log.check_out || "-").slice(0, 5)}`,
         punctualityDetail ? `Trạng thái vào ca: ${punctualityDetail}` : "",
         `Công: ${Number(log.work_day ?? log.work_unit).toFixed(2)} - Đi muộn: ${lateMinutes} phút`,
@@ -599,6 +690,7 @@ export const initFaceKiosk = () => {
           ? [`Thời gian làm ròng: ${Number(log.net_work_minutes || 0)} phút`]
           : []),
       ].filter(Boolean)) {
+>>>>>>> origin/main
         const line = document.createElement("p");
         line.textContent = text;
         el("Identity").appendChild(line);
@@ -643,6 +735,18 @@ export const initFaceKiosk = () => {
           status(spoof ? "Quét bị chặn" : "Chưa ghi nhận điểm danh", message, true, spoof ? "error" : "warn");
         }
       }
+<<<<<<< HEAD
+      if (active() && current === session)
+        status(
+          "Chưa ghi nhận điểm danh",
+          error.response?.data?.message ||
+            (error.code === "ECONNABORTED"
+              ? "Máy chủ phản hồi chậm. Kiểm tra lại kết quả trước khi quét lại."
+              : error.message || "Không thể kết nối máy chủ."),
+          true,
+        );
+=======
+>>>>>>> origin/main
     } finally {
       invalidateChallenge(usedToken);
       scheduleChallenge();

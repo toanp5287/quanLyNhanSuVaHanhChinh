@@ -20,13 +20,14 @@ import {
   approveExplanationHandler,
   attendanceCheckIn,
   attendanceCheckOut,
-  attendanceDetail,
   attendanceList,
+<<<<<<< HEAD
+=======
   attendanceManualUpdate,
   attendanceMyHistory,
+>>>>>>> origin/main
   attendanceQuickMark,
   attendanceQuickMarkAll,
-  attendanceRecalculateDate,
   attendanceToday,
   cancelExplanationHandler,
   getExplanations,
@@ -43,8 +44,11 @@ import {
   putWorkShift,
   rejectExplanationHandler,
   removeShiftAssignment,
+<<<<<<< HEAD
+=======
   removeWorkShift,
   updateKioskConfigHandler,
+>>>>>>> origin/main
 } from "../controllers/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.controller.js";
 
 const router = express.Router();
@@ -111,18 +115,25 @@ router.post(
         req.body?.embeddings,
         req.clientIp || req.ip,
         req.headers["x-device-id"] || null,
+<<<<<<< HEAD
+=======
         req.body?.capture,
         req.body || {},
         req.authorizedDevice?.id || null,
         req.clientIp || null,
+>>>>>>> origin/main
       );
       res.json({
         success: true,
         message:
+<<<<<<< HEAD
+          req.params.action === "check-in"
+=======
           data.message ||
           (data.action === "check-in"
+>>>>>>> origin/main
             ? "Điểm danh vào ca thành công"
-            : "Điểm danh tan ca thành công"),
+            : "Điểm danh tan ca thành công",
         data,
       });
     } catch (error) {
@@ -207,16 +218,6 @@ router.get(
   requireAnyPermission(["ATT.VIEW", "HR.PROFILE_MANAGE"]),
   attendanceList,
 );
-router.get(
-  "/detail",
-  requireAnyPermission(["ATT.VIEW", "HR.PROFILE_MANAGE"]),
-  attendanceDetail,
-);
-router.put(
-  "/manual",
-  requirePermission("ATT.SHIFT_OT_MANAGE"),
-  attendanceManualUpdate,
-);
 router.post(
   "/quick-mark",
   requirePermission("ATT.SHIFT_OT_MANAGE"),
@@ -226,11 +227,6 @@ router.post(
   "/quick-mark-all",
   requirePermission("ATT.SHIFT_OT_MANAGE"),
   attendanceQuickMarkAll,
-);
-router.post(
-  "/recalculate-date",
-  requirePermission("ATT.SHIFT_OT_MANAGE"),
-  attendanceRecalculateDate,
 );
 
 // Danh mục ca làm việc
@@ -244,11 +240,6 @@ router.put(
   "/shifts/:id",
   requirePermission("ATT.SHIFT_OT_MANAGE"),
   putWorkShift,
-);
-router.delete(
-  "/shifts/:id",
-  requirePermission("ATT.SHIFT_OT_MANAGE"),
-  removeWorkShift,
 );
 
 // Quy chế tính công & cấu hình kiosk

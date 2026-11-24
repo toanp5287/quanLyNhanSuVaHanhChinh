@@ -216,6 +216,11 @@ export const updateSelfContact = async (employeeId, payload = {}) => {
   return rows[0] || null;
 };
 
+<<<<<<< HEAD
+export const updateSelfFaceDescriptor = async (employeeId, values, password, blinkVerified) => {
+  if (!employeeId) return null;
+  const samples = validateBiometricCapture(values, blinkVerified, 0.82);
+=======
 let enrollmentQueue = Promise.resolve();
 const withEnrollmentLock = async (work) => {
   const previous = enrollmentQueue.catch(() => undefined);
@@ -310,16 +315,22 @@ const enrollmentError = (message, status, errorCode, extra = {}) =>
 export const updateSelfFaceDescriptor = async (employeeId, values, password, blinkVerified, capture = null, securityMeta = {}) => {
   if (!employeeId) return null;
   const prepared = normalizeEnrollmentSamples(values, blinkVerified, capture);
+>>>>>>> origin/main
   if (typeof password !== "string" || !password)
     throw attendanceError("Nhập mật khẩu tài khoản để xác nhận đăng ký hoặc thay đổi FaceID.");
   await verifySelfFacePassword(employeeId, password);
 
   const descriptorJson = JSON.stringify({
+<<<<<<< HEAD
+    centroid: compact(computeCentroid(samples)),
+    samples: samples.map(sample => compact(l2Normalize(sample))),
+=======
     model: FACE_STORAGE_MODEL,
     dimension: FACE_ENROLLMENT_CONFIG.vectorDimension,
     centroid: prepared.centroid,
     samples: prepared.samples,
     quality: prepared.quality,
+>>>>>>> origin/main
   });
   if (Buffer.byteLength(descriptorJson, "utf8") > 60000) {
     throw enrollmentError("Bộ mẫu khuôn mặt vượt giới hạn lưu trữ. Vui lòng quét lại để tạo mẫu gọn hơn.", 413, "FACE_DESCRIPTOR_TOO_LARGE");

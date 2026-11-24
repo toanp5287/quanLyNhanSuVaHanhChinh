@@ -7,9 +7,12 @@ import { initQuanLyThietBi } from "./js/quan-ly-thiet-bi.js";
 import { initInformation } from "./js/information.js";
 import { initMyProfile } from "./js/my-profile.js";
 import { initChamCong } from "./js/cham-cong.js";
+<<<<<<< HEAD
+=======
 import { initLichSuChamCong } from "./js/lich-su-cham-cong.js";
 import { initQuanLyCaLam } from "./js/quan-ly-ca-lam.js";
 import { initQuanLyLamThemGio } from "./js/quan-ly-lam-them-gio.js";
+>>>>>>> origin/main
 import { initFaceKiosk } from "./js/diem-danh-nhat-ky-quet-the-phan-ca.js";
 import { initNotifications, mountBell } from "./js/notifications.js";
 import { getEmployeeModeFromHash, initEmployees } from "./js/employees.js";
@@ -34,23 +37,12 @@ window.__HRM_SPA__ = true;
 
 const app = document.querySelector("#app");
 
-const TRANSITION_MS = 220;
-
 const transitionStyle = document.createElement("style");
 transitionStyle.textContent = `
-  @keyframes hrm-fade-out {
-    from { opacity: 1; transform: translateY(0); }
-    to { opacity: 0; transform: translateY(-8px); }
-  }
-  @keyframes hrm-fade-in {
-    from { opacity: 0; transform: translateY(12px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .hrm-fade-out { animation: hrm-fade-out ${TRANSITION_MS}ms ease forwards; }
-  .hrm-fade-in { animation: hrm-fade-in 360ms cubic-bezier(.2,.7,.3,1) both; }
-  @media (prefers-reduced-motion: reduce) {
-    .hrm-fade-out, .hrm-fade-in { animation-duration: .01ms; }
-  }
+  @keyframes hrm-fade-out { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes hrm-fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .hrm-fade-out { animation: hrm-fade-out .25s ease forwards; }
+  .hrm-fade-in { animation: hrm-fade-in .4s ease; }
 `;
 document.head.appendChild(transitionStyle);
 
@@ -117,29 +109,17 @@ function showLoginIpBlocked() {
 
 function showHome(user) {
   mountPage(homeHtml);
+  app.classList.add("hrm-fade-in");
   initHome(user || getCurrentUser());
 }
 
-let isTransitioning = false;
-
 function transitionTo(render) {
-  if (isTransitioning) {
-    render();
-    return;
-  }
-
-  isTransitioning = true;
-  app.classList.remove("hrm-fade-in");
-  void app.offsetWidth;
   app.classList.add("hrm-fade-out");
-
   window.setTimeout(() => {
     render();
     app.classList.remove("hrm-fade-out");
-    void app.offsetWidth;
     app.classList.add("hrm-fade-in");
-    isTransitioning = false;
-  }, TRANSITION_MS);
+  }, 250);
 }
 
 const clearHash = () => {
@@ -194,6 +174,7 @@ function showMyProfile(user) {
   }
 
   mountPage(homeHtml);
+  app.classList.add("hrm-fade-in");
   initMyProfile(user);
 }
 
@@ -205,9 +186,12 @@ function showDiemDanh(user, tab = "daily") {
   }
   mountPage(homeHtml);
   setupShell(user);
+  app.classList.add("hrm-fade-in");
   initChamCong(user, tab);
 }
 
+<<<<<<< HEAD
+=======
 function showQuanLyCaLam(user) {
   if (!user || (!hasPermission("ATT.SHIFT_OT_MANAGE", user) && !hasPermission("ATT.VIEW", user))) {
     clearHash();
@@ -241,6 +225,7 @@ function showLichSuChamCong(user) {
   initLichSuChamCong(user);
 }
 
+>>>>>>> origin/main
 function showEmployees(user, mode = "all") {
   if (!user || !hasPermission("HR.PROFILE_VIEW", user)) {
     clearHash();
@@ -254,6 +239,7 @@ function showEmployees(user, mode = "all") {
   }
 
   mountPage(homeHtml);
+  app.classList.add("hrm-fade-in");
   setupShell(user);
   initEmployees(user, mode);
 }
@@ -271,23 +257,30 @@ function showOrganization(user, tab = "chart") {
   }
 
   mountPage(homeHtml);
+  app.classList.add("hrm-fade-in");
   setupShell(user);
   initOrganization(user, tab);
 }
 
 function showContracts(user, status = "ALL") {
-  if (!user || !hasPermission("HR.CONTRACT_MANAGE", user)) {
+  if (
+    !user ||
+    (!hasPermission("HR.CONTRACT_MANAGE", user) &&
+      !hasPermission("HR.CONTRACT_SIGN", user) &&
+      user.role_id !== "DIRECTOR")
+  ) {
     clearHash();
     showHome(user);
     return;
   }
 
   mountPage(homeHtml);
+  app.classList.add("hrm-fade-in");
   setupShell(user);
   initContracts(user, status);
 }
 
-function renderRouteView(user) {
+function renderRoute(user) {
   const hash = window.location.hash;
 
   if (hash === "#/face-id") {
@@ -311,12 +304,15 @@ function renderRouteView(user) {
     showMyProfile(user);
   } else if (hash === "#/diem-danh") {
     showDiemDanh(user);
+<<<<<<< HEAD
+=======
   } else if (hash === "#/quan-ly-ca-lam") {
     showQuanLyCaLam(user);
   } else if (hash === "#/lam-them-gio") {
     showQuanLyLamThemGio(user);
   } else if (hash === "#/lich-su-cham-cong") {
     showLichSuChamCong(user);
+>>>>>>> origin/main
   } else if (hash === "#/cham-cong" || hash === "#/cham-cong/thang") {
     showDiemDanh(user, "monthly");
   } else if (hash === "#/trang-chu") {
@@ -328,6 +324,8 @@ function renderRouteView(user) {
   }
 }
 
+<<<<<<< HEAD
+=======
 function renderRoute(user) {
   transitionTo(() => {
     renderRouteView(user);
@@ -335,6 +333,7 @@ function renderRoute(user) {
   });
 }
 
+>>>>>>> origin/main
 document.addEventListener("click", (event) => {
   const card = event.target.closest(".action-card");
 
@@ -345,10 +344,13 @@ document.addEventListener("click", (event) => {
        "Hồ sơ cá nhân & JD": "#/ho-so-ca-nhan",
        "Dữ liệu máy chấm công": "#/diem-danh",
         "Bảng chấm công tháng": "#/cham-cong/thang",
+<<<<<<< HEAD
+=======
       "Quản lý ca làm việc": "#/quan-ly-ca-lam",
       "Phân ca làm việc": "#/quan-ly-ca-lam",
       "Làm thêm giờ (OT)": "#/lam-them-gio",
       "Lịch sử chấm công": "#/lich-su-cham-cong",
+>>>>>>> origin/main
       "Tất cả nhân viên": "#/nhan-vien",
       "Nhân viên đang làm": "#/nhan-vien/dang-lam",
       "Nhân viên đã nghỉ": "#/nhan-vien/da-nghi",
@@ -409,6 +411,8 @@ document.addEventListener("click", (event) => {
 });
 
 window.addEventListener("hashchange", () => {
+<<<<<<< HEAD
+=======
   if (window.location.hash === "#/face-id") {
     transitionTo(() => initFaceKiosk());
     return;
@@ -422,9 +426,13 @@ window.addEventListener("hashchange", () => {
     return;
   }
 
+>>>>>>> origin/main
   const user = getCurrentUser();
+
+  if (window.location.hash === "#/face-id") { initFaceKiosk(); return; }
+
   if (!user) {
-    transitionTo(() => showLogin());
+    showLogin();
     return;
   }
 
@@ -497,6 +505,9 @@ window.addEventListener("hrm:login-ip-blocked", () => {
 });
 
 async function bootstrap() {
+<<<<<<< HEAD
+  if (window.location.hash === "#/face-id") { initFaceKiosk(); return; }
+=======
   if (window.location.hash === "#/face-id") {
     initFaceKiosk();
     app.classList.add("hrm-fade-in");
@@ -507,9 +518,9 @@ async function bootstrap() {
     app.classList.add("hrm-fade-in");
     return;
   }
+>>>>>>> origin/main
   if (!getToken()) {
     showLogin();
-    app.classList.add("hrm-fade-in");
     return;
   }
 
@@ -520,7 +531,6 @@ async function bootstrap() {
   } catch {
     clearSession();
     showLogin();
-    app.classList.add("hrm-fade-in");
   }
 }
 

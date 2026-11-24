@@ -23,11 +23,10 @@ const CARD_PERMISSIONS = {
   "Tất cả nhân viên": ["HR.PROFILE_VIEW"],
   "Nhân viên đang làm": ["HR.PROFILE_VIEW"],
   "Nhân viên đã nghỉ": ["HR.PROFILE_VIEW"],
-  "Hợp đồng lao động": ["HR.CONTRACT_MANAGE"],
+  "Hợp đồng lao động": ["HR.CONTRACT_MANAGE", "HR.CONTRACT_SIGN"],
   "Sơ đồ phòng ban": ["HR.PROFILE_VIEW"],
   "Bảng chấm công tháng": ["ATT.VIEW"],
-  "Phân ca làm việc": ["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"],
-  "Quản lý ca làm việc": ["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"],
+  "Phân ca làm việc": ["ATT.SHIFT_OT_MANAGE"],
   "Dữ liệu máy chấm công": ["ATT.VIEW"],
   "Làm thêm giờ (OT)": ["ATT.SHIFT_OT_MANAGE", "ESS.SELF_PROFILE"],
   "Giải trình đi muộn/về sớm": ["ATT.VIEW"],
@@ -95,6 +94,11 @@ const NAV_PERMISSIONS = {
 const ACTION_BUTTONS = {
   SUPER_ADMIN: [
     {
+      label: "Ký hợp đồng đã duyệt",
+      icon: "draw",
+      permission: "HR.CONTRACT_SIGN",
+    },
+    {
       label: "Cấp phát / Thu hồi thiết bị",
       icon: "inventory",
       permission: "ASSET.ALLOCATE_MANAGE",
@@ -161,6 +165,11 @@ const ACTION_BUTTONS = {
   ],
   CB_PAYROLL: [
     {
+      label: "Ký hợp đồng đã duyệt",
+      icon: "draw",
+      permission: "HR.CONTRACT_SIGN",
+    },
+    {
       label: "Chốt bảng công",
       icon: "task_alt",
       permission: "ATT.SHIFT_OT_MANAGE",
@@ -182,6 +191,11 @@ const ACTION_BUTTONS = {
     },
   ],
   OFFICE_ADMIN: [
+    {
+      label: "Ký hợp đồng đã duyệt",
+      icon: "draw",
+      permission: "HR.CONTRACT_SIGN",
+    },
     {
       label: "Nhập kho thiết bị",
       icon: "add_box",
@@ -463,6 +477,8 @@ const showToast = (message, options = {}) => {
   return toast;
 };
 
+<<<<<<< HEAD
+=======
 const DEBUG_FACE_SCAN = false;
 const FACE_CAPTURE_MODEL = "human-faceres1024-subjectlock-v3";
 const FACE_SAMPLE_COUNT = 5;
@@ -517,10 +533,14 @@ const ENROLL_RECOGNIZE_CONFIG = {
   },
 };
 
+>>>>>>> origin/main
 const human = new Human({
   modelBasePath: "https://cdn.jsdelivr.net/npm/@vladmandic/human/models/",
   cacheSensitivity: 0,
-  ...TRACK_CONFIG,
+  face: { enabled: true, detector: { maxDetected: 2, rotation: true }, mesh: { enabled: true },
+    iris: { enabled: true }, description: { enabled: true, skipFrames: 0, skipTime: 0 }, antispoof: { enabled: true, skipFrames: 0, skipTime: 0 }, liveness: { enabled: true, skipFrames: 0, skipTime: 0 },
+    emotion: { enabled: false } },
+  body: { enabled: false }, hand: { enabled: false }, object: { enabled: false }, gesture: { enabled: true },
 });
 let faceModelPromise;
 let faceEnrollStream = null;
@@ -564,10 +584,7 @@ const setFaceEnrollStatus = (text, hint) => {
 };
 
 export const ensureFaceModels = async () => {
-  if (!faceModelPromise) faceModelPromise = (async () => {
-    await human.load(TRACK_CONFIG);
-    await human.load(RECOGNIZE_CONFIG);
-  })().catch(error => { faceModelPromise = null; throw error; });
+  if (!faceModelPromise) faceModelPromise = (async () => { await human.load(); await human.warmup(); })().catch(error => { faceModelPromise = null; throw error; });
   await faceModelPromise;
 };
 
@@ -620,6 +637,12 @@ export const detectEyeBlink = (face, gestures, state = {}, now = performance.now
   return false;
 };
 
+<<<<<<< HEAD
+const faceBrightness = (video, box) => {
+  if (!video.videoWidth || !video.videoHeight) return 0;
+  const canvas = document.createElement("canvas");
+  canvas.width = 32; canvas.height = 32;
+=======
 const mouthMetrics = (face) => {
   const mesh = face?.mesh;
   if (!Array.isArray(mesh)) return null;
@@ -910,11 +933,78 @@ const cropFaceRegion = (video, faceBox, canvas) => {
   const side = Math.min(Math.max(faceBox[2], faceBox[3]) * 1.9, Math.min(video.videoWidth, video.videoHeight));
   const x = Math.max(0, Math.min(centerX - side / 2, video.videoWidth - side));
   const y = Math.max(0, Math.min(centerY - side / 2, video.videoHeight - side));
+>>>>>>> origin/main
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.drawImage(video, x, y, side, side, 0, 0, canvas.width, canvas.height);
-  return context;
+  context.drawImage(video, box[0], box[1], box[2], box[3], 0, 0, 32, 32);
+  const pixels = context.getImageData(0, 0, 32, 32).data;
+  let luminance = 0;
+  for (let index = 0; index < pixels.length; index += 4) luminance += 0.2126 * pixels[index] + 0.7152 * pixels[index + 1] + 0.0722 * pixels[index + 2];
+  return luminance / (pixels.length / 4);
 };
 
+<<<<<<< HEAD
+export const captureFaceSamples = async (video, onProgress = () => {}, isActive = () => true, onStage = () => {}) => {
+  await ensureFaceModels();
+  const frame = video.parentElement;
+  frame.style.position = "relative";
+  const overlay = document.createElement("div");
+  overlay.className = "absolute inset-x-2 top-1/2 z-20 rounded-lg bg-black/80 px-3 py-3 text-center text-sm font-semibold text-white pointer-events-none";
+  const instruction = document.createElement("p");
+  const progress = document.createElement("progress");
+  const faceOutline = document.createElement("div");
+  faceOutline.className = "absolute z-10 border-2 border-emerald-400 rounded-lg pointer-events-none hidden";
+  faceOutline.style.transform = "scaleX(-1)";
+  progress.max = 5; progress.value = 0; progress.className = "mt-2 w-full h-2";
+  overlay.append(instruction, progress); frame.append(faceOutline, overlay);
+  const stageMessage = text => { instruction.textContent = text; onStage(text); };
+  try {
+  const samples = [];
+  let stage = "ALIGN_FACE", stable = 0, lastCapture = 0, previousBox = null;
+  const blinkState = {};
+  const deadline = performance.now() + 60000;
+  stageMessage("Căn chỉnh khuôn mặt: nhìn thẳng, đủ sáng và giữ yên.");
+  while (performance.now() < deadline && samples.length < 5) {
+    if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
+    const result = await human.detect(video);
+    if (!isActive()) throw new Error("Đã dừng quét khuôn mặt.");
+    const face = result.face?.length === 1 ? result.face[0] : null;
+    const angle = face?.rotation?.angle;
+    const center = angle && Math.abs(angle.yaw) < 0.25 && Math.abs(angle.pitch) < 0.25 && Math.abs(angle.roll) < 0.25;
+    if (face?.box && video.videoWidth && video.videoHeight) {
+      const [x, y, width, height] = face.box;
+      const bounds = video.getBoundingClientRect();
+      const scale = Math.max(bounds.width / video.videoWidth, bounds.height / video.videoHeight);
+      const left = (bounds.width - video.videoWidth * scale) / 2 + x * scale;
+      const top = (bounds.height - video.videoHeight * scale) / 2 + y * scale;
+      Object.assign(faceOutline.style, { display: "block", left: `${left}px`, top: `${top}px`, width: `${width * scale}px`, height: `${height * scale}px` });
+    } else faceOutline.style.display = "none";
+    const box = face?.box;
+    const inFrame = box && box[0] >= 0 && box[1] >= 0 && box[0] + box[2] <= video.videoWidth && box[1] + box[3] <= video.videoHeight;
+    const brightness = face && inFrame ? faceBrightness(video, box) : 0;
+    const quality = face && center && inFrame && face.box[2] >= 130 && face.score >= 0.80 && face.real >= 0.62 && face.live >= 0.62 && brightness >= 45;
+    if (!quality) {
+      stage = "ALIGN_FACE"; stable = 0; samples.length = 0; previousBox = null;
+      blinkState.open = false; blinkState.closedAt = null;
+      progress.value = 0;
+      stageMessage(result.face?.length > 1 ? "Chỉ một người đứng trước camera." : !face ? "Đưa khuôn mặt vào giữa khung hình." : !inFrame ? "Đưa toàn bộ khuôn mặt vào trong khung hình." : brightness < 45 ? "Khuôn mặt thiếu sáng. Hãy hướng về phía nguồn sáng hoặc tăng ánh sáng." : face.box[2] < 130 ? "Đến gần camera hơn để khuôn mặt rõ nét." : "Nhìn thẳng vào camera và giữ khuôn mặt ổn định.");
+    } else if (stage === "ALIGN_FACE") {
+      const moved = previousBox && Math.hypot(face.box[0] - previousBox[0], face.box[1] - previousBox[1]) > face.box[2] * 0.12;
+      stable = moved ? 1 : stable + 1; previousBox = [...face.box];
+      if (stable >= 4) { stage = "WAIT_FOR_BLINK"; stageMessage("👁️ HÃY CHỚP MẮT 1 LẦN ĐỂ BẮT ĐẦU QUÉT KHUÔN MẶT"); }
+    } else if (stage === "WAIT_FOR_BLINK") {
+      if (detectEyeBlink(face, result.gesture, blinkState)) { stage = "CAPTURE_5_SAMPLES"; stageMessage("✅ Đã xác thực chớp mắt! Đang thu thập 5 mẫu sinh trắc học..."); }
+    } else if (!center || !inFrame || brightness < 45 || face.score < 0.82 || face.real < 0.62 || face.live < 0.62) {
+      stage = "ALIGN_FACE"; stable = 0; samples.length = 0; previousBox = null;
+      blinkState.open = false; blinkState.closedAt = null;
+      progress.value = 0;
+      stageMessage("Mất khuôn mặt rõ trong lúc quét. Nhìn thẳng, giữ yên để quét lại từ đầu.");
+    } else if (eyeRatio(face) > 0.22 && face.embedding?.length && performance.now() - lastCapture >= 160) {
+      const values = Array.from(face.embedding);
+      if (samples.length && vectorSimilarity(values, samples[0]) < 0.83) throw new Error("Mẫu khuôn mặt không ổn định. Vui lòng giữ thẳng mặt và quét lại!");
+      samples.push(values); lastCapture = performance.now(); progress.value = samples.length;
+      instruction.textContent = `Đang quét mẫu: ${samples.length}/5 (${samples.length * 20}%)`;
+      onProgress(samples.length, 5);
+=======
 const buildCaptureMetadata = (state) => {
   const stats = state.stats;
   return {
@@ -1113,21 +1203,47 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
         return { embeddings: state.samples, blink_verified: !enrollmentMode, capture: buildCaptureMetadata(state) };
       }
       await new Promise(resolve => setTimeout(resolve, betweenSamplesMs));
+>>>>>>> origin/main
     }
-    throw new Error(probeOnly
-      ? "Không khóa được đúng người quét. Đứng yên trước camera rồi thử lại."
-      : "Không lấy đủ mẫu khuôn mặt. Đứng yên, nhìn thẳng, đủ sáng rồi quét lại.");
-  } finally {
-    guide?.getContext("2d").clearRect(0, 0, guide.width, guide.height);
+    if (samples.length < 5) await new Promise(resolve => setTimeout(resolve, 60));
   }
+  if (samples.length < 5) throw new Error("Chưa nhận diện rõ khuôn mặt. Đứng gần hơn, nhìn thẳng và tăng ánh sáng rồi quét lại.");
+  return { embeddings: samples, blink_verified: true };
+  } finally { overlay.remove(); faceOutline.remove(); }
 };
 
+<<<<<<< HEAD
+const captureFaceProbe = async (video, isActive = () => true, onStage = () => {}) => {
+  await ensureFaceModels();
+  const deadline = performance.now() + 12000;
+  onStage("Nhìn thẳng vào camera để kiểm tra khuôn mặt đã được kích hoạt.");
+  while (performance.now() < deadline) {
+    if (!isActive()) throw new Error("Đã dừng kiểm tra khuôn mặt.");
+    const result = await human.detect(video);
+    if (!isActive()) throw new Error("Đã dừng kiểm tra khuôn mặt.");
+    const face = result.face?.length === 1 ? result.face[0] : null;
+    const box = face?.box;
+    const angle = face?.rotation?.angle;
+    const center = angle && Math.abs(angle.yaw) < 0.25 && Math.abs(angle.pitch) < 0.25 && Math.abs(angle.roll) < 0.25;
+    const inFrame = box && box[0] >= 0 && box[1] >= 0 && box[0] + box[2] <= video.videoWidth && box[1] + box[3] <= video.videoHeight;
+    const brightness = face && inFrame ? faceBrightness(video, box) : 0;
+    if (face && center && inFrame && box[2] >= 130 && face.score >= 0.80 && face.real >= 0.62 && face.live >= 0.62 && brightness >= 45 && face.embedding?.length) {
+      onStage("Đã thấy khuôn mặt rõ. Đang kiểm tra tài khoản đã kích hoạt.");
+      return Array.from(face.embedding);
+    }
+    onStage(result.face?.length > 1 ? "Chỉ một người đứng trước camera." : !face ? "Đưa khuôn mặt vào giữa khung hình." : !inFrame ? "Đưa toàn bộ khuôn mặt vào trong khung hình." : brightness < 45 ? "Khuôn mặt thiếu sáng. Tăng ánh sáng rồi thử lại." : "Nhìn thẳng vào camera và giữ yên.");
+    await new Promise(resolve => setTimeout(resolve, 80));
+  }
+  throw new Error("Không kiểm tra được khuôn mặt. Hãy nhìn thẳng, đủ sáng và thử lại.");
+};
+=======
 export const captureFaceSamples = async (video, onProgress = () => {}, isActive = () => true, onStage = () => {}, options = {}) =>
   runFaceCapture(video, { onProgress, onStage, isActive, probeOnly: false, timeoutMs: 25000, ...options });
 
 const captureFaceProbe = async (video, isActive = () => true, onStage = () => {}) =>
   runFaceCapture(video, { onStage, isActive, probeOnly: true, timeoutMs: 25000, enrollmentMode: true });
 
+>>>>>>> origin/main
 
 const isVirtualCameraLabel = (label = "") => {
   const normalized = String(label || "").toLowerCase();
@@ -1195,12 +1311,16 @@ const runFaceEnrollScan = async () => {
   const session = ++faceEnrollSession;
   try {
     if (!faceEnrollStream?.active) throw new Error("Camera chưa sẵn sàng. Vui lòng cho phép camera rồi mở lại cửa sổ.");
-    setFaceEnrollStatus("Đang khóa khuôn mặt", "Hệ thống tự tách khuôn mặt để quét, kể cả khi người quét đứng cả thân trong khung hình. Người đi qua lại sẽ bị bỏ qua.");
-    const probe = await captureFaceProbe(video, () => session === faceEnrollSession && Boolean(faceEnrollStream?.active), text => setFaceEnrollStatus("Kiểm tra FaceID đã kích hoạt", text));
+    setFaceEnrollStatus("Đang kiểm tra khuôn mặt đã đăng ký", "Chỉ một người trước camera. Đang xác nhận khuôn mặt chưa được dùng cho tài khoản khác.");
+    const embedding = await captureFaceProbe(video, () => session === faceEnrollSession && Boolean(faceEnrollStream?.active), text => setFaceEnrollStatus("Kiểm tra FaceID đã kích hoạt", text));
     if (session !== faceEnrollSession || !document.getElementById("modal-faceid-enroll")?.isConnected) return;
-    await api.post("/attendance/check-face-owner", { embedding: probe.embedding, capture: probe.capture });
+    await api.post("/attendance/check-face-owner", { embedding });
     if (session !== faceEnrollSession || !document.getElementById("modal-faceid-enroll")?.isConnected) return;
     if (startBtn) startBtn.querySelector("span:last-child").textContent = "Bắt đầu quét";
+<<<<<<< HEAD
+    setFaceEnrollStatus("Đang lấy 5 mẫu khuôn mặt...", "Chỉ một người trong khung hình, nhìn thẳng và giữ yên.");
+    faceEnrollDescriptor = await captureFaceSamples(video, (count, total) => setFaceEnrollStatus(`Đang quét mẫu: ${count}/${total} (${Math.round(count / total * 100)}%)`), () => session === faceEnrollSession && Boolean(faceEnrollStream?.active), text => setFaceEnrollStatus(text));
+=======
     setFaceEnrollStatus("Đang lấy 5 mẫu khuôn mặt...", "Giữ khuôn mặt tự nhiên, nhìn thẳng, không cười, giữ yên trong ~1.2 giây.");
     faceEnrollDescriptor = await captureFaceSamples(
       video,
@@ -1209,6 +1329,7 @@ const runFaceEnrollScan = async () => {
       text => setFaceEnrollStatus(text),
       { enrollmentMode: true, initialBaseline: probe.blinkBaseline },
     );
+>>>>>>> origin/main
     if (!activeSession(session)) return;
     setFaceEnrollStatus("Đã lấy đủ 5 mẫu khuôn mặt", "Bấm Lưu mẫu khuôn mặt để cập nhật FaceID. Hệ thống sẽ kiểm tra trùng với nhân viên khác.");
     if (saveBtn) { saveBtn.disabled = false; saveBtn.classList.remove("hidden"); saveBtn.classList.add("flex"); }
@@ -1462,6 +1583,179 @@ const promptFaceEnrollmentIfMissing = (user) => {
   }
 };
 
+const notificationState = {
+  items: [],
+  loaded: false,
+};
+
+const formatNotificationTime = (value) => {
+  if (!value) return "";
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+  return match ? `${match[3]}/${match[2]} ${match[4]}:${match[5]}` : String(value);
+};
+
+const renderNotifications = () => {
+  const list = document.getElementById("notificationList");
+  const badge = document.getElementById("notificationBadge");
+  if (!list || !badge) return;
+
+  const unread = notificationState.items.filter((item) => !item.is_read).length;
+  badge.textContent = String(unread > 99 ? 99 : unread);
+  badge.classList.toggle("hidden", unread === 0);
+  badge.classList.toggle("flex", unread > 0);
+
+  if (!notificationState.items.length) {
+    list.innerHTML =
+      '<div class="p-space-lg text-center font-body-sm text-body-sm text-on-surface-variant">Không có thông báo nào</div>';
+    return;
+  }
+
+  list.innerHTML = notificationState.items
+    .map((item) => {
+      const payload = item.payload || {};
+      const isSigned = item.type === "CONTRACT_SIGNED";
+      const isSigningRevision =
+        payload.decision === "REJECT" && Boolean(payload.signer_name);
+      const isDecision =
+        payload.decision === "APPROVE" || payload.decision === "REJECT";
+      const meta = isSigned
+        ? [
+            payload.employee_name,
+            payload.contract_code,
+            payload.signer_name ? `Người ký: ${payload.signer_name}` : "",
+            payload.version_no ? `v${payload.version_no}` : "",
+            formatNotificationTime(payload.signed_at || item.created_at),
+          ]
+        : isDecision
+          ? [
+              payload.employee_name,
+              payload.contract_code,
+              isSigningRevision
+                ? `Người yêu cầu: ${payload.signer_name || ""}`
+                : payload.approver_name,
+              formatNotificationTime(payload.decided_at || item.created_at),
+              payload.decision === "REJECT"
+                ? payload.revision_request || payload.rejection_reason || "Xem chi tiết yêu cầu chỉnh sửa"
+                : "",
+            ]
+          : [
+              payload.employee_name,
+              payload.contract_code,
+              payload.submitted_by_name,
+              formatNotificationTime(payload.submitted_at || item.created_at),
+            ];
+      const notificationIcon = isSigned
+        ? "draw"
+        : isSigningRevision
+          ? "edit_document"
+          : item.type === "CONTRACT_APPROVAL"
+            ? "approval"
+            : "notifications";
+      const metaText = meta
+        .filter(Boolean)
+        .map((value) => escapeHtml(value))
+        .join(" • ");
+      return `
+        <button type="button" class="w-full text-left px-space-md py-space-sm border-b border-surface-variant hover:bg-surface-container-low flex gap-space-sm ${item.is_read ? "" : "bg-primary-fixed/30"}" data-notification-id="${item.id}" data-target-type="${escapeHtml(item.target_type)}" data-target-id="${item.target_id}">
+          <span class="w-8 h-8 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[18px]">${notificationIcon}</span>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="flex items-center justify-between gap-2">
+              <span class="font-label-md text-label-md font-semibold text-on-surface truncate">${escapeHtml(item.title)}</span>
+              ${item.is_read ? "" : '<span class="w-2 h-2 rounded-full bg-primary shrink-0"></span>'}
+            </span>
+            <span class="mt-0.5 block font-body-sm text-body-sm text-on-surface-variant line-clamp-2">${escapeHtml(item.body)}</span>
+            <span class="mt-1 block font-label-sm text-label-sm text-on-surface-variant truncate">${metaText}</span>
+          </span>
+        </button>`;
+    })
+    .join("");
+};
+
+const loadNotifications = async () => {
+  try {
+    const response = await api.get("/notifications", { params: { limit: 30 } });
+    notificationState.items = Array.isArray(response.data?.notifications)
+      ? response.data.notifications
+      : [];
+    notificationState.loaded = true;
+    renderNotifications();
+  } catch {
+    notificationState.items = [];
+    notificationState.loaded = false;
+    renderNotifications();
+  }
+};
+
+const openNotificationTarget = async (notification) => {
+  if (!notification.is_read) {
+    try {
+      await api.post(`/notifications/${notification.id}/read`);
+    } catch {}
+  }
+
+  notificationState.items = notificationState.items.map((item) =>
+    item.id === notification.id ? { ...item, is_read: true } : item,
+  );
+  renderNotifications();
+  document.getElementById("notificationDropdown")?.classList.add("hidden");
+
+  if (notification.target_type !== "CONTRACT" || !notification.target_id) return;
+
+  if (window.location.hash !== "#/hop-dong") {
+    window.location.hash = "#/hop-dong";
+  }
+  window.setTimeout(() => {
+    window.dispatchEvent(
+      new CustomEvent("hrm:open-contract", {
+        detail: { contractId: Number(notification.target_id) },
+      }),
+    );
+  }, 150);
+};
+
+const bindNotifications = () => {
+  const bell = document.getElementById("notificationBellBtn");
+  const dropdown = document.getElementById("notificationDropdown");
+  if (!bell || !dropdown || bell.dataset.bound === "true") return;
+  bell.dataset.bound = "true";
+
+  bell.addEventListener("click", async () => {
+    const willOpen = dropdown.classList.contains("hidden");
+    dropdown.classList.toggle("hidden", !willOpen);
+    if (willOpen && !notificationState.loaded) await loadNotifications();
+  });
+
+  document.getElementById("btnMarkAllNotificationsRead")?.addEventListener("click", async () => {
+    try {
+      await api.post("/notifications/read-all");
+      notificationState.items = notificationState.items.map((item) => ({
+        ...item,
+        is_read: true,
+      }));
+      renderNotifications();
+    } catch {}
+  });
+
+  document.getElementById("notificationList")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-notification-id]");
+    if (!button) return;
+    const item = notificationState.items.find(
+      (entry) => Number(entry.id) === Number(button.dataset.notificationId),
+    );
+    if (item) openNotificationTarget(item);
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!dropdown.contains(event.target) && !bell.contains(event.target)) {
+      dropdown.classList.add("hidden");
+    }
+  });
+
+  loadNotifications();
+};
+
 const bindActions = () => {
     document.getElementById("logoutBtn")?.addEventListener("click", () => {
       window.dispatchEvent(new CustomEvent("hrm:logout-request"));
@@ -1490,6 +1784,7 @@ export const setupShell = (user = getCurrentUser()) => {
   }
 
   setupHeaderUser(user);
+  bindNotifications();
   ensurePermissionsNav(user);
   applyNavPermissions(user);
   bindActions();

@@ -6,9 +6,12 @@ import {
   createShiftAssignment,
   createWorkShift,
   deleteShiftAssignment,
+<<<<<<< HEAD
+=======
   deleteWorkShift,
   getAttendanceDetail,
   getMyAttendanceHistory,
+>>>>>>> origin/main
   getTodayStatus,
   listAttendanceByDate,
   listExplanations,
@@ -16,10 +19,8 @@ import {
   listWorkShifts,
   quickMarkAll,
   quickMarkAttendance,
-  recalculateDateAttendance,
   rejectExplanation,
   submitExplanation,
-  updateAttendanceManual,
   updateShiftAssignment,
   updateWorkShift,
   validateShiftPayload,
@@ -83,8 +84,11 @@ export const attendanceCheckIn = async (req, res) => {
       const messages = {
         NO_SHIFT: "Chưa cấu hình ca làm việc cho nhân viên",
         ALREADY_CHECKED_IN: "Đã chấm công vào ca hôm nay",
+<<<<<<< HEAD
+=======
         CHECK_IN_WINDOW_CLOSED: "Ngoài khung giờ cho phép chấm công vào ca",
         DOUBLE_PUNCH_TOO_FAST: `Quét quá nhanh sau lần chấm trước. Vui lòng đợi ${result.wait_seconds || 0} giây.`,
+>>>>>>> origin/main
       };
       return res.status(result.error === "ALREADY_CHECKED_IN" ? 409 : 400).json({
         success: false,
@@ -137,8 +141,11 @@ export const attendanceCheckOut = async (req, res) => {
       const messages = {
         NO_CHECK_IN_FOUND: "Bạn chưa chấm công Vào hôm nay, không thể chấm Ra!",
         ALREADY_CHECKED_OUT: "Đã chấm công tan ca hôm nay",
+<<<<<<< HEAD
+=======
         CHECK_OUT_WINDOW_CLOSED: "Ngoài khung giờ cho phép chấm công tan ca",
         DOUBLE_PUNCH_TOO_FAST: `Quét quá nhanh sau lần chấm trước. Vui lòng đợi ${result.wait_seconds || 0} giây.`,
+>>>>>>> origin/main
       };
       return res.status(result.error === "ALREADY_CHECKED_OUT" ? 409 : 400).json({
         success: false,
@@ -188,6 +195,8 @@ export const attendanceList = async (req, res) => {
   }
 };
 
+<<<<<<< HEAD
+=======
 export const attendanceMyHistory = async (req, res) => {
   try {
     const data = await getMyAttendanceHistory(req.user, req.query?.month);
@@ -224,6 +233,7 @@ export const attendanceManualUpdate = async (req, res) => {
   }
 };
 
+>>>>>>> origin/main
 export const attendanceQuickMark = async (req, res) => {
   try {
     const { employee_id, date, type } = req.body || {};
@@ -246,24 +256,6 @@ export const attendanceQuickMark = async (req, res) => {
       .json({ success: true, message: "Đã cập nhật chấm công", data: result });
   } catch (error) {
     return respondError(res, error, "Không thể cập nhật chấm công");
-  }
-};
-
-export const attendanceRecalculateDate = async (req, res) => {
-  try {
-    const { date, department_id } = req.body || {};
-    const data = await recalculateDateAttendance(
-      date,
-      req.user,
-      department_id ? Number(department_id) : null,
-    );
-    return res.status(200).json({
-      success: true,
-      message: `Đã tính lại công ngày ${data.date} cho ${data.count} nhân viên${data.skipped ? `, bỏ qua ${data.skipped} nhân viên tháng đã khóa` : ""}.`,
-      data,
-    });
-  } catch (error) {
-    return respondError(res, error, "Không thể tính lại công theo ngày");
   }
 };
 
@@ -426,20 +418,9 @@ export const cancelExplanationHandler = async (req, res) => {
     const data = await cancelExplanation(req.user, req.params.id);
     return res
       .status(200)
-      .json({ success: true, message: "�?A� h��y gi���i trA�nh cA'ng", data });
+      .json({ success: true, message: "Đã hủy giải trình công", data });
   } catch (error) {
-    return respondError(res, error, "KhA'ng th��� h��y gi���i trA�nh cA'ng");
-  }
-};
-
-export const removeWorkShift = async (req, res) => {
-  try {
-    const data = await deleteWorkShift(req.params.id);
-    return res
-      .status(200)
-      .json({ success: true, message: "Đã xóa ca làm việc", data });
-  } catch (error) {
-    return respondError(res, error, "Không thể xóa ca làm việc");
+    return respondError(res, error, "Không thể hủy giải trình công");
   }
 };
 
