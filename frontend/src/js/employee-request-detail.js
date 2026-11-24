@@ -21,6 +21,16 @@ const ACTION_META = {
   RECEIVE: { label: "Tiếp nhận hồ sơ bổ sung", icon: "inventory_2", color: "text-emerald-700 bg-emerald-100" },
 };
 
+const APPROVAL_STAGE_META = {
+  SUBMIT: { label: "Nhân viên gửi đơn", icon: "person", color: "text-primary bg-primary-fixed" },
+  RESUBMIT: { label: "Nhân viên gửi lại hồ sơ", icon: "person", color: "text-indigo-700 bg-indigo-100" },
+  CHECK: { label: "HR kiểm tra hồ sơ", icon: "fact_check", color: "text-blue-700 bg-blue-100" },
+  RECEIVE: { label: "HR tiếp nhận bổ sung", icon: "inventory_2", color: "text-emerald-700 bg-emerald-100" },
+  REQUEST_UPDATE: { label: "HR yêu cầu bổ sung", icon: "fact_check", color: "text-orange-700 bg-orange-100" },
+};
+
+const APPROVER_ROLES = ["MANAGER", "DIRECTOR", "HR_ADMIN"];
+
 const WORK_STATUS_LABEL = {
   WORKING: "Đang làm việc",
   MATERNITY: "Nghỉ thai sản",
@@ -49,7 +59,9 @@ const state = {
 export const getEmployeeRequestIdFromHash = (
   hash = window.location.hash,
 ) => {
-  const match = hash.match(/^#\/don-tu\/(\d+)$/);
+  const match = hash.match(
+    /^#\/(?:don-tu|duyet-don|hr-don-tu|giam-doc-don-tu)\/(\d+)$/,
+  );
   return match ? Number(match[1]) : null;
 };
 
@@ -138,6 +150,45 @@ const statusBadge = (status) => {
     <span class="w-1.5 h-1.5 rounded-full bg-current opacity-70"></span>
     ${escapeHtml(meta.label)}
   </span>`;
+};
+
+const statusLabel = (status) => STATUS_META[status]?.label || status || "—";
+
+const approvalStage = (action, request) => {
+  if (action.action === "APPROVE" || action.action === "REJECT") {
+    const decision = action.action === "REJECT" ? "từ chối" : "phê duyệt";
+    if (action.from_status === "PENDING_DEPARTMENT") {
+      return {
+        label: `Quản lý ${decision}`,
+        icon: decision === "từ chối" ? "cancel" : "check_circle",
+        color: decision === "từ chối" ? "text-red-700 bg-red-100" : "text-emerald-700 bg-emerald-100",
+      };
+    }
+    if (action.from_status === "PENDING_HR") {
+      const isForward =
+        action.action === "APPROVE" && request.request_type === "RESIGNATION";
+      return {
+        label: isForward ? "HR trình Giám đốc" : `HR ${decision}`,
+        icon: isForward ? "forward_to_inbox" : decision === "từ chối" ? "cancel" : "check_circle",
+        color: isForward ? "text-blue-700 bg-blue-100" : decision === "từ chối" ? "text-red-700 bg-red-100" : "text-emerald-700 bg-emerald-100",
+      };
+    }
+    if (action.from_status === "PENDING_DIRECTOR") {
+      return {
+        label: `Giám đốc ${decision}`,
+        icon: decision === "từ chối" ? "cancel" : "check_circle",
+        color: decision === "từ chối" ? "text-red-700 bg-red-100" : "text-purple-700 bg-purple-100",
+      };
+    }
+  }
+
+  return (
+    APPROVAL_STAGE_META[action.action] || {
+      label: ACTION_META[action.action]?.label || action.action || "Hoạt động",
+      icon: "history",
+      color: "bg-surface-container-high text-on-surface-variant",
+    }
+  );
 };
 
 const buildProgressSteps = (request) => {
@@ -261,42 +312,53 @@ const renderAttachments = (request) => {
     .join("");
 };
 
-const renderTimeline = (request) => {
-  const container = document.getElementById("detailTimeline");
+const renderApprovalHistory = (request) => {
+  const container = document.getElementById("detailApprovalHistory");
   if (!container) return;
 
   const timeline = Array.isArray(request.timeline) ? request.timeline : [];
   if (!timeline.length) {
     container.innerHTML = `
-      <p class="font-body-sm text-body-sm text-on-surface-variant">Chưa có lịch sử xử lý.</p>
+      <p class="font-body-sm text-body-sm text-on-surface-variant">Chưa có lịch sử duyệt các cấp.</p>
     `;
     return;
   }
 
   container.innerHTML = timeline
-    .map((action) => {
+    .map((action, index) => {
+      const stage = approvalStage(action, request);
       const meta = ACTION_META[action.action] || {
         label: action.action || "Hoạt động",
         icon: "history",
-        color: "bg-surface-container-high text-on-surface-variant",
       };
 
       return `
-        <div class="flex items-start gap-space-sm">
-          <span class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${meta.color}">
-            <span class="material-symbols-outlined text-[18px]">${meta.icon}</span>
+        <div class="relative pl-9 pb-space-md last:pb-0">
+          ${
+            index < timeline.length - 1
+              ? `<span class="absolute left-[11px] top-7 bottom-0 w-px bg-surface-variant"></span>`
+              : ""
+          }
+          <span class="absolute left-0 top-0 w-6 h-6 rounded-full flex items-center justify-center ${stage.color}">
+            <span class="material-symbols-outlined text-[15px]">${stage.icon}</span>
           </span>
-          <div class="min-w-0 flex-1 pb-space-sm border-b border-surface-variant last:border-b-0">
-            <div class="flex flex-wrap items-center justify-between gap-space-xs">
-              <p class="font-body-md text-body-md font-semibold text-on-surface">${escapeHtml(meta.label)}</p>
-              <span class="font-label-sm text-label-sm text-on-surface-variant">${formatDateTime(action.created_at)}</span>
-            </div>
-            <p class="font-label-sm text-label-sm text-on-surface-variant">
-              ${escapeHtml(action.actor_name || "Hệ thống")}
-              ${action.from_status || action.to_status ? ` • ${escapeHtml(action.from_status || "—")} → ${escapeHtml(action.to_status || "—")}` : ""}
+          <div class="flex flex-wrap items-center justify-between gap-space-xs">
+            <p class="font-body-md text-body-md font-semibold text-on-surface">
+              ${escapeHtml(stage.label)}
             </p>
-            ${action.comment ? `<p class="whitespace-pre-wrap font-body-sm text-body-sm text-on-surface mt-1">${escapeHtml(action.comment)}</p>` : ""}
+            <span class="font-label-sm text-label-sm text-on-surface-variant">${formatDateTime(action.created_at)}</span>
           </div>
+          <p class="font-label-sm text-label-sm text-on-surface-variant">
+            ${escapeHtml(action.actor_name || "Hệ thống")} • ${escapeHtml(meta.label)}
+          </p>
+          <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">
+            ${escapeHtml(statusLabel(action.from_status))} → ${escapeHtml(statusLabel(action.to_status))}
+          </p>
+          ${
+            action.comment
+              ? `<p class="whitespace-pre-wrap font-body-sm text-body-sm text-on-surface mt-1">${escapeHtml(action.comment)}</p>`
+              : ""
+          }
         </div>
       `;
     })
@@ -349,6 +411,20 @@ const renderHrActions = (request) => {
   document.getElementById("btnHrReceiveDetail")?.classList.toggle("hidden", !hasSupplement);
 };
 
+const renderDirectorActions = (request) => {
+  const section = document.getElementById("detailDirectorActionsSection");
+  if (!section) return;
+
+  const isSelf =
+    Number(request.employee_id) === Number(state.currentUser?.employee_id);
+  const visible =
+    state.currentUser?.role_id === "DIRECTOR" &&
+    request.status === "PENDING_DIRECTOR" &&
+    !isSelf;
+
+  section.classList.toggle("hidden", !visible);
+};
+
 const runDetailHrAction = async (action, button, message) => {
   const id = state.request?.id;
   if (!id) return;
@@ -377,6 +453,100 @@ const runDetailHrAction = async (action, button, message) => {
   } finally {
     button.disabled = false;
     button.innerHTML = originalHtml;
+  }
+};
+
+const runDirectorApprove = async (button) => {
+  const id = state.request?.id;
+  if (!id) return;
+
+  hideNotice();
+  const originalHtml = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = "<span>Đang duyệt...</span>";
+
+  try {
+    await api.post(`/employee-requests/${id}/approve`, {
+      note: "Giám đốc phê duyệt",
+    });
+    await loadDetail(id);
+    showNotice(`Đã duyệt đơn #${id}.`, false);
+  } catch (error) {
+    showNotice(errorMessage(error, "Không thể duyệt đơn. Vui lòng thử lại."), true);
+  } finally {
+    button.disabled = false;
+    button.innerHTML = originalHtml;
+  }
+};
+
+const showDirectorRejectError = (message) => {
+  const error = document.getElementById("directorRejectError");
+  if (!error) return;
+  error.textContent = message;
+  error.classList.remove("hidden");
+};
+
+const hideDirectorRejectError = () => {
+  const error = document.getElementById("directorRejectError");
+  if (!error) return;
+  error.textContent = "";
+  error.classList.add("hidden");
+};
+
+const openDirectorRejectModal = () => {
+  const modal = document.getElementById("modal-director-reject-request");
+  const form = document.getElementById("directorRejectRequestForm");
+  if (!modal || !form) return;
+
+  form.reset();
+  hideDirectorRejectError();
+  setText("#directorRejectSubtitle", `Đơn #${state.request?.id ?? "—"}`);
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+};
+
+const closeDirectorRejectModal = () => {
+  const modal = document.getElementById("modal-director-reject-request");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+};
+
+const submitDirectorReject = async (event) => {
+  event.preventDefault();
+  const id = state.request?.id;
+  if (!id) return;
+
+  hideDirectorRejectError();
+  const reason = document.getElementById("directorRejectReason")?.value.trim();
+  if (!reason) {
+    showDirectorRejectError("Vui lòng nhập lý do từ chối.");
+    return;
+  }
+
+  const button = document.getElementById("btnConfirmDirectorReject");
+  const originalHtml = button?.innerHTML || "";
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = "<span>Đang gửi...</span>";
+  }
+
+  try {
+    await api.post(`/employee-requests/${id}/reject`, {
+      reject_reason: reason,
+    });
+    closeDirectorRejectModal();
+    await loadDetail(id);
+    showNotice(`Đã từ chối đơn #${id}.`, false);
+  } catch (error) {
+    showDirectorRejectError(
+      errorMessage(error, "Không thể từ chối đơn. Vui lòng thử lại."),
+    );
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = originalHtml;
+    }
   }
 };
 
@@ -712,6 +882,7 @@ const renderDetail = (request) => {
   setText("#detailReason", request.reason || "—");
 
   renderHrActions(request);
+  renderDirectorActions(request);
   renderHrProfile(request);
 
   const progress = document.getElementById("detailProgress");
@@ -727,7 +898,7 @@ const renderDetail = (request) => {
 
   renderResubmitSection(request);
   renderAttachments(request);
-  renderTimeline(request);
+  renderApprovalHistory(request);
 };
 
 const loadDetail = async (id) => {
@@ -802,22 +973,26 @@ const submitResubmit = async (event, id) => {
 };
 
 const bindEvents = (id, user) => {
-  const approverRoles = ["MANAGER", "DIRECTOR", "HR_ADMIN"];
-  const fromApprovals = approverRoles.includes(user?.role_id);
+  const fromApprovals = APPROVER_ROLES.includes(user?.role_id);
   const isHr = user?.role_id === "HR_ADMIN";
-  const backHash = isHr
-    ? "#/hr-don-tu"
-    : fromApprovals
-      ? "#/duyet-don"
-      : "#/don-tu";
+  const isDirector = user?.role_id === "DIRECTOR";
+  const backHash = isDirector
+    ? "#/giam-doc-don-tu"
+    : isHr
+      ? "#/hr-don-tu"
+      : fromApprovals
+        ? "#/duyet-don"
+        : "#/don-tu";
   const backButton = document.getElementById("btnBackEmployeeRequests");
 
   if (backButton) {
-    const backLabel = isHr
-      ? "Đơn chờ HR xử lý"
-      : fromApprovals
-        ? "Trung tâm phê duyệt"
-        : "Danh sách đơn từ";
+    const backLabel = isDirector
+      ? "Đơn chờ Giám đốc duyệt"
+      : isHr
+        ? "Đơn chờ HR xử lý"
+        : fromApprovals
+          ? "Trung tâm phê duyệt"
+          : "Danh sách đơn từ";
     backButton.innerHTML = `
       <span class="material-symbols-outlined text-[15px]">arrow_back</span>
       <span>${backLabel}</span>
@@ -839,6 +1014,19 @@ const bindEvents = (id, user) => {
   bindOnce(document.getElementById("btnHrForwardDetail"), "click", (event) => {
     runDetailHrAction("approve", event.currentTarget, (label) => `Đã duyệt đơn ${label}.`);
   });
+  bindOnce(document.getElementById("btnDirectorApproveDetail"), "click", (event) => {
+    runDirectorApprove(event.currentTarget);
+  });
+  bindOnce(document.getElementById("btnDirectorRejectDetail"), "click", openDirectorRejectModal);
+  bindOnce(document.getElementById("btnCloseDirectorReject"), "click", closeDirectorRejectModal);
+  bindOnce(document.getElementById("btnCancelDirectorReject"), "click", closeDirectorRejectModal);
+  bindOnce(document.getElementById("directorRejectRequestForm"), "submit", submitDirectorReject);
+
+  const rejectModal = document.getElementById("modal-director-reject-request");
+  bindOnce(rejectModal, "click", (event) => {
+    if (event.target === rejectModal) closeDirectorRejectModal();
+  });
+
   bindOnce(document.getElementById("detailResubmitForm"), "submit", (event) => {
     submitResubmit(event, id);
   });

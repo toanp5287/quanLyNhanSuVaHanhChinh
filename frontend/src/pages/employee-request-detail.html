@@ -149,6 +149,40 @@
         </div>
       </section>
 
+      <section
+        class="hidden bg-surface-container-lowest rounded-lg shadow-sm border border-purple/30 p-space-md"
+        id="detailDirectorActionsSection"
+      >
+        <div class="flex items-center justify-between gap-space-sm flex-wrap mb-space-md">
+          <div>
+            <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">
+              Quyết định của Giám đốc
+            </h2>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">
+              Đây là bước phê duyệt cuối. Từ chối đơn bắt buộc phải nhập lý do.
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center flex-wrap gap-space-xs">
+          <button
+            class="h-9 px-space-md rounded bg-purple-700 text-on-primary hover:opacity-90 font-label-lg text-label-lg flex items-center gap-1.5"
+            id="btnDirectorApproveDetail"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[18px]">check_circle</span>
+            <span>Duyệt đơn</span>
+          </button>
+          <button
+            class="h-9 px-space-md rounded border border-error/40 text-error hover:bg-error-container font-label-lg text-label-lg flex items-center gap-1.5"
+            id="btnDirectorRejectDetail"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[18px]">cancel</span>
+            <span>Từ chối đơn</span>
+          </button>
+        </div>
+      </section>
+
       <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
         <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface mb-space-md">Tiến trình xử lý</h2>
         <div class="flex flex-col md:flex-row md:items-start gap-space-sm overflow-x-auto" id="detailProgress"></div>
@@ -242,9 +276,19 @@
         <div class="flex flex-col gap-space-xs" id="detailAttachmentList"></div>
       </section>
 
-      <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+      <section
+        class="bg-surface-container-lowest rounded-lg shadow-sm border border-primary/30 p-space-md"
+        id="detailApprovalHistorySection"
+      >
         <div class="flex items-center justify-between gap-space-sm flex-wrap mb-space-md">
-          <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">Lịch sử xử lý</h2>
+          <div>
+            <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">
+              Lịch sử duyệt các cấp trước
+            </h2>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">
+              Thứ tự xử lý từ người gửi, quản lý, HR đến Giám đốc (nếu đã trình).
+            </p>
+          </div>
           <button
             class="h-8 px-space-sm rounded border border-surface-variant text-on-surface hover:bg-surface-container-high font-label-sm text-label-sm flex items-center gap-1"
             id="btnReloadEmployeeRequestDetail"
@@ -254,8 +298,65 @@
             <span>Làm mới</span>
           </button>
         </div>
-        <div class="flex flex-col gap-space-sm" id="detailTimeline"></div>
+        <div class="flex flex-col" id="detailApprovalHistory"></div>
       </section>
+
+      <div
+        class="fixed inset-0 z-[130] hidden items-center justify-center bg-black/40 p-space-sm"
+        id="modal-director-reject-request"
+      >
+        <div class="w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto bg-surface-container-lowest rounded-lg shadow-xl border border-surface-variant">
+          <div class="flex items-center justify-between px-space-md py-space-sm border-b border-surface-variant">
+            <div>
+              <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">Từ chối đơn</h2>
+              <p class="font-body-sm text-body-sm text-on-surface-variant" id="directorRejectSubtitle">Đơn #—</p>
+            </div>
+            <button
+              class="w-8 h-8 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center"
+              id="btnCloseDirectorReject"
+              type="button"
+              aria-label="Đóng"
+            >
+              <span class="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
+
+          <form class="p-space-md flex flex-col gap-space-sm" id="directorRejectRequestForm">
+            <div
+              class="hidden rounded-lg border border-error/30 bg-error-container px-space-md py-space-sm font-body-sm text-body-sm text-on-error-container"
+              id="directorRejectError"
+            ></div>
+            <div class="flex flex-col gap-1">
+              <label class="font-label-md text-label-md font-semibold text-on-surface" for="directorRejectReason">
+                Lý do từ chối <span class="text-error">*</span>
+              </label>
+              <textarea
+                class="w-full min-h-[110px] px-3 py-2 rounded border border-surface-variant bg-surface-container-low text-on-surface focus:ring-1 focus:ring-primary outline-none resize-y"
+                id="directorRejectReason"
+                maxlength="5000"
+                placeholder="Nhập lý do Giám đốc từ chối đơn..."
+                required
+              ></textarea>
+            </div>
+            <div class="flex flex-col sm:flex-row sm:justify-end gap-space-xs pt-space-sm border-t border-surface-variant">
+              <button
+                class="h-9 px-space-md rounded border border-surface-variant text-on-surface hover:bg-surface-container-high font-label-lg text-label-lg"
+                id="btnCancelDirectorReject"
+                type="button"
+              >
+                Hủy
+              </button>
+              <button
+                class="h-9 px-space-md rounded bg-error text-on-error hover:opacity-90 font-label-lg text-label-lg"
+                id="btnConfirmDirectorReject"
+                type="submit"
+              >
+                Xác nhận từ chối
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
   </div>
 </main>

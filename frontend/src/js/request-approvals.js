@@ -65,20 +65,28 @@ const ROLE_CONFIG = {
     summary: ["PENDING_HR", "WAITING_EMPLOYEE_UPDATE", "PROCESSED", "REJECTED"],
   },
   DIRECTOR: {
-    title: "Đơn cần ý kiến Giám đốc",
-    subtitle: "Xem và ra quyết định cuối cùng cho đơn nghỉ việc.",
+    title: "Đơn chờ Giám đốc duyệt",
+    subtitle: "Danh sách đơn trình Giám đốc, phân loại theo trạng thái xử lý.",
     defaultStatus: "PENDING_DIRECTOR",
     tabs: [
       { key: "ALL", label: "Tất cả" },
-      { key: "PENDING_DIRECTOR", label: "Cần duyệt", statuses: ["PENDING_DIRECTOR"] },
+      { key: "PENDING_DIRECTOR", label: "Chờ duyệt", statuses: ["PENDING_DIRECTOR"] },
       { key: "APPROVED", label: "Đã duyệt", statuses: ["APPROVED"] },
       { key: "REJECTED", label: "Từ chối", statuses: ["REJECTED"] },
     ],
-    summary: ["PENDING_DIRECTOR", "APPROVED", "REJECTED"],
+    summary: ["ALL", "PENDING_DIRECTOR", "APPROVED", "REJECTED"],
   },
 };
 
 const SUMMARY_META = {
+  ALL: {
+    label: "Tổng đơn",
+    description: "Tất cả đơn trong phạm vi phụ trách.",
+    icon: "description",
+    countClass: "text-primary",
+    iconClass: "bg-primary-fixed text-on-primary-fixed",
+    hoverClass: "hover:border-primary/40",
+  },
   PENDING_DEPARTMENT: {
     label: "Cần duyệt",
     description: "Đơn chờ ý kiến quản lý.",
@@ -94,6 +102,14 @@ const SUMMARY_META = {
     countClass: "text-blue-700",
     iconClass: "bg-blue-100 text-blue-700",
     hoverClass: "hover:border-blue-300",
+  },
+  PENDING_DIRECTOR: {
+    label: "Chờ duyệt",
+    description: "Đơn đã qua HR, chờ ý kiến cuối cùng.",
+    icon: "gavel",
+    countClass: "text-purple-700",
+    iconClass: "bg-purple-100 text-purple-700",
+    hoverClass: "hover:border-purple-300",
   },
   WAITING_EMPLOYEE_UPDATE: {
     label: "Chờ bổ sung",
@@ -796,7 +812,14 @@ const bindEvents = () => {
 
     const viewButton = event.target.closest("[data-view-approval-id]");
     if (viewButton) {
-      window.location.hash = `#/don-tu/${viewButton.getAttribute("data-view-approval-id")}`;
+      const id = viewButton.getAttribute("data-view-approval-id");
+      const detailBase =
+        state.currentUser?.role_id === "DIRECTOR"
+          ? "#/giam-doc-don-tu"
+          : state.currentUser?.role_id === "HR_ADMIN"
+            ? "#/hr-don-tu"
+            : "#/don-tu";
+      window.location.hash = `${detailBase}/${id}`;
     }
   });
 

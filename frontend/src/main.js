@@ -276,6 +276,12 @@ function showRequestApprovals(user, status = "ALL") {
 
 function renderRouteView(user) {
   const hash = window.location.hash;
+  const detailId = getEmployeeRequestIdFromHash(hash);
+
+  if (detailId) {
+    showEmployeeRequestDetail(user, detailId);
+    return;
+  }
 
   if (hash === "#/face-id") {
     initFaceKiosk();
@@ -294,13 +300,17 @@ function renderRouteView(user) {
     const approvalHash = hash.replace("#/hr-don-tu", "#/duyet-don");
     showRequestApprovals(user, getApprovalStatusFromHash(approvalHash));
   } else if (
+    hash === "#/giam-doc-don-tu" ||
+    hash.startsWith("#/giam-doc-don-tu/")
+  ) {
+    const approvalHash = hash.replace("#/giam-doc-don-tu", "#/duyet-don");
+    showRequestApprovals(user, getApprovalStatusFromHash(approvalHash));
+  } else if (
     hash === "#/don-tu" ||
     hash === "#/don-tu/nghi-viec" ||
     hash === "#/don-tu/tam-nghi"
   ) {
     showEmployeeRequests(user, getEmployeeRequestTypeFromHash(hash));
-  } else if (getEmployeeRequestIdFromHash(hash)) {
-    showEmployeeRequestDetail(user, getEmployeeRequestIdFromHash(hash));
   } else if (hash === "#/nhan-vien" || hash.startsWith("#/nhan-vien/")) {
     showEmployees(user, getEmployeeModeFromHash(hash));
   } else if (hash === "#/ho-so-ca-nhan") {
@@ -343,12 +353,19 @@ document.addEventListener("click", (event) => {
       "Tạo đơn từ trực tuyến": "#/don-tu",
       "Trung tâm Phê duyệt": "#/duyet-don",
       "Đơn chờ HR xử lý": "#/hr-don-tu",
+      "Đơn chờ Giám đốc duyệt": "#/giam-doc-don-tu",
       "Sơ đồ phòng ban": "#/so-do-phong-ban",
     };
 
-    if (cardRoutes[title]) {
+    const approvalUser = getCurrentUser();
+    const cardRoute =
+      title === "Trung tâm Phê duyệt" && approvalUser?.role_id === "DIRECTOR"
+        ? "#/giam-doc-don-tu"
+        : cardRoutes[title];
+
+    if (cardRoute) {
       event.preventDefault();
-      window.location.hash = cardRoutes[title];
+      window.location.hash = cardRoute;
       return;
     }
   }
