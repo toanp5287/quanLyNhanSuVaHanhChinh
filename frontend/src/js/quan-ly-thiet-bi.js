@@ -1,3 +1,4 @@
+import "../css/device-management.css";
 import deviceHtml from "../pages/quan-ly-thiet-bi.html?raw";
 import { adminDevicesApi } from "../services/deviceSecurity.js";
 import { getCurrentUser } from "../services/auth.service.js";
@@ -14,6 +15,13 @@ const errorMessage = (error) =>
   error.response?.data?.message ||
   (error.response ? `Máy chủ không xử lý được yêu cầu (HTTP ${error.response.status}).` : "Không thể kết nối máy chủ.");
 
+const STATUS_META = {
+  AUTHORIZED: { label: "Đã cấp phép", badge: "dm-badge-active", icon: "verified_user", tone: "text-emerald-700" },
+  DEVICE_LOCKED: { label: "Đang bị khóa", badge: "dm-badge-inactive", icon: "lock", tone: "text-red-700" },
+  DEVICE_IP_MISMATCH: { label: "Sai IP điểm danh", badge: "dm-badge-inactive", icon: "wrong_location", tone: "text-amber-700" },
+  DEVICE_NOT_REGISTERED: { label: "Chưa cấp phép", badge: "dm-badge-mode", icon: "devices_off", tone: "text-slate-700" },
+};
+
 export const initQuanLyThietBi = (user = getCurrentUser()) => {
   if (!user || user.role_id !== "SUPER_ADMIN") return;
   const main = document.querySelector("main");
@@ -25,10 +33,11 @@ export const initQuanLyThietBi = (user = getCurrentUser()) => {
   if (!root) return;
 
   const q = (selector) => root.querySelector(selector);
+  const qa = (selector) => Array.from(root.querySelectorAll(selector));
   const state = {
     devices: [],
-    settings: { require_device_check: true, require_ip_check: false, allowed_ips: [] },
-    currentIp: "",
+    networkSettings: { office_allowed_ips: null, login_allowed_ips: null },
+    currentClient: { ip: "", hasDeviceCookie: false, matchedDevice: null, attendanceStatus: "DEVICE_NOT_REGISTERED", effectiveAllowedIps: null },
   };
 
   const setNotice = (message = "", type = "info") => {
@@ -39,114 +48,106 @@ export const initQuanLyThietBi = (user = getCurrentUser()) => {
       box.textContent = "";
       return;
     }
-    const tones = {
-      info: "bg-sky-50 text-sky-800",
-      success: "bg-emerald-50 text-emerald-800",
-      error: "bg-red-50 text-red-700",
-    };
+    const tones = { info: "bg-sky-50 text-sky-800", success: "bg-emerald-50 text-emerald-800", error: "bg-red-50 text-red-700" };
     box.className = `rounded-lg p-3 text-sm ${tones[type] || tones.info}`;
     box.textContent = message;
   };
 
   const setBusy = (busy) => {
-    [
-      "#deviceApproveBtn",
-      "#deviceRefreshBtn",
-      "#deviceAddIpBtn",
-      "#deviceRefreshIpBtn",
-      "#deviceSaveSettingsBtn",
-    ].forEach((selector) => {
-      const button = q(selector);
-      if (button) button.disabled = busy;
-    });
+    qa("button, input, select").forEach((el) => { el.disabled = busy; });
   };
 
-  const renderCurrentStatus = () => {
-    const current = state.devices.find((device) => device.is_current_device);
-    const box = q("#deviceCurrentStatus");
-    if (!box) return;
-    if (!current) {
-      box.className = "mt-space-md rounded bg-amber-50 px-3 py-2 font-body-sm text-body-sm text-amber-800";
-      box.textContent = "Máy này CHƯA được cấp phép. Các màn hình điểm danh / Face ID sẽ bị chặn.";
-      return;
-    }
-    const rights = [
-      current.allow_attendance ? "Điểm danh" : null,
-      current.allow_face_enroll ? "Face ID" : null,
-    ].filter(Boolean).join(", ") || "không có quyền chức năng";
-    box.className = `mt-space-md rounded px-3 py-2 font-body-sm text-body-sm ${current.is_active ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`;
-    box.textContent = `${current.is_active ? "Máy này ĐÃ được cấp phép" : "Máy này đã bị KHÓA"} • ${current.device_name} • Quyền: ${rights}`;
+  const renderCurrent = () => {
+    const { currentClient, networkSettings } = state;
+    const meta = STATUS_META[currentClient.attendanceStatus] || STATUS_META.DEVICE_NOT_REGISTERED;
+    const matched = currentClient.matchedDevice;
+    q("#deviceCurrentStatus").textContent = currentClient.attendanceStatus === "AUTHORIZED"
+      ? `Thiết bị "${matched?.device_name || "hiện tại"}" đã cấp phép và sẵn sàng điểm danh.`
+      : currentClient.attendanceStatus === "DEVICE_LOCKED"
+        ? `Thiết bị "${matched?.device_name || "hiện tại"}" đang bị KHÓA quyền điểm danh.`
+        : currentClient.attendanceStatus === "DEVICE_IP_MISMATCH"
+          ? `Thiết bị "${matched?.device_name || "hiện tại"}" không đúng IP điểm danh được phép.`
+          : "Máy này chưa được thêm vào hệ thống cấp phép điểm danh.";
+    q("#deviceCurrentStatus").className = `font-body-md text-body-md font-semibold ${meta.tone}`;
+    const badge = q("#deviceCurrentBadge");
+    badge.className = `dm-badge ${meta.badge}`;
+    badge.textContent = meta.label;
+    q("#deviceCurrentIcon").innerHTML = `<span class="material-symbols-outlined text-[24px]">${meta.icon}</span>`;
+    q("#deviceCurrentDetail").textContent = currentClient.attendanceStatus === "DEVICE_IP_MISMATCH"
+      ? `IP hiện tại: ${currentClient.ip || "—"} | IP quy định: ${currentClient.effectiveAllowedIps || "—"}`
+      : currentClient.attendanceStatus === "DEVICE_LOCKED"
+        ? "Bạn có thể mở khóa nhanh để cho phép điểm danh lại ngay."
+        : currentClient.attendanceStatus === "DEVICE_NOT_REGISTERED"
+          ? "Máy lạ dù đúng IP công ty cũng bị chặn nếu chưa được cấp phép."
+          : `IP hiện tại: ${currentClient.ip || "—"}`;
+    q("#deviceCurrentIp").textContent = currentClient.ip || "—";
+    q("#deviceCurrentMatch").textContent = matched?.device_name || "Không khớp";
+    q("#deviceEffectiveIps").textContent = currentClient.effectiveAllowedIps || "Theo IP chung / Không giới hạn";
+
+    const unlockBtn = q("#deviceUnlockBtn");
+    const updateIpBtn = q("#deviceUpdateIpBtn");
+    const approveBtn = q("#deviceApproveBtn");
+    unlockBtn.classList.toggle("hidden", !(currentClient.attendanceStatus === "DEVICE_LOCKED" && matched));
+    unlockBtn.classList.toggle("flex", currentClient.attendanceStatus === "DEVICE_LOCKED" && !!matched);
+    updateIpBtn.classList.toggle("hidden", !(currentClient.attendanceStatus === "DEVICE_IP_MISMATCH" && matched));
+    updateIpBtn.classList.toggle("flex", currentClient.attendanceStatus === "DEVICE_IP_MISMATCH" && !!matched);
+    const canApprove = currentClient.attendanceStatus === "DEVICE_NOT_REGISTERED";
+    approveBtn.classList.toggle("hidden", !canApprove);
+    approveBtn.classList.toggle("flex", canApprove);
+    approveBtn.disabled = !canApprove;
+
+    q("#officeAllowedIpsInput").value = networkSettings.office_allowed_ips || "";
+    q("#loginAllowedIpsInput").value = networkSettings.login_allowed_ips || "";
   };
 
-  const renderIps = () => {
-    const list = q("#deviceIpsList");
-    if (!list) return;
-    const ips = state.settings.allowed_ips || [];
-    if (!ips.length) {
-      list.innerHTML = `<p class="rounded bg-surface-container-low px-3 py-2 font-body-sm text-body-sm text-on-surface-variant">Chưa có IP nào trong danh sách.</p>`;
-      return;
-    }
-    list.innerHTML = ips
-      .map(
-        (ip, index) => `
-        <div class="flex items-center justify-between rounded bg-surface-container-low px-3 py-2">
-          <span class="font-body-sm text-body-sm text-on-surface">${escapeHtml(ip)}${ip === state.currentIp ? " • IP hiện tại" : ""}</span>
-          <button type="button" data-remove-ip="${index}" class="text-on-surface-variant hover:text-error" title="Xóa IP">
-            <span class="material-symbols-outlined text-[18px]">delete</span>
-          </button>
-        </div>`,
-      )
-      .join("");
-  };
-
-  const renderDevices = () => {
+  const renderTable = () => {
     const tbody = q("#devicesTableBody");
-    if (!tbody) return;
     if (!state.devices.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="py-4 px-3 text-center text-on-surface-variant">Chưa có thiết bị nào được cấp phép.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="py-4 px-3 text-center text-on-surface-variant">Chưa có thiết bị nào được cấp phép.</td></tr>`;
       return;
     }
-    const toggle = (device, field, checked) => `
-      <input type="checkbox" data-device-id="${device.id}" data-field="${field}" ${checked ? "checked" : ""} class="h-4 w-4 accent-[var(--md-sys-color-primary)]" />`;
-    tbody.innerHTML = state.devices
-      .map((device) => {
-        const usedAt = device.last_used_at ? formatDateTime(device.last_used_at) : "Chưa từng sử dụng";
-        return `<tr class="hover:bg-surface-container-low/60">
-          <td class="py-2.5 px-3 font-semibold text-on-surface">
-            ${escapeHtml(device.device_name)}
-            ${device.is_current_device ? '<span class="ml-1 rounded bg-primary-fixed px-2 py-0.5 text-[11px] text-on-primary-fixed">Máy này</span>' : ""}
-            ${device.mac_note ? `<span class="block font-body-sm text-body-sm text-on-surface-variant">${escapeHtml(device.mac_note)}</span>` : ""}
-            ${device.note ? `<span class="block font-body-sm text-body-sm text-on-surface-variant">${escapeHtml(device.note)}</span>` : ""}
-          </td>
-          <td class="py-2.5 px-3">${toggle(device, "allow_attendance", device.allow_attendance)}</td>
-          <td class="py-2.5 px-3">${toggle(device, "allow_face_enroll", device.allow_face_enroll)}</td>
-          <td class="py-2.5 px-3">
-            <label class="flex items-center gap-2 font-body-sm text-body-sm ${device.is_active ? "text-emerald-700" : "text-red-700"}">
-              ${toggle(device, "is_active", device.is_active)}
-              ${device.is_active ? "Hoạt động" : "Đã khóa"}
-            </label>
-          </td>
-          <td class="py-2.5 px-3 text-on-surface-variant">${escapeHtml(usedAt)}</td>
-          <td class="py-2.5 px-3 text-on-surface-variant">${escapeHtml(device.last_ip || "—")}</td>
-          <td class="py-2.5 px-3 text-right">
-            <button type="button" data-delete-device="${device.id}" class="text-on-surface-variant hover:text-error" title="Xóa / thu hồi">
-              <span class="material-symbols-outlined text-[18px]">delete</span>
-            </button>
-          </td>
-        </tr>`;
-      })
-      .join("");
+    const currentId = state.currentClient.matchedDevice?.id;
+    tbody.innerHTML = state.devices.map((device) => {
+      const active = Boolean(device.is_active);
+      const isCurrent = currentId === device.id;
+      return `<tr class="hover:bg-surface-container-low/60">
+        <td class="py-2.5 px-3 align-top">
+          <div class="flex flex-wrap items-center gap-1">
+            <span class="font-semibold text-on-surface">${escapeHtml(device.device_name)}</span>
+            ${isCurrent ? `<span class="dm-badge dm-badge-active">Máy này</span>` : ""}
+          </div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${escapeHtml(device.location || "Chưa có vị trí")}</div>
+          ${device.mac_note ? `<div class="font-body-sm text-body-sm text-on-surface-variant">MAC/Note: ${escapeHtml(device.mac_note)}</div>` : ""}
+          ${device.note ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${escapeHtml(device.note)}</div>` : ""}
+        </td>
+        <td class="py-2.5 px-3 align-top font-body-sm text-body-sm text-on-surface-variant break-all">
+          ${escapeHtml(device.allowed_ip || "Theo IP chung / Không giới hạn")}
+        </td>
+        <td class="py-2.5 px-3 align-top">
+          <div class="flex flex-wrap gap-1 mb-2">
+            <span class="dm-badge ${device.allow_attendance ? "dm-badge-active" : "dm-badge-inactive"}">Điểm danh</span>
+            <span class="dm-badge ${device.allow_face_enroll ? "dm-badge-active" : "dm-badge-mode"}">Đăng ký mặt</span>
+          </div>
+          <label class="dm-switch" title="${active ? "Khóa thiết bị" : "Mở khóa thiết bị"}">
+            <input type="checkbox" data-toggle-device="${device.id}" ${active ? "checked" : ""} />
+            <span class="dm-slider"></span>
+          </label>
+          <div class="mt-1 font-body-sm text-body-sm ${active ? "text-emerald-700" : "text-red-700"}">${active ? "Đang mở" : "Đang khóa"}</div>
+        </td>
+        <td class="py-2.5 px-3 align-top font-body-sm text-body-sm text-on-surface-variant">
+          <div>${escapeHtml(formatDateTime(device.last_used_at))}</div>
+          <div class="mt-0.5">IP: ${escapeHtml(device.last_ip || "—")}</div>
+        </td>
+        <td class="py-2.5 px-3 align-top text-right whitespace-nowrap">
+          <button type="button" data-action="edit" data-device-id="${device.id}" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high" title="Sửa"><span class="material-symbols-outlined text-[18px]">edit</span></button>
+          <button type="button" data-action="bind" data-device-id="${device.id}" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high" title="Gắn trình duyệt hiện tại"><span class="material-symbols-outlined text-[18px]">key</span></button>
+          <button type="button" data-action="delete" data-device-id="${device.id}" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-red-50 hover:text-error" title="Xóa"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+        </td>
+      </tr>`;
+    }).join("");
   };
 
-  const renderAll = () => {
-    const ipInput = q("#deviceCurrentIp");
-    if (ipInput) ipInput.textContent = state.currentIp || "—";
-    const requireIp = q("#deviceRequireIpCheck");
-    if (requireIp) requireIp.checked = Boolean(state.settings.require_ip_check);
-    renderCurrentStatus();
-    renderIps();
-    renderDevices();
-  };
+  const renderAll = () => { renderCurrent(); renderTable(); };
 
   const load = async (showMessage = false) => {
     setBusy(true);
@@ -154,11 +155,10 @@ export const initQuanLyThietBi = (user = getCurrentUser()) => {
       const response = await adminDevicesApi.list();
       const data = response.data?.data || {};
       state.devices = data.devices || [];
-      state.settings = data.settings || state.settings;
-      state.currentIp = data.current_ip || "";
+      state.networkSettings = data.networkSettings || state.networkSettings;
+      state.currentClient = data.currentClient || state.currentClient;
       renderAll();
       if (showMessage) setNotice("Đã làm mới dữ liệu thiết bị.", "success");
-      else setNotice();
     } catch (error) {
       setNotice(errorMessage(error), "error");
     } finally {
@@ -166,140 +166,146 @@ export const initQuanLyThietBi = (user = getCurrentUser()) => {
     }
   };
 
-  const refreshCurrentIp = async () => {
-    try {
-      const response = await adminDevicesApi.currentIp();
-      state.currentIp = response.data?.data?.current_ip || "";
-      const box = q("#deviceCurrentIp");
-      if (box) box.textContent = state.currentIp || "—";
-      setNotice("Đã cập nhật IP hiện tại.", "success");
-      renderIps();
-    } catch (error) {
-      setNotice(errorMessage(error), "error");
-    }
+  const openForm = (device = null, { bindCurrent = false } = {}) => {
+    q("#deviceFormId").value = device?.id || "";
+    q("#deviceModalTitle").textContent = device ? "Cập nhật thiết bị" : "Thêm thiết bị";
+    q("#deviceFormName").value = device?.device_name || "";
+    q("#deviceFormLocation").value = device?.location || "";
+    q("#deviceFormAllowedIp").value = device?.allowed_ip || "";
+    q("#deviceFormMacNote").value = device?.mac_note || "";
+    q("#deviceFormNote").value = device?.note || "";
+    q("#deviceFormAllowAttendance").checked = device ? Boolean(device.allow_attendance) : true;
+    q("#deviceFormAllowFaceEnroll").checked = device ? Boolean(device.allow_face_enroll) : false;
+    q("#deviceFormBindCurrent").checked = bindCurrent || (!device && state.currentClient.attendanceStatus === "DEVICE_NOT_REGISTERED");
+    q("#deviceModal").classList.remove("hidden");
   };
+  const closeForm = () => q("#deviceModal").classList.add("hidden");
 
-  const persistSettings = async () => {
-    const allowedIps = state.settings.allowed_ips || [];
-    const requireIpCheck = Boolean(q("#deviceRequireIpCheck")?.checked);
+  const saveNetworkSettings = async (patch) => {
     setBusy(true);
     try {
-      const response = await adminDevicesApi.saveSettings({
-        require_device_check: state.settings.require_device_check !== false,
-        require_ip_check: requireIpCheck,
-        allowed_ips: allowedIps,
-      });
-      state.settings = response.data?.data || state.settings;
-      renderAll();
-      setNotice("Đã lưu cấu hình bảo mật.", "success");
-    } catch (error) {
-      const requireIp = q("#deviceRequireIpCheck");
-      if (requireIp) requireIp.checked = Boolean(state.settings.require_ip_check);
-      setNotice(errorMessage(error), "error");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  q("#deviceRefreshBtn")?.addEventListener("click", () => load(true));
-  q("#deviceRefreshIpBtn")?.addEventListener("click", refreshCurrentIp);
-
-  q("#deviceApproveBtn")?.addEventListener("click", async () => {
-    const name = q("#deviceName")?.value.trim();
-    if (!name) {
-      setNotice("Vui lòng nhập tên máy trước khi cấp phép.", "error");
-      return;
-    }
-    setBusy(true);
-    try {
-      await adminDevicesApi.approveCurrent({
-        device_name: name,
-        allow_attendance: Boolean(q("#deviceAllowAttendance")?.checked),
-        allow_face_enroll: Boolean(q("#deviceAllowFaceEnroll")?.checked),
-        mac_note: q("#deviceMacNote")?.value.trim() || null,
-        note: q("#deviceNote")?.value.trim() || null,
-      });
+      const response = await adminDevicesApi.saveNetworkSettings(patch);
+      const data = response.data?.data || {};
+      state.networkSettings = { ...state.networkSettings, ...data };
+      setNotice("Đã cập nhật cấu hình IP.", "success");
       await load(false);
-      setNotice("Đã cấp phép cho máy này. Cookie thiết bị đã được lưu trên trình duyệt.", "success");
     } catch (error) {
       setNotice(errorMessage(error), "error");
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
+  };
+
+  q("#deviceRefreshBtn").addEventListener("click", () => load(true));
+  q("#deviceApproveBtn").addEventListener("click", () => openForm(null, { bindCurrent: true }));
+  q("#deviceAddBtn").addEventListener("click", () => openForm(null, { bindCurrent: false }));
+  q("#deviceModalClose").addEventListener("click", closeForm);
+  q("#deviceFormCancel").addEventListener("click", closeForm);
+  q("#deviceModal").addEventListener("click", (e) => { if (e.target.id === "deviceModal") closeForm(); });
+
+  q("#deviceUnlockBtn").addEventListener("click", async () => {
+    const matched = state.currentClient.matchedDevice;
+    if (!matched) return;
+    setBusy(true);
+    try {
+      await adminDevicesApi.toggle(matched.id, true);
+      setNotice("Đã mở khóa thiết bị.", "success");
+      await load(false);
+    } catch (error) { setNotice(errorMessage(error), "error"); } finally { setBusy(false); }
   });
 
-  q("#deviceAddIpBtn")?.addEventListener("click", async () => {
-    if (!state.currentIp) {
-      setNotice("Chưa xác định được IP hiện tại. Vui lòng cập nhật IP.", "error");
-      return;
-    }
-    const ips = Array.from(new Set([...(state.settings.allowed_ips || []), state.currentIp]));
-    state.settings = { ...state.settings, allowed_ips: ips };
-    renderIps();
-    await persistSettings();
+  q("#deviceUpdateIpBtn").addEventListener("click", async () => {
+    const matched = state.currentClient.matchedDevice;
+    if (!matched) return;
+    setBusy(true);
+    try {
+      await adminDevicesApi.update(matched.id, { ...matched, allowed_ip: state.currentClient.ip || "" });
+      setNotice("Đã cập nhật IP hiện tại cho thiết bị.", "success");
+      await load(false);
+    } catch (error) { setNotice(errorMessage(error), "error"); } finally { setBusy(false); }
   });
 
-  q("#deviceIpsList")?.addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-remove-ip]");
-    if (!button) return;
-    const index = Number(button.getAttribute("data-remove-ip"));
-    state.settings = {
-      ...state.settings,
-      allowed_ips: (state.settings.allowed_ips || []).filter((_, i) => i !== index),
+  q("#officeGetIpBtn").addEventListener("click", () => { q("#officeAllowedIpsInput").value = state.currentClient.ip || ""; });
+  q("#loginGetIpBtn").addEventListener("click", () => { q("#loginAllowedIpsInput").value = state.currentClient.ip || ""; });
+  q("#officeSaveIpBtn").addEventListener("click", () => saveNetworkSettings({ office_allowed_ips: q("#officeAllowedIpsInput").value }));
+  q("#loginSaveIpBtn").addEventListener("click", () => saveNetworkSettings({ login_allowed_ips: q("#loginAllowedIpsInput").value }));
+  q("#officeClearIpBtn").addEventListener("click", () => { q("#officeAllowedIpsInput").value = ""; saveNetworkSettings({ office_allowed_ips: null }); });
+  q("#loginClearIpBtn").addEventListener("click", () => { q("#loginAllowedIpsInput").value = ""; saveNetworkSettings({ login_allowed_ips: null }); });
+  q("#deviceFormGetIp").addEventListener("click", () => { q("#deviceFormAllowedIp").value = state.currentClient.ip || ""; });
+
+  q("#deviceForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const id = Number(q("#deviceFormId").value) || null;
+    const payload = {
+      device_name: q("#deviceFormName").value.trim(),
+      location: q("#deviceFormLocation").value.trim() || null,
+      allowed_ip: q("#deviceFormAllowedIp").value.trim() || null,
+      mac_note: q("#deviceFormMacNote").value.trim() || null,
+      note: q("#deviceFormNote").value.trim() || null,
+      allow_attendance: q("#deviceFormAllowAttendance").checked,
+      allow_face_enroll: q("#deviceFormAllowFaceEnroll").checked,
     };
-    renderIps();
-    await persistSettings();
+    const bindCurrent = q("#deviceFormBindCurrent").checked;
+    if (!payload.device_name) { setNotice("Vui lòng nhập tên thiết bị.", "error"); return; }
+
+    setBusy(true);
+    try {
+      if (id) {
+        await adminDevicesApi.update(id, payload);
+        if (bindCurrent) await adminDevicesApi.bindCurrent(id);
+        setNotice("Đã cập nhật thiết bị.", "success");
+      } else {
+        await adminDevicesApi.create({ ...payload, bindCurrentBrowser: bindCurrent });
+        setNotice("Đã thêm thiết bị.", "success");
+      }
+      closeForm();
+      await load(false);
+    } catch (error) {
+      setNotice(errorMessage(error), "error");
+    } finally { setBusy(false); }
   });
 
-  q("#deviceRequireIpCheck")?.addEventListener("change", (event) => {
-    state.settings = { ...state.settings, require_ip_check: event.target.checked };
-    void persistSettings();
+  q("#devicesTableBody").addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-action]");
+    if (!btn) return;
+    const id = Number(btn.getAttribute("data-device-id"));
+    const device = state.devices.find((d) => d.id === id);
+    if (!device) return;
+    const action = btn.getAttribute("data-action");
+
+    if (action === "edit") return openForm(device);
+    if (action === "bind") {
+      if (!window.confirm(`Gắn trình duyệt hiện tại vào "${device.device_name}"?`)) return;
+      setBusy(true);
+      try { await adminDevicesApi.bindCurrent(id); setNotice("Đã gắn trình duyệt hiện tại.", "success"); await load(false); }
+      catch (error) { setNotice(errorMessage(error), "error"); } finally { setBusy(false); }
+      return;
+    }
+    if (action === "delete") {
+      if (!window.confirm(`Xóa thiết bị "${device.device_name}"?`)) return;
+      setBusy(true);
+      try { await adminDevicesApi.remove(id); setNotice("Đã xóa thiết bị.", "success"); await load(false); }
+      catch (error) { setNotice(errorMessage(error), "error"); } finally { setBusy(false); }
+    }
   });
 
-  q("#deviceSaveSettingsBtn")?.addEventListener("click", persistSettings);
-
-  q("#devicesTableBody")?.addEventListener("change", async (event) => {
-    const input = event.target.closest("input[data-device-id][data-field]");
+  q("#devicesTableBody").addEventListener("change", async (event) => {
+    const input = event.target.closest("[data-toggle-device]");
     if (!input) return;
-    const id = Number(input.getAttribute("data-device-id"));
-    const field = input.getAttribute("data-field");
+    const id = Number(input.getAttribute("data-toggle-device"));
     setBusy(true);
     try {
-      await adminDevicesApi.update(id, { [field]: input.checked });
+      await adminDevicesApi.toggle(id, input.checked);
+      setNotice(input.checked ? "Đã mở khóa thiết bị." : "Đã khóa thiết bị.", "success");
       await load(false);
-      setNotice("Đã cập nhật thiết bị.", "success");
-    } catch (error) {
-      setNotice(errorMessage(error), "error");
-      await load(false);
-    } finally {
-      setBusy(false);
-    }
+    } catch (error) { setNotice(errorMessage(error), "error"); await load(false); }
+    finally { setBusy(false); }
   });
 
-  q("#devicesTableBody")?.addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-delete-device]");
-    if (!button) return;
-    const id = Number(button.getAttribute("data-delete-device"));
-    if (!window.confirm("Thu hồi quyền của thiết bị này? Thiết bị đã có lịch sử sẽ bị khóa thay vì xóa.")) return;
-    setBusy(true);
-    try {
-      const response = await adminDevicesApi.remove(id);
-      await load(false);
-      setNotice(response.data?.message || "Đã thu hồi thiết bị.", "success");
-    } catch (error) {
-      setNotice(errorMessage(error), "error");
-    } finally {
-      setBusy(false);
-    }
-  });
-
-  document.querySelectorAll("aside nav a[data-path]").forEach((link) => {
+  qa("aside nav a[data-path]").forEach((link) => {
     const active = link.getAttribute("data-path") === "quan-ly-thiet-bi";
     link.classList.toggle("bg-secondary-fixed", active);
     link.classList.toggle("text-on-secondary-fixed", active);
     link.classList.toggle("font-bold", active);
-    if (active) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
+    if (active) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current");
   });
 
   load();

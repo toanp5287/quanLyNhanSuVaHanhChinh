@@ -8,6 +8,7 @@ import {
   ensureAttendancePolicySchema,
   getKioskConfig,
   getPolicyForShift,
+  getShiftWorkWindow,
   normalizeRules,
 } from "../attendance-policy/attendancePolicy.service.js";
 import {
@@ -633,6 +634,12 @@ const formatTime = (minutes) => {
   const safe = Math.max(0, Math.min(1439, Math.round(minutes)));
   return `${String(Math.floor(safe / 60)).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}:00`;
 };
+const formatTimeWithSeconds = (minutes) => {
+  const safe = ((Number(minutes) % 1440) + 1440) % 1440;
+  const totalSeconds = Math.round(safe * 60);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${pad(Math.floor(totalSeconds / 3600))}:${pad(Math.floor((totalSeconds % 3600) / 60))}:${pad(totalSeconds % 60)}`;
+};
 const formatDateOnly = (value) => {
   if (!value) return null;
   if (value instanceof Date)
@@ -645,6 +652,29 @@ const formatDateOnly = (value) => {
   return String(value).slice(0, 10);
 };
 
+const addDaysToDate = (dateValue, days) => {
+  const date = formatDateOnly(dateValue);
+  if (!date) return null;
+  const next = new Date(`${date}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + Number(days || 0));
+  return next.toISOString().slice(0, 10);
+};
+
+const listDateRange = (fromDate, toDate) => {
+  const start = formatDateOnly(fromDate);
+  const end = formatDateOnly(toDate);
+  if (!start || !end || end < start) return [];
+  const dates = [];
+  let cursor = start;
+  while (cursor <= end) {
+    dates.push(cursor);
+    cursor = addDaysToDate(cursor, 1);
+  }
+  return dates;
+};
+
+const monthFromDate = (dateValue) => String(formatDateOnly(dateValue) || "").slice(0, 7);
+
 const OT_TYPE_RATES = { WEEKDAY: 1.5, WEEKEND: 2, HOLIDAY: 3 };
 const DAY_NAME_CODES = {
   SUN: 0,
@@ -654,6 +684,52 @@ const DAY_NAME_CODES = {
   THU: 4,
   FRI: 5,
   SAT: 6,
+};
+
+const normalizeWorkingDays = (rawValue) => {
+  if (rawValue == null || rawValue === "") return null;
+  let values = rawValue;
+  if (typeof values === "string") {
+    const text = values.trim();
+    if (!text) return null;
+    try {
+      const parsed = JSON.parse(text);
+      values = parsed;
+    } catch {
+      values = text.split(/[\s,;|/]+/).filter(Boolean);
+    }
+  }
+  if (!Array.isArray(values) || !values.length) return null;
+  const configured = [...new Set(values
+    .map((value) => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        if (value >= 1 && value <= 7) return Math.trunc(value);
+        if (value === 0) return 7;
+        return null;
+      }
+      const text = String(value ?? "").trim().toUpperCase();
+      if (!text) return null;
+      if (/^[1-7]$/.test(text)) return Number(text);
+      const code = DAY_NAME_CODES[text.slice(0, 3)];
+      if (code === undefined) return null;
+      return code === 0 ? 7 : code;
+    })
+    .filter((value) => value !== null))].sort((a, b) => a - b);
+  return configured.length ? configured : null;
+};
+
+const getIsoWeekday = (dateValue) => {
+  const date = formatDateOnly(dateValue);
+  const parsedDate = new Date(`${date}T00:00:00Z`);
+  const jsDay = parsedDate.getUTCDay();
+  return jsDay === 0 ? 7 : jsDay;
+};
+
+export const isShiftWorkingOnDate = (shift, dateValue) => {
+  if (!shift) return false;
+  const configured = normalizeWorkingDays(shift.working_days);
+  if (!configured) return true;
+  return configured.includes(getIsoWeekday(dateValue));
 };
 
 export const resolveOvertimeType = async (connection, employeeId, workDate) => {
@@ -671,10 +747,8 @@ export const resolveOvertimeType = async (connection, employeeId, workDate) => {
     };
   }
 
-  const parsedDate = new Date(`${date}T00:00:00Z`);
-  const jsDay = parsedDate.getUTCDay();
-  const isoDay = jsDay === 0 ? 7 : jsDay;
-  let isWorkingDay = jsDay !== 0 && jsDay !== 6;
+  const isoDay = getIsoWeekday(date);
+  let isWorkingDay = isoDay >= 1 && isoDay <= 5;
   let shiftRows = [];
   try {
     [shiftRows] = await connection.query(
@@ -691,27 +765,8 @@ export const resolveOvertimeType = async (connection, employeeId, workDate) => {
   } catch {
     shiftRows = [];
   }
-  let workingDays = null;
-  try {
-    const raw = shiftRows[0]?.working_days;
-    if (Array.isArray(raw)) workingDays = raw;
-    else if (typeof raw === "string") workingDays = JSON.parse(raw);
-  } catch {
-    workingDays = null;
-  }
-  if (Array.isArray(workingDays) && workingDays.length) {
-    const configured = workingDays
-      .map((value) => {
-        if (typeof value === "number" && Number.isFinite(value)) {
-          if (value >= 1 && value <= 7) return value;
-          return value === 0 ? 7 : null;
-        }
-        const code = DAY_NAME_CODES[String(value).toUpperCase().slice(0, 3)];
-        return code === undefined ? null : code === 0 ? 7 : code;
-      })
-      .filter((value) => value !== null);
-    if (configured.length) isWorkingDay = configured.includes(isoDay);
-  }
+  const configured = normalizeWorkingDays(shiftRows[0]?.working_days);
+  if (configured) isWorkingDay = configured.includes(isoDay);
   const ot_type = isWorkingDay ? "WEEKDAY" : "WEEKEND";
   return { ot_type, ot_rate: OT_TYPE_RATES[ot_type] };
 };
@@ -829,7 +884,12 @@ const getTodayShift = async (employeeId, connection = db, dateValue = null) => {
       LIMIT 1`,
     [employeeId, date, date],
   );
-  return shiftWithAllowedLimit(rows[0] || (await getDefaultShift(connection)));
+  const assigned = shiftWithAllowedLimit(rows[0] || null);
+  if (rows[0]) {
+    return isShiftWorkingOnDate(assigned, date) ? assigned : null;
+  }
+  const defaultShift = await getDefaultShift(connection);
+  return isShiftWorkingOnDate(defaultShift, date) ? defaultShift : null;
 };
 
 export const getShiftForDate = async (employeeId, dateValue, connection = db) => {
@@ -837,15 +897,9 @@ export const getShiftForDate = async (employeeId, dateValue, connection = db) =>
   return getTodayShift(employeeId, connection, date);
 };
 
-const getAttendanceForDate = async (
-  employeeId,
-  workDate,
-  connection = db,
-) => {
-  await ensureWorkShiftSchema();
+const ATTENDANCE_SELECT = async (connection = db) => {
   const withUser = await hasColumn(connection, "attendances", "user_id");
-  const [rows] = await connection.query(
-    `SELECT a.*, s.code AS shift_code, s.name AS shift_name, s.start_time,
+  return `SELECT a.*, s.code AS shift_code, s.name AS shift_name, s.start_time,
             s.end_time, s.checkin_start, s.checkin_end,
             s.checkout_start, s.checkout_end, s.break_start, s.break_end,
             s.grace_period_minutes, s.grace_period,
@@ -856,7 +910,18 @@ const getAttendanceForDate = async (
             ${withUser ? "u.username, u.role_id" : "NULL AS username, NULL AS role_id"}
        FROM attendances a
        LEFT JOIN work_shifts s ON s.id = a.shift_id
-       ${withUser ? "LEFT JOIN users u ON u.id = a.user_id" : ""}
+       ${withUser ? "LEFT JOIN users u ON u.id = a.user_id" : ""}`;
+};
+
+const getAttendanceForDate = async (
+  employeeId,
+  workDate,
+  connection = db,
+) => {
+  await ensureWorkShiftSchema();
+  const select = await ATTENDANCE_SELECT(connection);
+  const [rows] = await connection.query(
+    `${select}
       WHERE a.employee_id = ? AND a.work_date = ?
       LIMIT 1`,
     [employeeId, workDate],
@@ -864,11 +929,82 @@ const getAttendanceForDate = async (
   return shiftWithAllowedLimit(rows[0] || null);
 };
 
+const getOpenOvernightAttendance = async (
+  employeeId,
+  dateValue,
+  connection = db,
+) => {
+  await ensureWorkShiftSchema();
+  const date = formatDateOnly(dateValue);
+  if (!date) return null;
+  const previousDate = addDaysToDate(date, -1);
+  const candidate = await getAttendanceForDate(employeeId, previousDate, connection);
+  if (!candidate?.check_in || candidate.check_out) return null;
+  if (!isOvernightShift(candidate)) return null;
+  const cutoffPassed = await checkoutCutoffPassed(candidate, previousDate, connection);
+  if (cutoffPassed) return null;
+  return candidate;
+};
+
+const getLatestValidCheckOut = async (
+  connection,
+  employeeId,
+  workDate,
+  fallbackMinutes,
+  overnight = false,
+  fallbackTime = null,
+) => {
+  const date = formatDateOnly(workDate);
+  if (!date) return fallbackMinutes;
+  const nextDate = addDaysToDate(date, 1);
+  const scanTo = overnight ? `${nextDate} 12:00:00` : `${date} 23:59:59`;
+  const [rows] = await connection.query(
+    `SELECT DATE_FORMAT(scan_time, '%Y-%m-%d %H:%i:%s') AS scan_time, scan_type
+       FROM attendance_logs
+      WHERE employee_id = ? AND scan_type <> 'CHECK_IN' AND is_valid = 1
+        AND scan_time >= ? AND scan_time <= ?
+      ORDER BY scan_time DESC
+      LIMIT 1`,
+    [employeeId, `${date} 00:00:00`, scanTo],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const fallback =
+    fallbackMinutes === null
+      ? null
+      : {
+          minutes: fallbackMinutes,
+          time: /^\d{1,2}:\d{2}:\d{2}$/.test(String(fallbackTime || ""))
+            ? String(fallbackTime).slice(0, 8)
+            : formatTimeWithSeconds(fallbackMinutes),
+        };
+  if (row.scan_type !== "CHECK_OUT") return fallback;
+  const scanTime = row.scan_time;
+  if (!scanTime) return fallback;
+  const scanDate = String(scanTime).slice(0, 10);
+  const [hour, minute, second] = String(scanTime).slice(11, 19).split(":").map(Number);
+  if ([hour, minute, second].some((value) => !Number.isFinite(value)))
+    return fallback;
+  const minutes =
+    hour * 60 + minute + second / 60 + (scanDate > date ? 1440 : 0);
+  if (fallback && fallback.minutes >= minutes) return fallback;
+  const pad = (value) => String(value).padStart(2, "0");
+  return {
+    minutes,
+    time: `${pad(hour)}:${pad(minute)}:${pad(second)}`,
+  };
+};
+
+const isOvernightShift = (shift) => {
+  const start = toMinutes(shift?.start_time);
+  const end = toMinutes(shift?.end_time);
+  return Number(shift?.is_overnight) === 1 && start !== null && end !== null && end <= start;
+};
+
 const shiftTimeWindow = (shift, type) => {
   const shiftStart = toMinutes(shift.start_time) ?? 0;
   const rawShiftEnd = toMinutes(shift.end_time) ?? 1439;
-  const overnight =
-    Number(shift.is_overnight) && rawShiftEnd <= shiftStart ? 1 : 0;
+  const overnight = isOvernightShift(shift) ? 1 : 0;
   const shiftEnd = overnight ? rawShiftEnd + 1440 : rawShiftEnd;
   const grace = toNumber(shift.grace_period_minutes ?? shift.grace_period, 15);
   const wrap = (value) => ((value % 1440) + 1440) % 1440;
@@ -880,22 +1016,44 @@ const shiftTimeWindow = (shift, type) => {
       end: toMinutes(shift.checkin_end),
       allowedLimit: wrap(shiftStart + grace),
       wraps: false,
+      overnight: false,
     };
   }
   const start =
     toMinutes(shift.checkout_start) ?? wrap(Math.max(shiftStart, shiftEnd - 120));
   const end = toMinutes(shift.checkout_end) ?? wrap(shiftEnd + 120);
-  return { start, end, wraps: start > end };
+  return { start, end, wraps: start > end, overnight: Boolean(overnight) };
+};
+
+const checkoutCutoffPassed = async (attendance, workDate, connection) => {
+  const today = await serverDate(connection);
+  const date = formatDateOnly(workDate);
+  if (!date) return false;
+  const window = shiftTimeWindow(attendance, "CHECK_OUT");
+  const overnight = isOvernightShift(attendance) || window.overnight || window.wraps;
+  const cutoffDate = overnight ? addDaysToDate(date, 1) : date;
+  if (cutoffDate < today) return true;
+  if (cutoffDate > today) return false;
+  const now = await serverNow(connection);
+  const nowMinutes = toMinutes(now.now_time);
+  const endMinutes = toMinutes(window.end);
+  if (nowMinutes === null || endMinutes === null) return false;
+  return nowMinutes > endMinutes;
 };
 
 const shiftWithAllowedLimit = (shift) => {
   if (!shift) return shift;
   const grace = toNumber(shift.grace_period_minutes ?? shift.grace_period, 15);
   const start = toMinutes(shift.start_time);
+  const window = getShiftWorkWindow(shift);
   return {
     ...shift,
     grace_period_minutes: grace,
     workday_value: normalizeWorkdayValue(shift.workday_value),
+    standard_work_hours:
+      window && window.work_minutes > 0
+        ? round2(window.work_minutes / 60)
+        : toNumber(shift.standard_work_hours ?? shift.standard_hours, 8),
     allowed_limit_time:
       start === null ? null : formatTime(start + grace),
   };
@@ -930,14 +1088,7 @@ const reconcileMissingCheckout = async (employeeId, workDate) => {
       await connection.commit();
       return attendance;
     }
-    const today = await serverDate(connection);
-    let cutoffPassed = workDate < today;
-    if (workDate === today) {
-      const now = await serverNow(connection);
-      cutoffPassed =
-        toMinutes(now.now_time) !== null &&
-        toMinutes(now.now_time) > shiftTimeWindow(attendance, "CHECK_OUT").end;
-    }
+    const cutoffPassed = await checkoutCutoffPassed(attendance, workDate, connection);
     if (!cutoffPassed) {
       await connection.commit();
       return attendance;
@@ -1081,24 +1232,16 @@ export const recalculateDailyAttendance = async (
     : await getPolicyForShift(attendance, connection);
   const rules = normalizeRules(snapshot?.policy || policy?.rules);
   const shiftConfig = snapshot?.shift || attendance;
-  const hasBreak = Number(shiftConfig.has_break ?? 1) !== 0;
-
-  const shiftStart = toMinutes(shiftConfig.start_time);
-  const rawShiftEnd = toMinutes(shiftConfig.end_time);
-  const overnight =
-    Number(shiftConfig.is_overnight) &&
-    shiftStart !== null &&
-    rawShiftEnd !== null &&
-    rawShiftEnd <= shiftStart
-      ? 1
-      : 0;
-  const shiftEnd = overnight && rawShiftEnd !== null ? rawShiftEnd + 1440 : rawShiftEnd;
-  let breakStart = hasBreak ? toMinutes(shiftConfig.break_start) : null;
-  let breakEnd = hasBreak ? toMinutes(shiftConfig.break_end) : null;
-  if (overnight && breakStart !== null && breakEnd !== null && breakEnd <= shiftStart) {
-    breakStart += 1440;
-    breakEnd += 1440;
-  }
+  const shiftWindow = getShiftWorkWindow(shiftConfig);
+  const shiftStart = shiftWindow?.start ?? null;
+  const shiftEnd = shiftWindow?.end ?? null;
+  const overnight = Boolean(shiftWindow?.overnight);
+  let breakStart = shiftWindow?.break_start ?? null;
+  let breakEnd = shiftWindow?.break_end ?? null;
+  const workdayCap = Math.min(
+    normalizeWorkdayValue(shiftConfig.workday_value),
+    Math.max(0, toNumber(rules.max_work_day, 1)),
+  );
   let effectiveStart = shiftStart;
   let effectiveEnd = shiftEnd;
   if (leave?.leave_type === "MORNING" && breakEnd !== null)
@@ -1116,6 +1259,22 @@ export const recalculateDailyAttendance = async (
     checkIn >= shiftStart - 720
   )
     checkOut += 1440;
+  const latestCheckOut = await getLatestValidCheckOut(
+    connection,
+    employeeId,
+    workDate,
+    checkOut,
+    overnight,
+    attendance.check_out,
+  );
+  const effectiveCheckOut = latestCheckOut ? latestCheckOut.minutes : checkOut;
+  const storedCheckOut = latestCheckOut
+    ? latestCheckOut.time
+    : checkOut === null
+      ? null
+      : /^\d{1,2}:\d{2}:\d{2}$/.test(String(attendance.check_out || ""))
+        ? String(attendance.check_out).slice(0, 8)
+        : formatTimeWithSeconds(checkOut);
   const gracePeriod = toNumber(
     shiftConfig.grace_period_minutes ?? shiftConfig.grace_period,
     rules.grace_late_minutes,
@@ -1126,7 +1285,7 @@ export const recalculateDailyAttendance = async (
   let netWorkMinutes = 0;
   let baseWorkday = 0;
   let paidLeaveWorkday = leave
-    ? round2(Math.min(1, toNumber(leave.paid_workday, 0)))
+    ? round2(Math.min(workdayCap, toNumber(leave.paid_workday, 0)))
     : 0;
   let totalWorkday = 0;
   let rawOtMinutes = 0;
@@ -1138,7 +1297,7 @@ export const recalculateDailyAttendance = async (
   let status = "IN_PROGRESS";
 
   if (leave?.leave_type === "FULL_DAY") {
-    paidLeaveWorkday = round2(Math.min(1, toNumber(leave.paid_workday, 0)));
+    paidLeaveWorkday = round2(Math.min(workdayCap, toNumber(leave.paid_workday, 0)));
     totalWorkday = paidLeaveWorkday;
     status = "ON_LEAVE";
   } else {
@@ -1152,7 +1311,7 @@ export const recalculateDailyAttendance = async (
         lateMinutes = Math.max(0, lateMinutes - toNumber(leave.exempt_minutes, 0));
     }
 
-    if (checkIn === null || checkOut === null) {
+    if (checkIn === null || effectiveCheckOut === null) {
       totalWorkday = paidLeaveWorkday;
       status = leave
         ? "ON_LEAVE"
@@ -1160,8 +1319,8 @@ export const recalculateDailyAttendance = async (
           ? "ABSENT"
           : "IN_PROGRESS";
     } else {
-      if (effectiveEnd !== null && checkOut < effectiveEnd) {
-        earlyLeaveMinutes = effectiveEnd - checkOut;
+      if (effectiveEnd !== null && effectiveCheckOut < effectiveEnd) {
+        earlyLeaveMinutes = effectiveEnd - effectiveCheckOut;
         if (leave?.leave_type === "LATE_EARLY_EXEMPT")
           earlyLeaveMinutes = Math.max(
             0,
@@ -1174,9 +1333,9 @@ export const recalculateDailyAttendance = async (
           ? Math.max(checkIn, effectiveStart)
           : checkIn;
       const clampOut =
-        rules.clamp_late_out && checkOut !== null && effectiveEnd !== null
-          ? Math.min(checkOut, effectiveEnd)
-          : checkOut;
+        rules.clamp_late_out && effectiveCheckOut !== null && effectiveEnd !== null
+          ? Math.min(effectiveCheckOut, effectiveEnd)
+          : effectiveCheckOut;
       const workEnd =
         effectiveEnd !== null && clampOut !== null
           ? Math.min(clampOut, effectiveEnd)
@@ -1192,21 +1351,30 @@ export const recalculateDailyAttendance = async (
         netWorkMinutes = Math.max(0, workEnd - clampIn - overlap);
         actualWorkHours = round2(netWorkMinutes / 60);
         baseWorkday = round2(
-          computeWorkDay({
-            netHours: actualWorkHours,
-            rules,
-            shift: shiftConfig,
-          }),
+          Math.min(
+            workdayCap,
+            computeWorkDay({
+              netHours: actualWorkHours,
+              rules,
+              shift: { ...shiftConfig, workday_value: workdayCap },
+            }),
+          ),
         );
       }
 
       paidLeaveWorkday = leave
-        ? round2(Math.min(1, toNumber(leave.paid_workday, 0)))
+        ? round2(Math.min(workdayCap, toNumber(leave.paid_workday, 0)))
         : 0;
-      totalWorkday = round2(Math.min(1, baseWorkday + paidLeaveWorkday));
+      totalWorkday = round2(
+        Math.min(workdayCap, baseWorkday + paidLeaveWorkday),
+      );
 
-      if (effectiveEnd !== null && checkOut > effectiveEnd)
-        rawOtMinutes = checkOut - effectiveEnd;
+      if (
+        effectiveEnd !== null &&
+        effectiveCheckOut !== null &&
+        effectiveCheckOut > effectiveEnd
+      )
+        rawOtMinutes = Math.round(effectiveCheckOut - effectiveEnd);
       if (otRows.length && rawOtMinutes > 0) {
         overtimeType = await resolveOvertimeType(
           connection,
@@ -1224,7 +1392,7 @@ export const recalculateDailyAttendance = async (
             otStart = Math.max(effectiveEnd, otStart ?? effectiveEnd);
           const otEnd = adjustOt(toMinutes(overtime.end_time)) ?? 0;
           const validStart = Math.max(checkIn ?? 0, otStart ?? 0);
-          const validEnd = Math.min(checkOut, otEnd);
+          const validEnd = Math.min(effectiveCheckOut, otEnd);
           const validMinutes = Math.max(0, Math.round(validEnd - validStart));
           if (validMinutes >= minimumOtMinutes) {
             const hours = round2(validMinutes / 60);
@@ -1240,16 +1408,8 @@ export const recalculateDailyAttendance = async (
     }
   }
 
-  if (checkIn !== null && checkOut === null && !leave) {
-    const today = await serverDate(connection);
-    let pastCheckoutCutoff = workDate < today;
-    if (workDate === today) {
-      const now = await serverNow(connection);
-      const checkoutWindow = shiftTimeWindow(attendance, "CHECK_OUT");
-      pastCheckoutCutoff =
-        toMinutes(now.now_time) !== null &&
-        toMinutes(now.now_time) > checkoutWindow.end;
-    }
+  if (checkIn !== null && effectiveCheckOut === null && !leave) {
+    const pastCheckoutCutoff = await checkoutCutoffPassed(attendance, workDate, connection);
     if (pastCheckoutCutoff && rules.missing_checkout_action !== "IGNORE")
       status = "MISSING_CHECKOUT";
   }
@@ -1270,7 +1430,8 @@ export const recalculateDailyAttendance = async (
   }
 
   let snapshotJson = null;
-  if (checkIn && checkOut && !snapshot) {
+  const shouldCaptureSnapshot = Boolean(checkIn);
+  if (shouldCaptureSnapshot && !snapshot) {
     const built = await buildPolicySnapshot(attendance, policy);
     snapshot = built;
     snapshotJson = JSON.stringify(built);
@@ -1278,13 +1439,14 @@ export const recalculateDailyAttendance = async (
 
   await connection.query(
     `UPDATE attendances
-        SET late_minutes = ?, early_leave_minutes = ?, actual_work_hours = ?,
+        SET check_out = ?, late_minutes = ?, early_leave_minutes = ?, actual_work_hours = ?,
             base_workday = ?, paid_leave_workday = ?, total_workday = ?,
             net_work_minutes = ?, work_day = ?, policy_snapshot = COALESCE(policy_snapshot, ?),
             recalculated_at = NOW(),
             raw_ot_minutes = ?, approved_ot_hours = ?, ot_rate = ?, status = ?
       WHERE id = ?`,
     [
+      storedCheckOut,
       lateMinutes,
       earlyLeaveMinutes,
       actualWorkHours,
@@ -1304,6 +1466,7 @@ export const recalculateDailyAttendance = async (
 
   return {
     ...attendance,
+    check_out: storedCheckOut,
     late_minutes: lateMinutes,
     early_leave_minutes: earlyLeaveMinutes,
     actual_work_hours: actualWorkHours,
@@ -1431,6 +1594,14 @@ const assertNoDoublePunch = async (employeeId, now, connection) => {
 const checkInInternal = async (employeeId, account, meta, connection) => {
   if (!employeeId) return { error: "NO_EMPLOYEE" };
   const now = await serverNow(connection);
+  const openOvernight = await getOpenOvernightAttendance(employeeId, now.today, connection);
+  if (openOvernight) {
+    return {
+      error: "OVERNIGHT_SHIFT_OPEN",
+      log: legacyLog(openOvernight, "FACE_ID"),
+      shift: await getShiftById(openOvernight.shift_id, connection),
+    };
+  }
   const shift = await getTodayShift(employeeId, connection, now.today);
   if (!shift) return { error: "NO_SHIFT" };
   const existing = await getAttendanceForDate(
@@ -1473,11 +1644,20 @@ const checkInInternal = async (employeeId, account, meta, connection) => {
 const checkOutInternal = async (employeeId, account, meta, connection) => {
   if (!employeeId) return { error: "NO_EMPLOYEE" };
   const now = await serverNow(connection);
-  const existing = await getAttendanceForDate(
+  const todayAttendance = await getAttendanceForDate(
     employeeId,
     now.today,
     connection,
   );
+  const overnightAttendance = todayAttendance?.check_in && !todayAttendance.check_out
+    ? null
+    : await getOpenOvernightAttendance(employeeId, now.today, connection);
+  const existing = todayAttendance?.check_in ? todayAttendance : overnightAttendance;
+  const attendanceDate = todayAttendance?.check_in
+    ? now.today
+    : overnightAttendance
+      ? formatDateOnly(overnightAttendance.work_date)
+      : now.today;
   if (!existing?.check_in) return { error: "NO_CHECK_IN_FOUND" };
   const config = await getKioskConfig(connection);
   if (
@@ -1492,7 +1672,7 @@ const checkOutInternal = async (employeeId, account, meta, connection) => {
 
   const shift =
     (await getShiftById(existing.shift_id, connection)) ||
-    (await getTodayShift(employeeId, connection, now.today));
+    (await getTodayShift(employeeId, connection, attendanceDate));
   if (!shift) return { error: "NO_SHIFT" };
   if (Number(shift.allow_checkout_anytime ?? 1) === 0) {
     const scanWindow = checkScanWindow(shift, "CHECK_OUT", now.now_time);
@@ -1510,7 +1690,7 @@ const checkOutInternal = async (employeeId, account, meta, connection) => {
     meta,
     meta.face_score ?? null,
   );
-  await upsertDailyAttendance(connection, employeeId, account, shift, now.today, {
+  await upsertDailyAttendance(connection, employeeId, account, shift, attendanceDate, {
     checkIn: existing.check_in,
     checkOut: now.now_time,
     checkInIp: existing.check_in_ip,
@@ -1519,10 +1699,10 @@ const checkOutInternal = async (employeeId, account, meta, connection) => {
     status: existing.status,
     overwriteCheckOut: config.checkout_repeat_policy === "OVERWRITE_LATEST",
   });
-  await recalculateDailyAttendance(connection, employeeId, now.today);
-  await recalculateEmployeeMonth(connection, employeeId, now.today.slice(0, 7));
-  const final = await getAttendanceForDate(employeeId, now.today, connection);
-  return { log: legacyLog(final, "FACE_ID"), shift, account };
+  await recalculateDailyAttendance(connection, employeeId, attendanceDate);
+  await recalculateEmployeeMonth(connection, employeeId, attendanceDate.slice(0, 7));
+  const final = await getAttendanceForDate(employeeId, attendanceDate, connection);
+  return { log: legacyLog(final, "FACE_ID"), shift, account, work_date: attendanceDate };
 };
 
 const recordSelfAttendance = async (
@@ -1664,7 +1844,12 @@ export const kioskAttendance = async (
   if (action === "auto") {
     const today = await serverDate();
     const current = await getAttendanceForDate(match.employee.id, today);
-    resolvedAction = current?.check_in ? "check-out" : "check-in";
+    const openOvernight = current?.check_in && !current.check_out
+      ? null
+      : await getOpenOvernightAttendance(match.employee.id, today);
+    resolvedAction = current?.check_in || openOvernight?.check_in
+      ? "check-out"
+      : "check-in";
   }
   const result = await recordSelfAttendance(
     match.employee.id,
@@ -2379,6 +2564,7 @@ export const validateShiftPayload = (payload = {}) => {
   if (checkoutStart && checkoutEnd && toMinutes(checkoutEnd) < toMinutes(checkoutStart))
     return { error: "Giờ kết thúc khung check-out phải sau giờ bắt đầu" };
 
+  const hasBreak = payload.has_break === undefined ? 1 : Number(payload.has_break) ? 1 : 0;
   const breakStart = normalizeTime(payload.break_start) || "12:00:00";
   let breakEnd = normalizeTime(payload.break_end);
   if (!breakEnd && payload.break_minutes !== undefined) {
@@ -2387,8 +2573,31 @@ export const validateShiftPayload = (payload = {}) => {
     );
   }
   if (!breakEnd) breakEnd = "13:30:00";
-  if (toMinutes(breakEnd) <= toMinutes(breakStart))
-    return { error: "Giờ kết thúc nghỉ giữa ca phải lớn hơn giờ bắt đầu" };
+  const breakStartMin = toMinutes(breakStart);
+  const breakEndMin = toMinutes(breakEnd);
+  if (breakEndMin <= breakStartMin)
+    return { error: "Gi? k?t th?c ngh? gi?a ca ph?i l?n h?n gi? b?t ??u" };
+  const shiftStartMin = toMinutes(startTime);
+  const rawShiftEndMin = toMinutes(endTime);
+  const shiftEndMin = isOvernight && rawShiftEndMin !== null && shiftStartMin !== null && rawShiftEndMin <= shiftStartMin
+    ? rawShiftEndMin + 1440
+    : rawShiftEndMin;
+  const breakDuration = Math.max(0, (breakEndMin ?? 0) - (breakStartMin ?? 0));
+  if (hasBreak && shiftStartMin !== null && shiftEndMin !== null) {
+    const shiftDuration = Math.max(0, shiftEndMin - shiftStartMin);
+    if (breakDuration >= shiftDuration)
+      return { error: "Kho?ng ngh? gi?a ca ph?i n?m trong th?i l??ng ca l?m vi?c" };
+    let normalizedBreakStart = breakStartMin;
+    let normalizedBreakEnd = breakEndMin;
+    if (isOvernight && normalizedBreakStart !== null && normalizedBreakEnd !== null && normalizedBreakEnd <= shiftStartMin) {
+      normalizedBreakStart += 1440;
+      normalizedBreakEnd += 1440;
+    }
+    const breakInside = normalizedBreakStart !== null && normalizedBreakEnd !== null
+      && normalizedBreakStart >= shiftStartMin && normalizedBreakEnd <= shiftEndMin;
+    if (!breakInside)
+      return { error: "Kho?ng ngh? gi?a ca ph?i n?m trong khung gi? ca l?m vi?c, k? c? ca qua ??m" };
+  }
 
   const gracePeriod = Number(
     payload.grace_period_minutes ?? payload.grace_period ?? payload.grace_minutes ?? 15,
@@ -2428,7 +2637,6 @@ export const validateShiftPayload = (payload = {}) => {
 
   const isDefault = payload.is_default === undefined ? 0 : Number(payload.is_default) ? 1 : 0;
   const isActive = payload.is_active === undefined ? 1 : Number(payload.is_active) ? 1 : 0;
-  const hasBreak = payload.has_break === undefined ? 1 : Number(payload.has_break) ? 1 : 0;
   const requireBreakPunch = Number(payload.require_break_punch) ? 1 : 0;
   const allowCheckoutAnytime =
     payload.allow_checkout_anytime === undefined
@@ -2467,7 +2675,15 @@ export const validateShiftPayload = (payload = {}) => {
       ? null
       : Number(payload.policy_id);
 
+  const expectedStandardHours = round2(Math.max(0, ((shiftEndMin ?? 0) - (shiftStartMin ?? 0) - (hasBreak ? breakDuration : 0)) / 60));
+  const standardWorkHours = round2(toNumber(payload.standard_work_hours, standardHours));
+  const warnings = [];
+  if (expectedStandardHours > 0 && Math.abs(standardWorkHours - expectedStandardHours) > 0.25) {
+    warnings.push(`standard_work_hours (${standardWorkHours}) l?ch > 0.25h so v?i (end-start-break)=${expectedStandardHours}`);
+  }
+
   return {
+    warnings,
     payload: {
       code,
       name,
@@ -2483,9 +2699,7 @@ export const validateShiftPayload = (payload = {}) => {
       grace_period_minutes: gracePeriod,
       min_ot_minutes: minOtMinutes,
       standard_hours: round2(standardHours),
-      standard_work_hours: round2(
-        toNumber(payload.standard_work_hours, standardHours),
-      ),
+      standard_work_hours: standardWorkHours,
       workday_value: round2(workdayValue),
       is_default: isDefault,
       is_active: isActive,
@@ -2726,6 +2940,56 @@ export const listShiftAssignments = async (user, filters = {}) => {
   }));
 };
 
+const getShiftAssignmentImpactDates = async (connection, employeeId, fromDate, toDate) => {
+  const start = formatDateOnly(fromDate);
+  const end = toDate ? formatDateOnly(toDate) : (await serverDate(connection));
+  if (!start || !end) return [];
+  const finalEnd = end < start ? start : end;
+  const [rows] = await connection.query(
+    `SELECT DATE_FORMAT(work_date, '%Y-%m-%d') AS work_date
+       FROM attendances
+      WHERE employee_id = ? AND work_date >= ? AND work_date <= ?
+      ORDER BY work_date`,
+    [employeeId, start, finalEnd],
+  );
+  return [...new Set(rows.map((r) => formatDateOnly(r.work_date)).filter(Boolean))];
+};
+
+const recalcImpactedAttendanceDates = async (connection, impacts = []) => {
+  const summary = { recalculated_days: 0, recalculated_employees: 0, skipped_locked_days: 0, affected_months: [] };
+  const employeeMonths = new Map();
+  const seenEmployees = new Set();
+  for (const impact of impacts) {
+    const employeeId = Number(impact.employee_id);
+    const dates = [...new Set((impact.dates || []).map(formatDateOnly).filter(Boolean))];
+    if (!employeeId || !dates.length) continue;
+    for (const workDate of dates) {
+      const month = monthFromDate(workDate);
+      const [monthRows] = await connection.query(
+        "SELECT status FROM monthly_timesheets WHERE employee_id = ? AND month_year = ? FOR UPDATE",
+        [employeeId, month],
+      );
+      if (monthRows[0]?.status === "LOCKED") { summary.skipped_locked_days += 1; continue; }
+      await recalculateDailyAttendance(connection, employeeId, workDate);
+      summary.recalculated_days += 1;
+      seenEmployees.add(employeeId);
+      const key = `${employeeId}:${month}`;
+      if (!employeeMonths.has(key)) employeeMonths.set(key, { employee_id: employeeId, month_year: month });
+    }
+  }
+  for (const item of employeeMonths.values()) {
+    const [monthRows] = await connection.query(
+      "SELECT status FROM monthly_timesheets WHERE employee_id = ? AND month_year = ? FOR UPDATE",
+      [item.employee_id, item.month_year],
+    );
+    if (monthRows[0]?.status === "LOCKED") continue;
+    await recalculateEmployeeMonth(connection, item.employee_id, item.month_year);
+    summary.affected_months.push(item);
+  }
+  summary.recalculated_employees = seenEmployees.size;
+  return summary;
+};
+
 export const createShiftAssignment = async (user, payload = {}) => {
   await ensureWorkShiftSchema();
   const employeeId = Number(payload.employee_id);
@@ -2763,17 +3027,16 @@ export const createShiftAssignment = async (user, payload = {}) => {
       [employeeId, effectiveTo || "9999-12-31", effectiveFrom],
     );
     if (overlap.length)
-      throw attendanceError(
-        "Nhân viên đã có phân ca trùng khoảng thời gian này",
-        409,
-      );
+      throw attendanceError("Nhân viên đã có phân ca trùng khoảng thời gian này", 409);
     const [result] = await connection.query(
       `INSERT INTO employee_shifts (employee_id, shift_id, effective_from, effective_to)
        VALUES (?, ?, ?, ?)`,
       [employeeId, shiftId, effectiveFrom, effectiveTo],
     );
+    const impactDates = await getShiftAssignmentImpactDates(connection, employeeId, effectiveFrom, effectiveTo);
+    const recalc_summary = await recalcImpactedAttendanceDates(connection, [{ employee_id: employeeId, dates: impactDates }]);
     await connection.commit();
-    return { id: result.insertId };
+    return { id: result.insertId, recalc_summary };
   } catch (error) {
     await connection.rollback();
     throw error;

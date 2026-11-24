@@ -4,6 +4,7 @@ import { initLogin } from "./js/login.js";
 import { initHome, setupShell } from "./js/home.js";
 import { initPermissions } from "./js/permissions.js";
 import { initQuanLyThietBi } from "./js/quan-ly-thiet-bi.js";
+import { initInformation } from "./js/information.js";
 import { initMyProfile } from "./js/my-profile.js";
 import { initChamCong } from "./js/cham-cong.js";
 import { initLichSuChamCong } from "./js/lich-su-cham-cong.js";
@@ -78,8 +79,40 @@ function showLogin() {
   const link = document.createElement("a");
   link.href = "#/face-id";
   link.className = "fixed bottom-6 right-6 z-50 rounded-xl bg-primary text-white px-5 py-3 shadow-lg font-semibold";
-  link.textContent = "Điểm danh FaceID • Không cần đăng nhập";
+  link.textContent = "Điểm danh FaceID - Không cần đăng nhập";
   app.appendChild(link);
+}
+
+function showLoginIpBlocked() {
+  mountPage(loginHtml);
+  const root = document.querySelector("#app");
+  if (root) {
+    const wrap = document.createElement("div");
+    wrap.className = "fixed inset-0 z-[220] flex items-center justify-center bg-slate-900/45 px-4";
+    const raw = sessionStorage.getItem("hrm_login_ip_block");
+    let detail = {};
+    try { detail = raw ? JSON.parse(raw) : {}; } catch {}
+    const ip = detail.clientIp || "";
+    wrap.innerHTML = `
+      <div class="w-full max-w-[460px] rounded-xl bg-white shadow-2xl ring-1 ring-black/5 overflow-hidden">
+        <div class="px-5 py-4 bg-red-50 border-b border-red-100 flex items-start gap-3">
+          <span class="material-symbols-outlined text-red-600 text-[24px]">shield_lock</span>
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-red-700">Truy cập bị chặn</p>
+            <h2 class="text-lg font-bold text-slate-900 mt-1">IP không được phép sử dụng hệ thống</h2>
+          </div>
+        </div>
+        <div class="px-5 py-4 text-sm text-slate-700 space-y-3">
+          <p>${detail.message || "Địa chỉ IP hiện tại không được phép đăng nhập hoặc sử dụng hệ thống."}</p>
+          ${ip ? `<div class="rounded-lg bg-slate-50 p-3 flex items-center justify-between gap-3"><span>IP hiện tại: <strong>${ip}</strong></span><button type="button" id="blockedCopyIp" class="text-[#0B57D0] font-medium">Copy IP</button></div>` : ""}
+          <div class="flex justify-end"><a href="#/login" id="blockedBackLogin" class="h-10 px-4 inline-flex items-center rounded-lg bg-[#0B57D0] text-white font-medium">Về trang đăng nhập</a></div>
+        </div>
+      </div>`;
+    root.appendChild(wrap);
+    wrap.querySelector("#blockedCopyIp")?.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(ip); } catch {}
+    });
+  }
 }
 
 function showHome(user) {
@@ -139,6 +172,18 @@ function showDevicesAdmin(user) {
   mountPage(homeHtml);
   setupShell(user);
   initQuanLyThietBi(user);
+}
+
+function showInformation(user) {
+  if (!user) {
+    clearHash();
+    showLogin();
+    return;
+  }
+
+  mountPage(homeHtml);
+  setupShell(user);
+  initInformation(user);
 }
 
 function showMyProfile(user) {
@@ -260,6 +305,8 @@ function renderRouteView(user) {
     showContracts(user, getContractStatusFromHash(hash));
   } else if (hash === "#/nhan-vien" || hash.startsWith("#/nhan-vien/")) {
     showEmployees(user, getEmployeeModeFromHash(hash));
+  } else if (hash === "#/thong-tin-noi-bo") {
+    showInformation(user);
   } else if (hash === "#/ho-so-ca-nhan") {
     showMyProfile(user);
   } else if (hash === "#/diem-danh") {
@@ -307,6 +354,7 @@ document.addEventListener("click", (event) => {
       "Nhân viên đã nghỉ": "#/nhan-vien/da-nghi",
       "Hợp đồng lao động": "#/hop-dong",
       "Sơ đồ phòng ban": "#/so-do-phong-ban",
+      "Bản tin & Nội quy công ty": "#/thong-tin-noi-bo",
     };
 
     if (cardRoutes[title]) {
@@ -345,6 +393,16 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (path === "thong-tin-noi-bo") {
+    window.location.hash = "#/thong-tin-noi-bo";
+    return;
+  }
+
+  if (path === "cham-cong") {
+    window.location.hash = "#/cham-cong";
+    return;
+  }
+
   if (path === "menu-launcher") {
     window.location.hash = "#/trang-chu";
   }
@@ -353,6 +411,14 @@ document.addEventListener("click", (event) => {
 window.addEventListener("hashchange", () => {
   if (window.location.hash === "#/face-id") {
     transitionTo(() => initFaceKiosk());
+    return;
+  }
+  if (window.location.hash === "#/login") {
+    transitionTo(() => showLogin());
+    return;
+  }
+  if (window.location.hash === "#/login-ip-blocked") {
+    transitionTo(() => showLoginIpBlocked());
     return;
   }
 
@@ -426,9 +492,18 @@ window.addEventListener("hrm:logout-request", () => {
   });
 });
 
+window.addEventListener("hrm:login-ip-blocked", () => {
+  window.location.hash = "#/login-ip-blocked";
+});
+
 async function bootstrap() {
   if (window.location.hash === "#/face-id") {
     initFaceKiosk();
+    app.classList.add("hrm-fade-in");
+    return;
+  }
+  if (window.location.hash === "#/login-ip-blocked") {
+    showLoginIpBlocked();
     app.classList.add("hrm-fade-in");
     return;
   }

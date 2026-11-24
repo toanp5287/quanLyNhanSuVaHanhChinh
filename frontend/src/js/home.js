@@ -88,6 +88,8 @@ const NAV_PERMISSIONS = {
   "danh-gia": ["EVAL.SELF_ASSESS", "EVAL.REVIEW_9BOX"],
   "tai-san": ["ASSET.VIEW_OWN", "ASSET.ALLOCATE_MANAGE"],
   "bao-cao": ["BI.DASHBOARD_VIEW"],
+  "thong-tin-noi-bo": [],
+  "cham-cong": ["ATT.VIEW"],
 };
 
 const ACTION_BUTTONS = {

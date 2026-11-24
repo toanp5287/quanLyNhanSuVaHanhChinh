@@ -20,6 +20,18 @@ const escapeHtml = (value) =>
     .replaceAll("'", "&#039;");
 
 const priorityLabel = { CRITICAL: "Khẩn cấp", HIGH: "Cao", MEDIUM: "Trung bình", LOW: "Thấp" };
+const scopeLabel = {
+  COMPANY: "Toàn công ty",
+  DEPARTMENT: "Phòng ban",
+  INDIVIDUAL: "Cá nhân",
+  ROLE: "Theo vai trò",
+};
+const scopeOf = (item) => {
+  const raw = String(item.audience_scope || item.payload?.scope || "").toUpperCase();
+  if (scopeLabel[raw]) return raw;
+  const legacy = String(item.payload?.target_type || "").toUpperCase();
+  return legacy === "COMPANY" || legacy === "DEPARTMENT" ? legacy : "INDIVIDUAL";
+};
 const priorityColor = {
   CRITICAL: "bg-error text-on-error",
   HIGH: "bg-error-container text-on-error-container",
@@ -212,6 +224,7 @@ const renderDropdown = () => {
         <div class="px-4 py-3 border-b border-outline-variant/60 hover:bg-surface-container-low cursor-pointer" data-notif-id="${escapeHtml(item.id)}">
           <div class="flex items-center gap-2">
             <span class="px-2 py-0.5 rounded text-[10px] font-bold ${priorityColor[item.priority] || priorityColor.MEDIUM}">${escapeHtml(priorityLabel[item.priority] || item.priority)}</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-primary-container text-on-primary-container">${escapeHtml(scopeLabel[scopeOf(item)])}</span>
             <p class="font-semibold text-sm text-on-surface truncate">${escapeHtml(item.title)}</p>
           </div>
           <p class="text-xs text-on-surface-variant mt-1 line-clamp-2">${escapeHtml(item.message)}</p>
