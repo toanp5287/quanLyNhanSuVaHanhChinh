@@ -119,9 +119,6 @@ export const updateMyFaceDescriptor = async (req, res) => {
     if (!employeeId) {
       return res.status(404).json({ success: false, message: "Tai khoan chua duoc lien ket voi ho so nhan su" });
     }
-<<<<<<< HEAD
-    const data = await updateSelfFaceDescriptor(employeeId, req.body?.embeddings, req.body?.current_password, req.body?.blink_verified);
-=======
     const data = await updateSelfFaceDescriptor(
       employeeId,
       req.body?.embeddings,
@@ -133,7 +130,6 @@ export const updateMyFaceDescriptor = async (req, res) => {
         client_ip: req.clientIp || null,
       },
     );
->>>>>>> origin/main
     return res.status(200).json({ success: true, message: "Cập nhật mẫu khuôn mặt FaceID thành công", data });
   } catch (error) {
     if (!error.status) console.error("Loi cap nhat khuon mat:", error);

@@ -7,12 +7,9 @@ import { initQuanLyThietBi } from "./js/quan-ly-thiet-bi.js";
 import { initInformation } from "./js/information.js";
 import { initMyProfile } from "./js/my-profile.js";
 import { initChamCong } from "./js/cham-cong.js";
-<<<<<<< HEAD
-=======
 import { initLichSuChamCong } from "./js/lich-su-cham-cong.js";
 import { initQuanLyCaLam } from "./js/quan-ly-ca-lam.js";
 import { initQuanLyLamThemGio } from "./js/quan-ly-lam-them-gio.js";
->>>>>>> origin/main
 import { initFaceKiosk } from "./js/diem-danh-nhat-ky-quet-the-phan-ca.js";
 import { initNotifications, mountBell } from "./js/notifications.js";
 import { getEmployeeModeFromHash, initEmployees } from "./js/employees.js";
@@ -190,8 +187,6 @@ function showDiemDanh(user, tab = "daily") {
   initChamCong(user, tab);
 }
 
-<<<<<<< HEAD
-=======
 function showQuanLyCaLam(user) {
   if (!user || (!hasPermission("ATT.SHIFT_OT_MANAGE", user) && !hasPermission("ATT.VIEW", user))) {
     clearHash();
@@ -225,7 +220,6 @@ function showLichSuChamCong(user) {
   initLichSuChamCong(user);
 }
 
->>>>>>> origin/main
 function showEmployees(user, mode = "all") {
   if (!user || !hasPermission("HR.PROFILE_VIEW", user)) {
     clearHash();
@@ -280,7 +274,7 @@ function showContracts(user, status = "ALL") {
   initContracts(user, status);
 }
 
-function renderRoute(user) {
+function renderRouteView(user) {
   const hash = window.location.hash;
 
   if (hash === "#/face-id") {
@@ -304,15 +298,12 @@ function renderRoute(user) {
     showMyProfile(user);
   } else if (hash === "#/diem-danh") {
     showDiemDanh(user);
-<<<<<<< HEAD
-=======
   } else if (hash === "#/quan-ly-ca-lam") {
     showQuanLyCaLam(user);
   } else if (hash === "#/lam-them-gio") {
     showQuanLyLamThemGio(user);
   } else if (hash === "#/lich-su-cham-cong") {
     showLichSuChamCong(user);
->>>>>>> origin/main
   } else if (hash === "#/cham-cong" || hash === "#/cham-cong/thang") {
     showDiemDanh(user, "monthly");
   } else if (hash === "#/trang-chu") {
@@ -324,8 +315,6 @@ function renderRoute(user) {
   }
 }
 
-<<<<<<< HEAD
-=======
 function renderRoute(user) {
   transitionTo(() => {
     renderRouteView(user);
@@ -333,7 +322,6 @@ function renderRoute(user) {
   });
 }
 
->>>>>>> origin/main
 document.addEventListener("click", (event) => {
   const card = event.target.closest(".action-card");
 
@@ -344,13 +332,10 @@ document.addEventListener("click", (event) => {
        "Hồ sơ cá nhân & JD": "#/ho-so-ca-nhan",
        "Dữ liệu máy chấm công": "#/diem-danh",
         "Bảng chấm công tháng": "#/cham-cong/thang",
-<<<<<<< HEAD
-=======
       "Quản lý ca làm việc": "#/quan-ly-ca-lam",
       "Phân ca làm việc": "#/quan-ly-ca-lam",
       "Làm thêm giờ (OT)": "#/lam-them-gio",
       "Lịch sử chấm công": "#/lich-su-cham-cong",
->>>>>>> origin/main
       "Tất cả nhân viên": "#/nhan-vien",
       "Nhân viên đang làm": "#/nhan-vien/dang-lam",
       "Nhân viên đã nghỉ": "#/nhan-vien/da-nghi",
@@ -411,8 +396,6 @@ document.addEventListener("click", (event) => {
 });
 
 window.addEventListener("hashchange", () => {
-<<<<<<< HEAD
-=======
   if (window.location.hash === "#/face-id") {
     transitionTo(() => initFaceKiosk());
     return;
@@ -426,10 +409,7 @@ window.addEventListener("hashchange", () => {
     return;
   }
 
->>>>>>> origin/main
   const user = getCurrentUser();
-
-  if (window.location.hash === "#/face-id") { initFaceKiosk(); return; }
 
   if (!user) {
     showLogin();
@@ -505,9 +485,6 @@ window.addEventListener("hrm:login-ip-blocked", () => {
 });
 
 async function bootstrap() {
-<<<<<<< HEAD
-  if (window.location.hash === "#/face-id") { initFaceKiosk(); return; }
-=======
   if (window.location.hash === "#/face-id") {
     initFaceKiosk();
     app.classList.add("hrm-fade-in");
@@ -518,7 +495,6 @@ async function bootstrap() {
     app.classList.add("hrm-fade-in");
     return;
   }
->>>>>>> origin/main
   if (!getToken()) {
     showLogin();
     return;
