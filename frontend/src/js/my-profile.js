@@ -89,6 +89,12 @@ const formatDate = (value) => {
   return `${day}/${month}/${year}`;
 };
 
+const formatDateTime = (value) => {
+  if (!value) return "—";
+  const [date, time] = String(value).split(" ");
+  return time ? `${formatDate(date)} ${time.slice(0, 5)}` : formatDate(date);
+};
+
 const formatCurrency = (value) => {
   if (value === null || value === undefined || value === "") return "—";
   const number = Number(value);
@@ -237,9 +243,16 @@ const renderProfile = (data) => {
   );
   document.getElementById("statRewards").textContent = String(rewards.length);
 
+<<<<<<< HEAD
   document.getElementById("workHistoriesCount").textContent = `${workHistories.length} bản ghi`;
   document.getElementById("dependentsCount").textContent = `${dependents.length} bản ghi`;
   document.getElementById("rewardsCount").textContent = `${rewards.length} bản ghi`;
+=======
+  document.getElementById("contractsCount").textContent = String(contracts.length);
+  document.getElementById("workHistoriesCount").textContent = String(workHistories.length);
+  document.getElementById("dependentsCount").textContent = String(dependents.length);
+  document.getElementById("rewardsCount").textContent = String(rewards.length);
+>>>>>>> origin/main
 
   renderWorkHistories(workHistories);
   renderDependents(dependents);
@@ -738,9 +751,19 @@ const loadProfile = async () => {
   try {
     const response = await api.get("/my-profile");
     renderProfile(response.data.data);
+<<<<<<< HEAD
     await loadMyContracts();
     const hasFace = Boolean(response.data.data?.employee?.has_face_descriptor);
     updateCurrentUser({ has_face_descriptor: hasFace });
+=======
+    const employee = response.data.data?.employee || {};
+    const faceStatus = employee.face_status || (employee.has_face_descriptor ? "ACTIVE" : "UNREGISTERED");
+    updateCurrentUser({
+      has_face_descriptor: Boolean(employee.has_face_descriptor),
+      face_status: faceStatus,
+      face_enrolled_at: employee.face_enrolled_at || null,
+    });
+>>>>>>> origin/main
     updateFaceButtonState(getCurrentUser());
   } catch (error) {
     const message =
@@ -832,6 +855,11 @@ const bindModal = () => {
   document.getElementById("btnEditContact")?.addEventListener("click", () => openModal("contact"));
   document.getElementById("btnChangePassword")?.addEventListener("click", () => openModal("password"));
   document.getElementById("btnUpdateFaceId")?.addEventListener("click", () => {
+    const user = getCurrentUser();
+    if ((user?.face_status || (user?.has_face_descriptor ? "ACTIVE" : "UNREGISTERED")) === "ACTIVE") {
+      showToast("FaceID đã kích hoạt. Liên hệ Admin/HR để đổi.", "error");
+      return;
+    }
     bindFaceEnrollModal();
     openFaceEnrollModal();
   });
@@ -948,17 +976,29 @@ const renderRoleBadge = (user) => {
 const updateFaceButtonState = (user = getCurrentUser()) => {
   const btn = document.getElementById("btnUpdateFaceId");
   const label = document.getElementById("btnUpdateFaceIdLabel");
+  const badge = document.getElementById("faceStatusBadge");
   if (!btn) return;
-  const hasFace = Boolean(user?.has_face_descriptor);
-  if (label) label.textContent = hasFace ? "Thay đổi FaceID" : "Đăng ký FaceID";
-  btn.classList.toggle("bg-amber-500", !hasFace);
-  btn.classList.toggle("hover:bg-amber-600", !hasFace);
-  btn.classList.toggle("bg-emerald-600", hasFace);
-  btn.classList.toggle("hover:bg-emerald-700", hasFace);
-  if (!hasFace) {
-    btn.classList.add("ring-2", "ring-amber-300");
-  } else {
-    btn.classList.remove("ring-2", "ring-amber-300");
+  const active = (user?.face_status || (user?.has_face_descriptor ? "ACTIVE" : "UNREGISTERED")) === "ACTIVE";
+  if (label) label.textContent = active ? "Đã kích hoạt" : "Đăng ký FaceID";
+  btn.disabled = active;
+  btn.classList.toggle("opacity-60", active);
+  btn.classList.toggle("cursor-not-allowed", active);
+  btn.classList.toggle("bg-amber-500", !active);
+  btn.classList.toggle("hover:bg-amber-600", !active);
+  btn.classList.toggle("bg-emerald-600", active);
+  btn.classList.toggle("hover:bg-emerald-700", active);
+  btn.classList.toggle("ring-2", !active);
+  btn.classList.toggle("ring-amber-300", !active);
+  btn.title = active
+    ? `Kích hoạt ${formatDateTime(user?.face_enrolled_at)}. Muốn đổi liên hệ Admin/HR.`
+    : "Đăng ký để điểm danh";
+  if (badge) {
+    badge.className = `inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-sm text-label-sm font-semibold ${
+      active ? "bg-emerald-50 text-emerald-800" : "bg-surface-container-high text-on-surface-variant"
+    }`;
+    badge.innerHTML = active
+      ? `<span class="material-symbols-outlined text-[14px]">verified</span>FaceID · ${formatDate(user?.face_enrolled_at)}`
+      : `<span class="material-symbols-outlined text-[14px]">face_retouching_natural</span>FaceID: chưa đăng ký`;
   }
 };
 
@@ -1008,9 +1048,7 @@ export const initMyProfile = (providedUser) => {
 
   if (!hasPermission(PROFILE_PERMISSION, user)) {
     document.getElementById("profileActions")?.classList.add("hidden");
-    showNotice(
-      "Tài khoản của bạn không được cấp quyền ESS.SELF_PROFILE nên không thể truy cập Cổng nhân viên.",
-    );
+    showNotice("Bạn không có quyền ESS.SELF_PROFILE để truy cập trang này.");
     return;
   }
 

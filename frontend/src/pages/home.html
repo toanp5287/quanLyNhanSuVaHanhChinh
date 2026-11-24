@@ -285,6 +285,19 @@
         </div>
         <div class="flex items-center gap-space-xs">
           <button
+            id="notificationBellBtn"
+            class="relative p-space-xs text-on-primary hover:bg-white/10 rounded flex items-center justify-center transition-colors"
+            title="Thông báo"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[20px]">notifications</span>
+            <span
+              id="notificationBadge"
+              class="hidden absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-error text-on-error text-[10px] leading-4 text-center font-bold"
+              >0</span
+            >
+          </button>
+          <button
             class="p-space-xs text-on-primary hover:bg-white/10 rounded flex items-center justify-center transition-colors"
             title="Đồng bộ"
             type="button"
@@ -392,6 +405,13 @@
           ><span class="material-symbols-outlined text-[20px]">group</span></a
         ><a
           class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="cham-cong"
+          href="#"
+          data-tooltip="Chấm công"
+          aria-label="Chấm công"
+          ><span class="material-symbols-outlined text-[20px]">fact_check</span></a
+        ><a
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
           data-path="lich-bieu"
           href="#"
           data-tooltip="Lịch biểu"
@@ -476,6 +496,13 @@
           ><span class="material-symbols-outlined text-[20px]"
             >summarize</span
           ></a
+        ><a
+          class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+          data-path="thong-tin-noi-bo"
+          href="#"
+          data-tooltip="Bản tin & Nội quy"
+          aria-label="Bản tin & Nội quy"
+          ><span class="material-symbols-outlined text-[20px]">campaign</span></a
         >
       </nav>
     </aside>
@@ -2504,7 +2531,7 @@
                   >
                   <span
                     class="font-label-sm text-label-sm bg-primary-fixed text-on-primary-fixed px-2 py-0.5 rounded-full ml-1 font-semibold"
-                    >4</span
+                    >5</span
                   >
                 </div>
                 <span class="font-label-sm text-label-sm text-outline"
@@ -2627,6 +2654,43 @@
                     </button>
                   </div>
                   <!-- Card 11.4 -->
+                  <div
+                    class="action-card h-[76px] p-[10px_14px] bg-surface-container-lowest hover:bg-surface-container-low rounded shadow-sm hover:shadow-md transition-all flex items-center justify-between cursor-pointer group"
+                    data-title="Lịch sử chấm công"
+                  >
+                    <div class="flex items-center gap-3 min-w-0">
+                      <div
+                        class="w-11 h-11 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform"
+                      >
+                        <span
+                          class="material-symbols-outlined text-[28px]"
+                          style="font-variation-settings: &quot;FILL&quot; 1"
+                          >calendar_month</span
+                        >
+                      </div>
+                      <div class="min-w-0">
+                        <h4
+                          class="font-body-lg text-body-lg font-bold text-on-surface truncate group-hover:text-primary transition-colors"
+                        >
+                          Lịch sử chấm công
+                        </h4>
+                        <p
+                          class="font-label-sm text-label-sm text-outline truncate"
+                        >
+                          Xem giờ vào theo ngày
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      class="w-7 h-7 rounded text-outline hover:text-on-surface hover:bg-surface-variant flex items-center justify-center shrink-0"
+                      type="button"
+                    >
+                      <span class="material-symbols-outlined text-[18px]"
+                        >more_vert</span
+                      >
+                    </button>
+                  </div>
+                  <!-- Card 11.5 -->
                   <div
                     class="action-card h-[76px] p-[10px_14px] bg-surface-container-lowest hover:bg-surface-container-low rounded shadow-sm hover:shadow-md transition-all flex items-center justify-between cursor-pointer group"
                     data-title="Bản tin &amp; Nội quy công ty"

@@ -1,0 +1,319 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quản lý ca làm việc</title>
+</head>
+<body>
+  <section id="shiftWorkspace" class="flex flex-col gap-4 pb-6">
+    <div class="flex flex-wrap items-center justify-between gap-3 bg-white rounded-xl p-5 shadow-sm">
+      <div>
+        <a href="#/trang-chu" class="text-sm text-primary hover:underline">Trang chủ / Quản lý chấm công</a>
+        <h1 class="text-2xl font-bold text-on-surface mt-1">Quản lý ca làm việc &amp; phân ca</h1>
+        <p id="shiftScope" class="text-sm text-on-surface-variant mt-1"></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button data-action="refresh" class="rounded border px-4 py-2 text-sm hover:bg-surface-container">Làm mới dữ liệu</button>
+      </div>
+    </div>
+
+    <div id="shiftNotice" role="status" aria-live="polite" class="hidden rounded p-3 text-sm"></div>
+
+    <div id="shiftTabs" class="flex flex-wrap gap-2" role="tablist" aria-label="Chế độ quản lý ca">
+      <button data-tab="shifts" role="tab" class="rounded px-4 py-2 text-sm font-semibold">1. Danh mục ca làm việc</button>
+      <button data-tab="assignments" role="tab" class="rounded px-4 py-2 text-sm font-semibold">2. Phân ca cho nhân viên</button>
+      <button data-tab="policies" role="tab" class="rounded px-4 py-2 text-sm font-semibold">3. Quy chế tính công</button>
+      <button data-tab="kiosk" role="tab" class="rounded px-4 py-2 text-sm font-semibold">4. Cấu hình máy chấm công</button>
+    </div>
+
+    <section id="shiftPanel-shifts" data-panel="shifts" class="flex flex-col gap-4">
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div class="p-4 border-b flex flex-wrap justify-between items-center gap-3">
+          <div>
+            <h2 class="font-bold text-lg">Danh sách ca làm việc</h2>
+            <p class="text-xs text-on-surface-variant mt-1">Quản lý thông tin ca, khung giờ cho phép quét thẻ/khuôn mặt, ân hạn đi muộn và quy tắc tính công.</p>
+          </div>
+          <button id="btnNewShift" class="rounded bg-primary text-white px-4 py-2 text-sm font-semibold disabled:opacity-40">+ Thêm ca mới</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left">
+            <thead class="bg-surface-container-low text-on-surface-variant">
+              <tr>
+                <th class="px-4 py-3 whitespace-nowrap">Mã / Tên ca</th>
+                <th class="px-4 py-3 whitespace-nowrap">Giờ làm &amp; nghỉ giữa ca</th>
+                <th class="px-4 py-3 min-w-[220px]">Khung giờ được phép quét</th>
+                <th class="px-4 py-3 min-w-[180px]">Ân hạn &amp; mốc đúng giờ</th>
+                <th class="px-4 py-3 whitespace-nowrap">Quy tắc công</th>
+                <th class="px-4 py-3 whitespace-nowrap">Trạng thái</th>
+                <th class="px-4 py-3 text-right whitespace-nowrap">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="shiftTableBody" class="divide-y"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="shiftFormWrap" class="hidden bg-white rounded-xl shadow-sm p-5">
+        <div class="flex items-center justify-between gap-3 mb-2">
+          <div>
+            <h3 id="shiftFormTitle" class="font-bold text-lg">Thêm ca làm việc</h3>
+            <p class="text-xs text-on-surface-variant mt-1">Điền đầy đủ các thông tin bắt buộc (*). Các ô có mô tả sẽ giúp hệ thống tính đúng giờ, đi muộn và chấm công.</p>
+          </div>
+          <button id="btnCancelShift" type="button" class="text-sm text-on-surface-variant hover:text-on-surface border rounded px-3 py-1.5">Đóng</button>
+        </div>
+
+        <form id="shiftForm" class="flex flex-col gap-5 mt-4">
+          <input type="hidden" id="shiftId" />
+
+          <fieldset class="border border-surface-variant rounded-lg p-4">
+            <legend class="px-2 font-semibold text-sm">1. Thông tin cơ bản</legend>
+            <p class="text-xs text-on-surface-variant mb-3">Đặt tên và mã ca dễ nhận biết để thuận tiện khi phân ca và xem báo cáo.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <label class="text-sm">Mã ca <span class="text-error">*</span>
+                <input id="shiftCode" required maxlength="20" class="mt-1 block w-full rounded border px-3 py-2 uppercase" placeholder="VD: HC, SANG, CHIEU" />
+                <span class="block text-xs text-on-surface-variant mt-1">Mã ngắn, duy nhất (không trùng với ca khác).</span>
+              </label>
+              <label class="text-sm md:col-span-2">Tên ca làm việc <span class="text-error">*</span>
+                <input id="shiftName" required maxlength="100" class="mt-1 block w-full rounded border px-3 py-2" placeholder="VD: Ca hành chính, Ca sáng, Ca part-time" />
+                <span class="block text-xs text-on-surface-variant mt-1">Tên hiển thị rõ ràng cho người quản lý và nhân viên.</span>
+              </label>
+              <div class="text-sm flex flex-col gap-2 md:col-span-2 lg:col-span-3 pt-1">
+                <label class="inline-flex items-start gap-2"><input id="shiftIsActive" type="checkbox" class="rounded mt-0.5" checked /><span><span class="font-medium">Đang áp dụng</span><span class="block text-xs text-on-surface-variant">Bật để có thể sử dụng và phân ca này. Tắt (ngừng áp dụng) nếu muốn ngưng dùng nhưng vẫn giữ lịch sử.</span></span></label>
+                <label class="inline-flex items-start gap-2"><input id="shiftIsDefault" type="checkbox" class="rounded mt-0.5" /><span><span class="font-medium">Ca mặc định</span><span class="block text-xs text-on-surface-variant">Dùng làm ca mặc định khi hệ thống cần xác định ca cho nhân viên chưa có phân ca phù hợp.</span></span></label>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="border border-surface-variant rounded-lg p-4">
+            <legend class="px-2 font-semibold text-sm">2. Giờ làm việc trong ca</legend>
+            <p class="text-xs text-on-surface-variant mb-3">Xác định thời gian bắt đầu/kết thúc ca và thời gian nghỉ giữa ca (nếu có) để tính giờ công.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <label class="text-sm">Giờ bắt đầu ca <span class="text-error">*</span>
+                <input id="shiftStart" type="time" required class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Thời điểm nhân viên phải có mặt/bắt đầu làm việc.</span>
+              </label>
+              <label class="text-sm">Giờ kết thúc ca <span class="text-error">*</span>
+                <input id="shiftEnd" type="time" required class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Thời điểm kết thúc ca làm việc theo quy định.</span>
+              </label>
+              <label class="text-sm">Nghỉ giữa ca - bắt đầu
+                <input id="shiftBreakStart" type="time" class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Để trống nếu ca không có giờ nghỉ giữa ca.</span>
+              </label>
+              <label class="text-sm">Nghỉ giữa ca - kết thúc
+                <input id="shiftBreakEnd" type="time" class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Phải nhập cùng với giờ bắt đầu nghỉ.</span>
+              </label>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+              <label class="inline-flex items-start gap-2 text-sm"><input id="shiftHasBreak" type="checkbox" class="rounded mt-0.5" checked /><span>Có nghỉ giữa ca<span class="block text-xs text-on-surface-variant">Tự khấu trừ khung nghỉ khi tính công.</span></span></label>
+              <label class="inline-flex items-start gap-2 text-sm"><input id="shiftRequireBreakPunch" type="checkbox" class="rounded mt-0.5" /><span>Bắt buộc quét nghỉ<span class="block text-xs text-on-surface-variant">Chưa dùng cho kiosk hiện tại.</span></span></label>
+              <label class="inline-flex items-start gap-2 text-sm"><input id="shiftIsOvernight" type="checkbox" class="rounded mt-0.5" /><span>Ca qua đêm<span class="block text-xs text-on-surface-variant">Cho phép giờ kết thúc nhỏ hơn giờ bắt đầu.</span></span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="border border-surface-variant rounded-lg p-4">
+            <legend class="px-2 font-semibold text-sm">3. Khung giờ cho phép quét chấm công</legend>
+            <p class="text-xs text-on-surface-variant mb-3">Giới hạn thời gian hệ thống/máy FaceID chấp nhận quét vào ca và tan ca. Riêng mốc <b>quét vào đến</b>: để trống (hiện "<b>--:-- SA</b>") là <b>không giới hạn giờ quét vào</b>, kể cả khi bạn đã cấu hình mốc mở quét. Quét ngoài khung đã cấu hình sẽ bị từ chối.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <label class="text-sm">Cho phép quét vào từ
+                <input id="shiftCheckinStart" type="time" class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Sớm nhất được ghi nhận giờ vào ca.</span>
+              </label>
+              <label class="text-sm">Cho phép quét vào đến
+                <input id="shiftCheckinEnd" type="time" class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Muộn nhất vẫn cho phép quét vào ca. Để trống = không giới hạn.</span>
+              </label>
+              <label class="text-sm">Cho phép quét ra từ
+                <input id="shiftCheckoutStart" type="time" class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Sớm nhất được ghi nhận giờ tan ca.</span>
+              </label>
+              <label class="text-sm">Cho phép quét ra đến
+                <input id="shiftCheckoutEnd" type="time" class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Muộn nhất vẫn cho phép quét tan ca (quá giờ này có thể bị đánh dấu thiếu checkout).</span>
+              </label>
+              <label class="text-sm">Mở quét Vào trước (phút)
+                <input id="shiftCheckinOpenBefore" type="number" min="0" max="720" value="120" class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Dùng khi không đặt "Cho phép quét vào từ". Không ảnh hưởng đến mốc "quét vào đến".</span>
+              </label>
+            </div>
+            <label class="inline-flex items-start gap-2 text-sm mt-4"><input id="shiftAllowCheckoutAnytime" type="checkbox" class="rounded mt-0.5" checked /><span>Cho phép chấm Ra mọi lúc trong ngày<span class="block text-xs text-on-surface-variant">Chỉ cần đã có giờ Vào; hệ thống vẫn tính đi muộn/ về sớm theo quy chế.</span></span></label>
+          </fieldset>
+
+          <fieldset class="border border-surface-variant rounded-lg p-4">
+            <legend class="px-2 font-semibold text-sm">4. Quy tắc tính công &amp; tăng ca</legend>
+            <p class="text-xs text-on-surface-variant mb-3">Thiết lập cách hệ thống xác định đúng giờ/đi muộn, điều kiện tính OT và giá trị công của ca.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <label class="text-sm">Ân hạn đi muộn (phút)
+                <input id="shiftGrace" type="number" min="0" max="120" value="15" class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Trong số phút này sau giờ bắt đầu ca vẫn tính <b>đúng giờ</b>. Quét muộn hơn sẽ tính <b>đi muộn</b> và ghi nhận số phút muộn.</span>
+              </label>
+              <label class="text-sm">Số phút OT tối thiểu
+                <input id="shiftMinOt" type="number" min="0" max="240" value="30" class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Thời gian làm thêm tối thiểu để được ghi nhận tăng ca.</span>
+              </label>
+              <label class="text-sm">Số giờ làm chuẩn (giờ)
+                <input id="shiftStandardHours" type="number" min="0" max="24" step="0.25" value="8" class="mt-1 block w-full rounded border px-3 py-2" />
+                <span class="block text-xs text-on-surface-variant mt-1">Tổng giờ làm việc tiêu chuẩn của ca (không tính nghỉ giữa ca).</span>
+              </label>
+              <label class="text-sm">Giá trị công của ca
+                <select id="shiftWorkdayValue" class="mt-1 block w-full rounded border px-3 py-2">
+                  <option value="1">1.0 công (ca đủ ngày)</option>
+                  <option value="0.5">0.5 công (nửa ca)</option>
+                </select>
+                <span class="block text-xs text-on-surface-variant mt-1">Số công ghi nhận khi làm đủ ca này.</span>
+              </label>
+              <label class="text-sm">Quy chế tính công
+                <select id="shiftPolicy" class="mt-1 block w-full rounded border px-3 py-2"><option value="">Quy chế mặc định</option></select>
+                <span class="block text-xs text-on-surface-variant mt-1">Snapshot quy chế được lưu vào từng ngày công để không đổi lịch sử.</span>
+              </label>
+              <label class="text-sm">Ngày làm việc trong tuần (JSON)
+                <input id="shiftWorkingDays" class="mt-1 block w-full rounded border px-3 py-2" placeholder='[1,2,3,4,5]' />
+                <span class="block text-xs text-on-surface-variant mt-1">Để trống nếu áp dụng mọi ngày; 1=Thứ Hai ... 7=Chủ nhật.</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="flex flex-wrap justify-end gap-2 pt-1">
+            <button type="button" id="btnResetShift" class="rounded border px-4 py-2 text-sm">Nhập lại</button>
+            <button type="submit" id="btnSaveShift" class="rounded bg-primary text-white px-4 py-2 text-sm font-semibold">Lưu ca làm việc</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="shiftPanel-assignments" data-panel="assignments" class="hidden flex flex-col gap-4">
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <h3 class="font-semibold mb-1">Bộ lọc phân ca</h3>
+        <p class="text-xs text-on-surface-variant mb-3">Lọc để xem nhanh nhân viên đang được gán ca nào, theo phòng ban hoặc theo từng ca.</p>
+        <div class="flex flex-wrap gap-3 items-end">
+          <label class="text-sm">Nhân viên
+            <select id="assignFilterEmployee" class="block rounded border px-3 py-2 mt-1 min-w-[220px]"><option value="">Tất cả nhân viên</option></select>
+          </label>
+          <label class="text-sm">Ca làm việc
+            <select id="assignFilterShift" class="block rounded border px-3 py-2 mt-1 min-w-[180px]"><option value="">Tất cả ca</option></select>
+          </label>
+          <label class="text-sm">Phòng ban
+            <select id="assignFilterDept" class="block rounded border px-3 py-2 mt-1 min-w-[180px]"><option value="">Tất cả phòng ban</option></select>
+          </label>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div class="p-4 border-b flex flex-wrap justify-between items-center gap-3">
+          <div>
+            <h2 class="font-bold text-lg">Danh sách phân ca</h2>
+            <p class="text-xs text-on-surface-variant mt-1">Mỗi nhân viên có thể được gán ca theo khoảng thời gian. Không được trùng lặp thời gian áp dụng cho cùng một nhân viên.</p>
+          </div>
+          <div class="flex gap-2">
+            <button id="btnRefreshAssign" class="rounded border px-4 py-2 text-sm">Làm mới</button>
+            <button id="btnNewAssign" class="rounded bg-primary text-white px-4 py-2 text-sm font-semibold disabled:opacity-40">+ Thêm phân ca</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left">
+            <thead class="bg-surface-container-low text-on-surface-variant">
+              <tr>
+                <th class="px-4 py-3 whitespace-nowrap">Mã NV</th>
+                <th class="px-4 py-3 whitespace-nowrap">Họ và tên</th>
+                <th class="px-4 py-3 whitespace-nowrap">Phòng ban</th>
+                <th class="px-4 py-3">Ca được gán</th>
+                <th class="px-4 py-3 whitespace-nowrap">Giờ ca</th>
+                <th class="px-4 py-3 whitespace-nowrap">Bắt đầu áp dụng</th>
+                <th class="px-4 py-3 whitespace-nowrap">Kết thúc áp dụng</th>
+                <th class="px-4 py-3 text-right whitespace-nowrap">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="assignTableBody" class="divide-y"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="assignFormWrap" class="hidden bg-white rounded-xl shadow-sm p-5">
+        <div class="flex items-center justify-between gap-3 mb-2">
+          <div>
+            <h3 id="assignFormTitle" class="font-bold text-lg">Thêm phân ca</h3>
+            <p class="text-xs text-on-surface-variant mt-1">Chọn nhân viên, ca làm việc và thời gian áp dụng. Để trống ngày kết thúc nếu phân ca có hiệu lực lâu dài.</p>
+          </div>
+          <button id="btnCancelAssign" type="button" class="text-sm text-on-surface-variant hover:text-on-surface border rounded px-3 py-1.5">Đóng</button>
+        </div>
+        <form id="assignForm" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <input type="hidden" id="assignId" />
+          <label class="text-sm md:col-span-2 lg:col-span-1">Nhân viên áp dụng <span class="text-error">*</span>
+            <select id="assignEmployee" required class="mt-1 block w-full rounded border px-3 py-2"><option value="">-- Chọn nhân viên --</option></select>
+            <span class="block text-xs text-on-surface-variant mt-1">Chọn đúng nhân viên cần gán/đổi ca.</span>
+          </label>
+          <label class="text-sm md:col-span-2 lg:col-span-1">Ca làm việc <span class="text-error">*</span>
+            <select id="assignShift" required class="mt-1 block w-full rounded border px-3 py-2"><option value="">-- Chọn ca --</option></select>
+            <span class="block text-xs text-on-surface-variant mt-1">Chỉ hiển thị các ca đang ở trạng thái áp dụng.</span>
+          </label>
+          <label class="text-sm">Ngày bắt đầu áp dụng <span class="text-error">*</span>
+            <input id="assignFrom" type="date" required class="mt-1 block w-full rounded border px-3 py-2" />
+            <span class="block text-xs text-on-surface-variant mt-1">Từ ngày này nhân viên sẽ làm theo ca đã chọn.</span>
+          </label>
+          <label class="text-sm">Ngày kết thúc áp dụng
+            <input id="assignTo" type="date" class="mt-1 block w-full rounded border px-3 py-2" />
+            <span class="block text-xs text-on-surface-variant mt-1">Để trống nếu chưa xác định ngày kết thúc (áp dụng đến khi có phân ca mới).</span>
+          </label>
+          <div class="md:col-span-2 flex flex-wrap justify-end gap-2 pt-2">
+            <button type="button" id="btnResetAssign" class="rounded border px-4 py-2 text-sm">Nhập lại</button>
+            <button type="submit" id="btnSaveAssign" class="rounded bg-primary text-white px-4 py-2 text-sm font-semibold">Lưu phân ca</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="shiftPanel-policies" data-panel="policies" class="hidden flex flex-col gap-4">
+      <div class="bg-white rounded-xl p-5 shadow-sm">
+        <div class="flex flex-wrap justify-between items-center gap-3">
+          <div>
+            <h2 class="font-bold text-lg">Quy chế tính công</h2>
+            <p class="text-xs text-on-surface-variant mt-1">Cấu hình PRO_RATA hoặc CUSTOM_TIERS. Quy chế được gán cho ca làm việc và lưu snapshot theo từng ngày công.</p>
+          </div>
+          <button id="btnNewPolicy" class="rounded bg-primary text-white px-4 py-2 text-sm font-semibold disabled:opacity-40">+ Thêm quy chế</button>
+        </div>
+        <div class="overflow-x-auto mt-4">
+          <table class="w-full text-sm text-left">
+            <thead class="bg-surface-container-low text-on-surface-variant">
+              <tr><th class="px-4 py-3">Mã / Tên</th><th class="px-4 py-3">Chế độ</th><th class="px-4 py-3">Quy tắc</th><th class="px-4 py-3 text-right">Thao tác</th></tr>
+            </thead>
+            <tbody id="policyTableBody" class="divide-y"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="policyFormWrap" class="hidden bg-white rounded-xl p-5 shadow-sm">
+        <div class="flex justify-between items-center"><h3 id="policyFormTitle" class="font-bold text-lg">Thêm quy chế</h3><button id="btnCancelPolicy" type="button" class="border rounded px-3 py-1.5 text-sm">Đóng</button></div>
+        <form id="policyForm" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <input type="hidden" id="policyId" />
+          <label class="text-sm">Mã quy chế *<input id="policyCode" required maxlength="50" class="mt-1 block w-full rounded border px-3 py-2 uppercase" /></label>
+          <label class="text-sm">Tên quy chế *<input id="policyName" required class="mt-1 block w-full rounded border px-3 py-2" /></label>
+          <label class="text-sm">Chế độ tính công
+            <select id="policyMode" class="mt-1 block w-full rounded border px-3 py-2"><option value="PRO_RATA">PRO_RATA theo tỷ lệ giờ</option><option value="CUSTOM_TIERS">CUSTOM_TIERS theo bậc giờ</option></select>
+          </label>
+          <label class="text-sm">Bước làm tròn PRO_RATA<input id="policyRoundStep" type="number" min="0.01" max="1" step="0.01" value="0.25" class="mt-1 block w-full rounded border px-3 py-2" /></label>
+          <label class="text-sm">Cách làm tròn<select id="policyRoundMethod" class="mt-1 block w-full rounded border px-3 py-2"><option value="ROUND">Làm tròn</option><option value="FLOOR">Làm tròn xuống</option><option value="CEIL">Làm tròn lên</option></select></label>
+          <label class="text-sm">Ân hạn đi muộn (phút)<input id="policyGrace" type="number" min="0" max="120" value="5" class="mt-1 block w-full rounded border px-3 py-2" /></label>
+          <label class="text-sm md:col-span-2">Các bậc công CUSTOM_TIERS (JSON)<textarea id="policyTiers" rows="4" class="mt-1 block w-full rounded border px-3 py-2" placeholder='[{"min_hours":7.5,"work_day":1,"label":"Đủ công"}]'></textarea></label>
+          <label class="inline-flex items-center gap-2 text-sm md:col-span-2"><input id="policyIsDefault" type="checkbox" class="rounded" /> Đặt làm quy chế mặc định</label>
+          <div class="md:col-span-2 flex justify-end gap-2"><button type="button" id="btnCancelPolicyEdit" class="rounded border px-4 py-2 text-sm">Hủy</button><button type="submit" class="rounded bg-primary text-white px-4 py-2 text-sm font-semibold">Lưu quy chế</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section id="shiftPanel-kiosk" data-panel="kiosk" class="hidden flex flex-col gap-4">
+      <form id="kioskConfigForm" class="bg-white rounded-xl p-5 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="md:col-span-2"><h2 class="font-bold text-lg">Cấu hình máy chấm công FaceID</h2><p class="text-xs text-on-surface-variant mt-1">Các giá trị này dùng trực tiếp cho kiosk; không cần sửa code.</p></div>
+        <label class="text-sm">Chế độ quét<select id="kioskPunchMode" class="mt-1 block w-full rounded border px-3 py-2"><option value="AUTO_SMART">Tự động Vào/Ra</option><option value="MANUAL_TABS">Chọn Vào / Ra</option></select></label>
+        <label class="text-sm">Chống quét đúp (phút)<input id="kioskAntiDouble" type="number" min="0" max="60" class="mt-1 block w-full rounded border px-3 py-2" /></label>
+        <label class="text-sm">Thời gian xác nhận Ra (giây)<input id="kioskConfirmSeconds" type="number" min="0" max="30" class="mt-1 block w-full rounded border px-3 py-2" /></label>
+        <label class="text-sm">Quét Ra lặp lại<select id="kioskRepeatPolicy" class="mt-1 block w-full rounded border px-3 py-2"><option value="OVERWRITE_LATEST">Ghi đè lần Ra cuối</option><option value="LOCK_FIRST">Khóa lần Ra đầu</option></select></label>
+        <label class="inline-flex items-center gap-2 text-sm"><input id="kioskRequireCheckin" type="checkbox" class="rounded" /> Bắt buộc phải có Vào trước khi Ra</label>
+        <label class="inline-flex items-center gap-2 text-sm"><input id="kioskShowWorkday" type="checkbox" class="rounded" /> Hiện công ước tính trên kiosk</label>
+        <label class="text-sm md:col-span-2">Cấu hình mạng/IP (JSON)<textarea id="kioskNetworkConfig" rows="3" class="mt-1 block w-full rounded border px-3 py-2"></textarea></label>
+        <div class="md:col-span-2 flex justify-end gap-2"><button type="button" id="btnResetKiosk" class="rounded border px-4 py-2 text-sm">Nhập lại</button><button type="submit" class="rounded bg-primary text-white px-4 py-2 text-sm font-semibold">Lưu cấu hình</button></div>
+      </form>
+    </section>
+  </section>
+</body>
+</html>
