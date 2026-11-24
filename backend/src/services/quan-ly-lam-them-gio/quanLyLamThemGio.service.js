@@ -51,6 +51,39 @@ const timeToMinutes = (value) => {
 
 const monthOf = (date) => date.slice(0, 7);
 
+export const OT_EXPIRED_REASON = "Hết thời gian duyệt";
+
+export const expirePendingOvertimeRequests = async (connection, filters = {}) => {
+  const conditions = [
+    "status = 'PENDING'",
+    "CAST(CONCAT(work_date, ' ', start_time) AS DATETIME) <= NOW()",
+  ];
+  const params = [OT_EXPIRED_REASON];
+  if (filters.employeeId) {
+    conditions.push("employee_id = ?");
+    params.push(Number(filters.employeeId));
+  }
+  if (filters.workDate) {
+    conditions.push("work_date = ?");
+    params.push(filters.workDate);
+  }
+  const [result] = await connection.query(
+    `UPDATE overtime_requests
+        SET status = 'REJECTED', approved_at = NOW(),
+            reject_reason = ?, actual_ot_hours = 0
+      WHERE ${conditions.join(" AND ")}`,
+    params,
+  );
+  return result.affectedRows || 0;
+};
+
+const isExpiredOvertime = (row) =>
+  row?.status === "REJECTED" && row?.reject_reason === OT_EXPIRED_REASON;
+
+const assertNotExpired = (row) => {
+  if (isExpiredOvertime(row)) throw fail("Đơn OT đã hết thời gian duyệt", 409);
+};
+
 const assertMonthOpen = async (connection, employeeId, date) => {
   const [rows] = await connection.query(
     "SELECT status FROM monthly_timesheets WHERE employee_id = ? AND month_year = ? FOR UPDATE",
@@ -81,6 +114,7 @@ const assertEmployeeVisible = async (connection, user, employeeId) => {
 
 export const listOvertimeRequests = async (user, filters = {}) => {
   await ensureOvertimeSchema();
+  await expirePendingOvertimeRequests(db);
   const scope = buildEmployeeScope(user);
   const conditions = [scope.clause ? scope.clause.replace(/^WHERE\s+/i, "") : "1 = 1"];
   const params = [...scope.params];
@@ -245,8 +279,12 @@ export const approveOvertimeRequest = async (user, id, payload = {}) => {
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
+    await expirePendingOvertimeRequests(connection);
     const overtime = await loadOvertime(connection, id);
-    if (overtime.status !== "PENDING") throw fail("Đơn OT đã được xử lý trước đó", 409);
+    if (overtime.status !== "PENDING") {
+      assertNotExpired(overtime);
+      throw fail("Đơn OT đã được xử lý trước đó", 409);
+    }
     await assertCanApprove(connection, user, overtime.employee_id);
     await assertMonthOpen(connection, overtime.employee_id, overtime.ot_date_str);
     const suggestion = await resolveOvertimeType(
@@ -301,8 +339,12 @@ export const rejectOvertimeRequest = async (user, id, payload = {}) => {
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
+    await expirePendingOvertimeRequests(connection);
     const overtime = await loadOvertime(connection, id);
-    if (overtime.status !== "PENDING") throw fail("Đơn OT đã được xử lý trước đó", 409);
+    if (overtime.status !== "PENDING") {
+      assertNotExpired(overtime);
+      throw fail("Đơn OT đã được xử lý trước đó", 409);
+    }
     await assertCanApprove(connection, user, overtime.employee_id);
     await assertMonthOpen(connection, overtime.employee_id, overtime.ot_date_str);
 
@@ -344,11 +386,15 @@ export const cancelOvertimeRequest = async (user, id) => {
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
+    await expirePendingOvertimeRequests(connection);
     const overtime = await loadOvertime(connection, id);
     if (Number(overtime.employee_id) !== Number(user?.employee_id)) {
       throw fail("Chỉ được hủy đơn OT của chính mình", 403);
     }
-    if (overtime.status !== "PENDING") throw fail("Chỉ có thể hủy đơn OT đang chờ duyệt", 409);
+    if (overtime.status !== "PENDING") {
+      assertNotExpired(overtime);
+      throw fail("Chỉ có thể hủy đơn OT đang chờ duyệt", 409);
+    }
     await assertMonthOpen(connection, overtime.employee_id, overtime.ot_date_str);
     await connection.query("DELETE FROM overtime_requests WHERE id = ?", [overtime.id]);
     await connection.commit();

@@ -2,6 +2,7 @@ import { db } from "../../config/database.js";
 import { resolveApprovalChain } from "../../utils/helper.js";
 
 const PRIORITY_RANK = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
+const AUDIENCE_SCOPES = ["COMPANY", "DEPARTMENT", "INDIVIDUAL", "ROLE"];
 const DISPLAY_MODE = {
   LOW: "INBOX_ONLY",
   MEDIUM: "TOAST",
@@ -36,6 +37,59 @@ const hasIndex = async (connection, table, indexName) => {
   return Number(rows[0]?.total) > 0;
 };
 
+const seedScopeBulletins = async () => {
+  const seeds = [
+    {
+      key: "DEMO_BULLETIN_COMPANY_",
+      scope: "COMPANY",
+      departmentColumn: "NULL",
+      title: "Thông báo toàn công ty: Cập nhật nội quy nội bộ 2026",
+      message:
+        "Bản tin chung dành cho toàn thể nhân sự. Vui lòng đọc và tuân thủ các quy định mới có hiệu lực từ tháng 06/2026.",
+    },
+    {
+      key: "DEMO_BULLETIN_DEPARTMENT_",
+      scope: "DEPARTMENT",
+      departmentColumn: "e.department_id",
+      title: "Bản tin phòng ban: Kế hoạch sinh hoạt định kỳ",
+      message:
+        "Thông báo này chỉ hiển thị với nhân sự thuộc phòng ban của bạn. Kiểm tra lịch họp và hoạt động nội bộ mới nhất.",
+    },
+    {
+      key: "DEMO_BULLETIN_INDIVIDUAL_",
+      scope: "INDIVIDUAL",
+      departmentColumn: "NULL",
+      title: "Thông báo cá nhân: Kiểm tra hồ sơ nhân sự",
+      message:
+        "Đây là thông báo riêng gửi trực tiếp đến tài khoản của bạn. Vui lòng rà soát thông tin cá nhân trên cổng HRM.",
+    },
+  ];
+
+  for (const seed of seeds) {
+    try {
+      await db.query(
+        `INSERT INTO notifications
+           (recipient_user_id, recipient_employee_id, title, message, type,
+            priority, priority_rank, display_mode, payload, audience_scope,
+            target_department_id, dedupe_key, created_at)
+         SELECT u.id, u.employee_id, ?, ?, 'BULLETIN',
+                'LOW', 1, 'INBOX_ONLY', JSON_OBJECT('scope', ?), ?,
+                ${seed.departmentColumn}, CONCAT(?, u.id), NOW()
+           FROM users u
+           LEFT JOIN employees e ON e.id = u.employee_id
+          WHERE u.is_active = 1
+            AND NOT EXISTS (
+              SELECT 1 FROM notifications n
+               WHERE n.dedupe_key = CONCAT(?, u.id)
+            )`,
+        [seed.title, seed.message, seed.scope, seed.scope, seed.key, seed.key],
+      );
+    } catch (error) {
+      console.error("Không thể tạo bản tin mẫu theo đối tượng:", error.message);
+    }
+  }
+};
+
 export const ensureNotificationSchema = async () => {
   if (!schemaPromise) {
     schemaPromise = (async () => {
@@ -47,6 +101,9 @@ export const ensureNotificationSchema = async () => {
           title VARCHAR(255) NOT NULL,
           message TEXT NOT NULL,
           type VARCHAR(80) NOT NULL DEFAULT 'GENERAL',
+          audience_scope ENUM('COMPANY','DEPARTMENT','INDIVIDUAL','ROLE') NOT NULL DEFAULT 'INDIVIDUAL',
+          target_department_id BIGINT UNSIGNED NULL,
+          target_role_id VARCHAR(40) NULL,
           priority ENUM('CRITICAL','HIGH','MEDIUM','LOW') NOT NULL DEFAULT 'MEDIUM',
           priority_rank TINYINT NOT NULL DEFAULT 2,
           display_mode ENUM('MODAL','BANNER','TOAST_STICKY','TOAST','INBOX_ONLY') NOT NULL DEFAULT 'TOAST',
@@ -69,7 +126,10 @@ export const ensureNotificationSchema = async () => {
         ["recipient_user_id", "BIGINT UNSIGNED NULL AFTER id"],
         ["recipient_employee_id", "BIGINT UNSIGNED NULL AFTER recipient_user_id"],
         ["message", "TEXT NULL AFTER title"],
-        ["priority", "ENUM('CRITICAL','HIGH','MEDIUM','LOW') NOT NULL DEFAULT 'MEDIUM' AFTER type"],
+        ["audience_scope", "ENUM('COMPANY','DEPARTMENT','INDIVIDUAL','ROLE') NOT NULL DEFAULT 'INDIVIDUAL' AFTER type"],
+        ["target_department_id", "BIGINT UNSIGNED NULL AFTER audience_scope"],
+        ["target_role_id", "VARCHAR(40) NULL AFTER target_department_id"],
+        ["priority", "ENUM('CRITICAL','HIGH','MEDIUM','LOW') NOT NULL DEFAULT 'MEDIUM' AFTER target_role_id"],
         ["priority_rank", "TINYINT NOT NULL DEFAULT 2 AFTER priority"],
         ["display_mode", "ENUM('MODAL','BANNER','TOAST_STICKY','TOAST','INBOX_ONLY') NOT NULL DEFAULT 'TOAST' AFTER priority_rank"],
         ["action_url", "VARCHAR(255) NULL AFTER payload"],
@@ -90,9 +150,15 @@ export const ensureNotificationSchema = async () => {
           "CREATE INDEX idx_notif_user_priority ON notifications (recipient_user_id, is_read, priority_rank, created_at)",
         );
       }
+      if (!(await hasIndex(db, "notifications", "idx_notif_scope_target"))) {
+        await db.query(
+          "CREATE INDEX idx_notif_scope_target ON notifications (audience_scope, target_department_id)",
+        );
+      }
       for (const column of Object.keys(legacyColumns)) {
         legacyColumns[column] = await hasColumn(db, "notifications", column);
       }
+      await seedScopeBulletins();
     })().catch((error) => {
       schemaPromise = undefined;
       throw error;
@@ -108,6 +174,15 @@ const normalizeNotification = (row) => ({
   title: row.title,
   message: row.message ?? row.body ?? "",
   type: row.type,
+  audience_scope: AUDIENCE_SCOPES.includes(String(row.audience_scope || "").toUpperCase())
+    ? String(row.audience_scope).toUpperCase()
+    : String(row.target_type || "").toUpperCase() === "COMPANY"
+      ? "COMPANY"
+      : String(row.target_type || "").toUpperCase() === "DEPARTMENT"
+        ? "DEPARTMENT"
+        : "INDIVIDUAL",
+  target_department_id: row.target_department_id ?? null,
+  target_role_id: row.target_role_id ?? null,
   priority: row.priority,
   priority_rank: Number(row.priority_rank ?? PRIORITY_RANK[row.priority] ?? 2),
   display_mode: row.display_mode || DISPLAY_MODE[row.priority] || "TOAST",
@@ -217,6 +292,9 @@ export const createNotification = async (connection, data = {}) => {
     "title",
     "message",
     "type",
+    "audience_scope",
+    "target_department_id",
+    "target_role_id",
     "priority",
     "priority_rank",
     "display_mode",
@@ -234,6 +312,11 @@ export const createNotification = async (connection, data = {}) => {
     String(data.title || "Thông báo").slice(0, 255),
     message,
     notificationType,
+    AUDIENCE_SCOPES.includes(String(data.audience_scope || "").toUpperCase())
+      ? String(data.audience_scope).toUpperCase()
+      : "INDIVIDUAL",
+    data.target_department_id ?? null,
+    data.target_role_id ? String(data.target_role_id).slice(0, 40) : null,
     priority,
     PRIORITY_RANK[priority],
     data.display_mode || DISPLAY_MODE[priority],
@@ -285,12 +368,38 @@ export const notifyUsers = async (connection, userIds = [], data = {}) => {
   return rows;
 };
 
+export const notifyCompany = async (connection, data = {}) => {
+  const [rows] = await connection.query(
+    "SELECT id FROM users WHERE is_active = 1",
+  );
+  return notifyUsers(connection, rows.map((row) => row.id), {
+    ...data,
+    audience_scope: "COMPANY",
+  });
+};
+
+export const notifyDepartment = async (connection, departmentId, data = {}) => {
+  const [rows] = await connection.query(
+    `SELECT u.id
+       FROM users u
+       JOIN employees e ON e.id = u.employee_id
+      WHERE u.is_active = 1 AND e.department_id = ?`,
+    [departmentId],
+  );
+  return notifyUsers(connection, rows.map((row) => row.id), {
+    ...data,
+    audience_scope: "DEPARTMENT",
+    target_department_id: departmentId,
+  });
+};
+
 export const notifyEmployee = async (connection, employeeId, data = {}) => {
   const userId = await resolveUserIdByEmployee(connection, employeeId);
   if (!userId) return [];
   const rows = await notifyUsers(connection, [userId], {
     ...data,
     recipient_employee_id: Number(employeeId),
+    audience_scope: "INDIVIDUAL",
   });
   return rows;
 };

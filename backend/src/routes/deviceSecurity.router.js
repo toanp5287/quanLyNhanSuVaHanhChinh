@@ -12,9 +12,10 @@ router.get("/check-permission", async (req, res) => {
     code: result.code,
     message: result.message,
     deviceName: result.deviceName || null,
+    deviceId: result.deviceId || null,
     clientIp: result.clientIp,
-    requireDeviceCheck: result.requireDeviceCheck,
-    requireIpCheck: result.requireIpCheck,
+    allowedIps: result.allowedIps || null,
+    attendanceStatus: result.attendanceStatus || null,
   });
 });
 

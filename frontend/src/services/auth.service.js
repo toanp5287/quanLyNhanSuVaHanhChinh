@@ -1,8 +1,9 @@
-import api, { TOKEN_KEY, USER_KEY } from "./api.js";
+import api, { TOKEN_KEY, USER_KEY, LOGIN_IP_BLOCK_KEY } from "./api.js";
 
 export const saveSession = (token, user) => {
   sessionStorage.setItem(TOKEN_KEY, token);
   sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+  sessionStorage.removeItem(LOGIN_IP_BLOCK_KEY);
 };
 
 export const clearSession = () => {

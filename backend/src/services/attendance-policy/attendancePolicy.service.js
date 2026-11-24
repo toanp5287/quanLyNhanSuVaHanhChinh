@@ -168,6 +168,44 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(number) ? number : fallback;
 };
 
+const toMinutes = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const [hour, minute] = String(value)
+    .split(":")
+    .map(Number);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return hour * 60 + minute;
+};
+
+export const getShiftWorkWindow = (shift) => {
+  if (!shift) return null;
+  const start = toMinutes(shift.start_time);
+  const rawEnd = toMinutes(shift.end_time);
+  if (start === null || rawEnd === null) return null;
+  const overnight = Number(shift.is_overnight) === 1 && rawEnd <= start;
+  const end = overnight ? rawEnd + 1440 : rawEnd;
+  const hasBreak = Number(shift.has_break ?? 1) !== 0;
+  let breakStart = hasBreak ? toMinutes(shift.break_start) : null;
+  let breakEnd = hasBreak ? toMinutes(shift.break_end) : null;
+  if (overnight && breakStart !== null && breakEnd !== null && breakEnd <= start) {
+    breakStart += 1440;
+    breakEnd += 1440;
+  }
+  const breakMinutes =
+    breakStart !== null && breakEnd !== null
+      ? Math.max(0, Math.min(end, breakEnd) - Math.max(start, breakStart))
+      : 0;
+  return {
+    start,
+    end,
+    overnight,
+    break_start: breakStart,
+    break_end: breakEnd,
+    break_minutes: breakMinutes,
+    work_minutes: Math.max(0, end - start - breakMinutes),
+  };
+};
+
 export const normalizeRules = (value) => {
   const raw = parseJson(value, {});
   const rules = { ...DEFAULT_RULES, ...raw };
@@ -383,6 +421,11 @@ export const updateKioskConfig = async (payload = {}, user = null) => {
 export const buildPolicySnapshot = async (shift, policy = null) => {
   await ensureAttendancePolicySchema();
   const resolved = policy || (await getPolicyForShift(shift));
+  const window = getShiftWorkWindow(shift);
+  const standardHours =
+    window && window.work_minutes > 0
+      ? Number((window.work_minutes / 60).toFixed(2))
+      : toNumber(shift?.standard_work_hours ?? shift?.standard_hours, null);
   return {
     shift: {
       code: shift?.shift_code || shift?.code || null,
@@ -394,11 +437,8 @@ export const buildPolicySnapshot = async (shift, policy = null) => {
       break_start: shift?.break_start || null,
       break_end: shift?.break_end || null,
       require_break_punch: Number(shift?.require_break_punch ?? 0) ? 1 : 0,
-      standard_work_hours: toNumber(
-        shift?.standard_work_hours ?? shift?.standard_hours,
-        8,
-      ),
-      standard_hours: toNumber(shift?.standard_hours, 8),
+      standard_work_hours: standardHours,
+      standard_hours: standardHours,
       workday_value: toNumber(shift?.workday_value, 1),
       grace_period_minutes: toNumber(
         shift?.grace_period_minutes ?? shift?.grace_period,
@@ -418,14 +458,31 @@ export const buildPolicySnapshot = async (shift, policy = null) => {
 
 export const computeWorkDay = ({ netHours = 0, rules = null, shift = null }) => {
   const config = normalizeRules(rules);
+  const window = getShiftWorkWindow(shift);
+  const configuredHours = toNumber(
+    shift?.standard_work_hours ?? shift?.standard_hours,
+    0,
+  );
   const standardHours =
-    toNumber(shift?.standard_work_hours ?? shift?.standard_hours, 8) || 8;
+    window && window.work_minutes > 0
+      ? window.work_minutes / 60
+      : configuredHours > 0
+        ? configuredHours
+        : toNumber(netHours, 0);
+  const shiftValue = toNumber(shift?.workday_value, 1);
   const cap = Math.max(
     0,
-    Math.min(toNumber(config.max_work_day, 1), toNumber(shift?.workday_value, 1) || 1),
+    Math.min(
+      toNumber(config.max_work_day, 1),
+      shiftValue > 0 ? shiftValue : 1,
+    ),
   );
   if (config.work_day_mode === "CUSTOM_TIERS") {
-    const tier = config.tiers.find((item) => netHours + 1e-9 >= item.min_hours);
+    const baseline = Math.max(0, ...config.tiers.map((item) => item.min_hours)) || 1;
+    const scale = standardHours > 0 ? standardHours / baseline : 1;
+    const tier = config.tiers.find(
+      (item) => netHours + 1e-9 >= item.min_hours * scale,
+    );
     return Math.max(0, Math.min(cap, toNumber(tier?.work_day, 0)));
   }
   const ratio = standardHours > 0 ? netHours / standardHours : 0;

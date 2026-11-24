@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import { hasAnyPermission, hasPermission } from "../utils/helper.js";
+import { loginIpGuard } from "./deviceSecurity.middleware.js";
 
 const extractToken = (req) => {
   const authHeader = req.headers.authorization;
@@ -17,20 +18,22 @@ const authorizeRequest = (req, res, next) => {
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: "Bạn chưa đăng nhập",
+        message: "B?n chua dang nh?p",
       });
     }
 
     req.user = jwt.verify(token, process.env.JWT_SECRET);
-
-    next();
+    if (req.path === "/logout" || req.originalUrl?.includes("/auth/logout")) {
+      return next();
+    }
+    return loginIpGuard(req, res, next);
   } catch (error) {
     return res.status(401).json({
       success: false,
       message:
         error.name === "TokenExpiredError"
-          ? "Token đã hết hạn, vui lòng đăng nhập lại"
-          : "Token không hợp lệ",
+          ? "Token d� h?t h?n, vui l�ng dang nh?p l?i"
+          : "Token kh�ng h?p l?",
     });
   }
 };
@@ -51,6 +54,8 @@ export const requireRole = (roleId) => {
     next();
   };
 };
+
+export const requireAdmin = requireRole("SUPER_ADMIN");
 
 export const requirePermission = (permissionCode) => {
   return (req, res, next) => {

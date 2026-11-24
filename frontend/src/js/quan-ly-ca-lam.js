@@ -406,12 +406,6 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
     q("#kioskRepeatPolicy").value = config.checkout_repeat_policy || "OVERWRITE_LATEST";
     q("#kioskRequireCheckin").checked = Boolean(Number(config.require_checkin_for_checkout ?? 1));
     q("#kioskShowWorkday").checked = Boolean(Number(config.show_estimated_workday ?? 1));
-    q("#kioskAiConfig").value = JSON.stringify(config.ai_config || {
-      similarity_threshold: 0.65,
-      voting_frames: 3,
-      anti_smile_gate: true,
-      liveness_enabled: true,
-    }, null, 2);
     q("#kioskNetworkConfig").value = JSON.stringify(config.network_config || {
       strict_ip: false,
       allowed_ips: [],
@@ -691,7 +685,6 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
       checkout_repeat_policy: q("#kioskRepeatPolicy").value,
       checkout_confirm_seconds: Number(q("#kioskConfirmSeconds").value || 0),
       show_estimated_workday: q("#kioskShowWorkday").checked ? 1 : 0,
-      ai_config: parseConfigJson(q("#kioskAiConfig").value, {}),
       network_config: parseConfigJson(q("#kioskNetworkConfig").value, {}),
     };
     try {

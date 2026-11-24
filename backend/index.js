@@ -17,7 +17,6 @@ import routerNotifications from "./src/routes/notifications.router.js";
 import routerDevices from "./src/routes/deviceSecurity.router.js";
 import routerAdminDevices from "./src/routes/adminDevices.router.js";
 import connectMysql from "./src/config/database.js";
-import { runDeviceSecurityMigration } from "./scripts/migrate-device-security.js";
 
 dotenv.config();
 
@@ -59,11 +58,6 @@ app.use("/api/admin", routerAdminDevices);
 
 const startServer = async () => {
   await connectMysql();
-  try {
-    await runDeviceSecurityMigration();
-  } catch (error) {
-    console.error("Không thể khởi tạo schema bảo mật thiết bị:", error.message);
-  }
   app.listen(port, () => {
     console.log(`Server đang chạy ở http://localhost:${port}`);
   });
