@@ -22,7 +22,7 @@ const CARD_PERMISSIONS = {
   "Tất cả nhân viên": ["HR.PROFILE_VIEW"],
   "Nhân viên đang làm": ["HR.PROFILE_VIEW"],
   "Nhân viên đã nghỉ": ["HR.PROFILE_VIEW"],
-  "Hợp đồng lao động": ["HR.CONTRACT_MANAGE"],
+  "Hợp đồng lao động": ["HR.CONTRACT_MANAGE", "HR.CONTRACT_SIGN"],
   "Sơ đồ phòng ban": ["HR.PROFILE_VIEW"],
   "Bảng chấm công tháng": ["ATT.VIEW"],
   "Phân ca làm việc": ["ATT.SHIFT_OT_MANAGE"],
@@ -90,6 +90,11 @@ const NAV_PERMISSIONS = {
 const ACTION_BUTTONS = {
   SUPER_ADMIN: [
     {
+      label: "Ký hợp đồng đã duyệt",
+      icon: "draw",
+      permission: "HR.CONTRACT_SIGN",
+    },
+    {
       label: "Cấp phát / Thu hồi thiết bị",
       icon: "inventory",
       permission: "ASSET.ALLOCATE_MANAGE",
@@ -156,6 +161,11 @@ const ACTION_BUTTONS = {
   ],
   CB_PAYROLL: [
     {
+      label: "Ký hợp đồng đã duyệt",
+      icon: "draw",
+      permission: "HR.CONTRACT_SIGN",
+    },
+    {
       label: "Chốt bảng công",
       icon: "task_alt",
       permission: "ATT.SHIFT_OT_MANAGE",
@@ -177,6 +187,11 @@ const ACTION_BUTTONS = {
     },
   ],
   OFFICE_ADMIN: [
+    {
+      label: "Ký hợp đồng đã duyệt",
+      icon: "draw",
+      permission: "HR.CONTRACT_SIGN",
+    },
     {
       label: "Nhập kho thiết bị",
       icon: "add_box",
@@ -950,19 +965,52 @@ const renderNotifications = () => {
   list.innerHTML = notificationState.items
     .map((item) => {
       const payload = item.payload || {};
-      const meta = [
-        payload.employee_name,
-        payload.contract_code,
-        payload.submitted_by_name,
-        formatNotificationTime(payload.submitted_at || item.created_at),
-      ]
+      const isSigned = item.type === "CONTRACT_SIGNED";
+      const isSigningRevision =
+        payload.decision === "REJECT" && Boolean(payload.signer_name);
+      const isDecision =
+        payload.decision === "APPROVE" || payload.decision === "REJECT";
+      const meta = isSigned
+        ? [
+            payload.employee_name,
+            payload.contract_code,
+            payload.signer_name ? `Người ký: ${payload.signer_name}` : "",
+            payload.version_no ? `v${payload.version_no}` : "",
+            formatNotificationTime(payload.signed_at || item.created_at),
+          ]
+        : isDecision
+          ? [
+              payload.employee_name,
+              payload.contract_code,
+              isSigningRevision
+                ? `Người yêu cầu: ${payload.signer_name || ""}`
+                : payload.approver_name,
+              formatNotificationTime(payload.decided_at || item.created_at),
+              payload.decision === "REJECT"
+                ? payload.revision_request || payload.rejection_reason || "Xem chi tiết yêu cầu chỉnh sửa"
+                : "",
+            ]
+          : [
+              payload.employee_name,
+              payload.contract_code,
+              payload.submitted_by_name,
+              formatNotificationTime(payload.submitted_at || item.created_at),
+            ];
+      const notificationIcon = isSigned
+        ? "draw"
+        : isSigningRevision
+          ? "edit_document"
+          : item.type === "CONTRACT_APPROVAL"
+            ? "approval"
+            : "notifications";
+      const metaText = meta
         .filter(Boolean)
         .map((value) => escapeHtml(value))
         .join(" • ");
       return `
         <button type="button" class="w-full text-left px-space-md py-space-sm border-b border-surface-variant hover:bg-surface-container-low flex gap-space-sm ${item.is_read ? "" : "bg-primary-fixed/30"}" data-notification-id="${item.id}" data-target-type="${escapeHtml(item.target_type)}" data-target-id="${item.target_id}">
           <span class="w-8 h-8 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center shrink-0">
-            <span class="material-symbols-outlined text-[18px]">${item.type === "CONTRACT_APPROVAL" ? "approval" : "notifications"}</span>
+            <span class="material-symbols-outlined text-[18px]">${notificationIcon}</span>
           </span>
           <span class="min-w-0 flex-1">
             <span class="flex items-center justify-between gap-2">
@@ -970,7 +1018,7 @@ const renderNotifications = () => {
               ${item.is_read ? "" : '<span class="w-2 h-2 rounded-full bg-primary shrink-0"></span>'}
             </span>
             <span class="mt-0.5 block font-body-sm text-body-sm text-on-surface-variant line-clamp-2">${escapeHtml(item.body)}</span>
-            <span class="mt-1 block font-label-sm text-label-sm text-on-surface-variant truncate">${meta}</span>
+            <span class="mt-1 block font-label-sm text-label-sm text-on-surface-variant truncate">${metaText}</span>
           </span>
         </button>`;
     })

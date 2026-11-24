@@ -164,7 +164,9 @@ function showOrganization(user, tab = "chart") {
 function showContracts(user, status = "ALL") {
   if (
     !user ||
-    (!hasPermission("HR.CONTRACT_MANAGE", user) && user.role_id !== "DIRECTOR")
+    (!hasPermission("HR.CONTRACT_MANAGE", user) &&
+      !hasPermission("HR.CONTRACT_SIGN", user) &&
+      user.role_id !== "DIRECTOR")
   ) {
     clearHash();
     showHome(user);

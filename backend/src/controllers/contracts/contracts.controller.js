@@ -6,19 +6,33 @@ import {
   createContract,
   createDraftContract,
   getActiveContractTemplates,
+  getContractAccessContext,
   getContractDetail,
   getContractEditorConfig,
   getContractFile,
   getContractFileForToken,
+  getContractFileVersion,
+  getContractFileVersions,
+  getContractOfficialFile,
+  getContractSignatures,
+  getContractTemplateEditorConfig,
   getContractTemplateFile,
   getContractTemplatePreview,
   getContractFilterOptions,
   getContractList,
   getContractSummary,
+  getMyOfficialContractEditorConfig,
+  getMyOfficialContractFile,
+  getMyOfficialContracts,
   getSuggestedContractCode,
+  canApproveContracts,
+  requestContractSigningRevision,
+  reviewContractApproval,
   saveContractFile,
+  signContract,
   saveContractTemplate,
   saveOnlyOfficeCallbackFile,
+  saveOnlyOfficeTemplateCallbackFile,
   submitContractApproval,
   terminateContract,
   validateContractFilters,
@@ -46,6 +60,9 @@ const parseContractId = (value) => {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
 };
+
+const safeFileName = (value) =>
+  String(value || "hop-dong").replace(/["\r\n]/g, "_");
 
 const getDocJwtSecret = () =>
   process.env.ONLYOFFICE_JWT_SECRET || process.env.JWT_SECRET || "";
@@ -75,6 +92,8 @@ export const listContracts = async (req, res) => {
       success: true,
       data_scope: user.data_scope,
       can_manage: canManage,
+      can_approve: canApproveContracts(user),
+      can_sign: hasPermission(user?.permissions, "HR.CONTRACT_SIGN"),
       total: contracts.length,
       summary,
       suggested_contract_code: suggestedContractCode,
@@ -115,9 +134,12 @@ export const getContractDetailHandler = async (req, res) => {
       can_manage: canManageContracts(req.user),
       contract: result.contract,
       file: result.file,
+      versions: result.versions || [],
       history: result.history,
+      submissions: result.submissions || [],
       approval: result.approval,
       permissions: result.permissions,
+      signing: result.signing || null,
     });
   } catch (error) {
     console.error("Lỗi lấy chi tiết hợp đồng:", error);
@@ -162,6 +184,461 @@ export const downloadContractFileHandler = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Có lỗi xảy ra khi tải file hợp đồng",
+    });
+  }
+};
+
+export const listContractVersionsHandler = async (req, res) => {
+  const contractId = parseContractId(req.params.id);
+
+  if (!contractId) {
+    return res.status(400).json({
+      success: false,
+      message: "Hợp đồng không hợp lệ",
+    });
+  }
+
+  try {
+    const context = await getContractAccessContext(req.user, contractId);
+    if (context.notFound || !context.permissions.canView) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy hợp đồng trong phạm vi dữ liệu được phép",
+      });
+    }
+
+    const versions = await getContractFileVersions(contractId);
+    return res.status(200).json({ success: true, versions });
+  } catch (error) {
+    console.error("Lỗi lấy danh sách phiên bản hợp đồng:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Có lỗi xảy ra khi lấy danh sách phiên bản hợp đồng",
+    });
+  }
+};
+
+export const downloadContractVersionHandler = async (req, res) => {
+  const contractId = parseContractId(req.params.id);
+  const fileId = parseContractId(req.params.fileId);
+
+  if (!contractId || !fileId) {
+    return res.status(400).json({
+      success: false,
+      message: "Phiên bản hợp đồng không hợp lệ",
+    });
+  }
+
+  try {
+    const result = await getContractFileVersion(req.user, contractId, fileId);
+
+    if (result.notFound || result.forbidden || result.missingFile) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy phiên bản file hợp đồng",
+      });
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    return res.download(result.filePath, result.fileName);
+  } catch (error) {
+    console.error("Lỗi tải phiên bản file hợp đồng:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Có lỗi xảy ra khi tải phiên bản file hợp đồng",
+    });
+  }
+};
+
+export const downloadContractOfficialFileHandler = async (req, res) => {
+  const contractId = parseContractId(req.params.id);
+
+  if (!contractId) {
+    return res.status(400).json({
+      success: false,
+      message: "Hợp đồng không hợp lệ",
+    });
+  }
+
+  try {
+    const result = await getContractOfficialFile(req.user, contractId);
+
+    if (result.notFound || result.forbidden) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy hợp đồng trong phạm vi dữ liệu được phép",
+      });
+    }
+
+    if (result.missingFile) {
+      return res.status(404).json({
+        success: false,
+        message: "Hợp đồng này chưa có bản hợp đồng chính thức",
+      });
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    return res.download(result.filePath, result.fileName);
+  } catch (error) {
+    console.error("Lỗi tải bản hợp đồng chính thức:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Có lỗi xảy ra khi tải bản hợp đồng chính thức",
+    });
+  }
+};
+
+export const listMyOfficialContracts = async (_req, res) => {
+  try {
+    const result = await getMyOfficialContracts(_req.user);
+
+    if (result.missingEmployee) {
+      return res.status(403).json({
+        success: false,
+        message: "Không xác định được nhân viên từ phiên đăng nhập",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data_scope: "SELF",
+      total: result.contracts.length,
+      contracts: result.contracts,
+    });
+  } catch (error) {
+    console.error("Lỗi lấy hợp đồng chính thức của nhân viên:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Có lỗi xảy ra khi lấy hợp đồng của bạn",
+    });
+  }
+};
+
+export const viewMyOfficialContractFileHandler = async (req, res) => {
+  const contractId = parseContractId(req.params.id);
+
+  if (!contractId) {
+    return res.status(400).json({
+      success: false,
+      message: "Hợp đồng không hợp lệ",
+    });
+  }
+
+  try {
+    const result = await getMyOfficialContractFile(req.user, contractId);
+
+    if (result.missingEmployee) {
+      return res.status(403).json({
+        success: false,
+        message: "Không xác định được nhân viên từ phiên đăng nhập",
+      });
+    }
+
+    if (result.notFound) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy hợp đồng trong phạm vi dữ liệu được phép",
+      });
+    }
+
+    if (result.missingFile) {
+      return res.status(404).json({
+        success: false,
+        message: "Hợp đồng này chưa có bản hợp đồng chính thức",
+      });
+    }
+
+    const fileName = safeFileName(result.fileName);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Type", result.mimeType || "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(result.fileName)}`,
+    );
+    return res.sendFile(result.filePath);
+  } catch (error) {
+    console.error("Lỗi xem bản hợp đồng chính thức:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Có lỗi xảy ra khi xem hợp đồng",
+    });
+  }
+};
+
+export const downloadMyOfficialContractFileHandler = async (req, res) => {
+  const contractId = parseContractId(req.params.id);
+
+  if (!contractId) {
+    return res.status(400).json({
+      success: false,
+      message: "Hợp đồng không hợp lệ",
+    });
+  }
+
+  try {
+    const result = await getMyOfficialContractFile(req.user, contractId);
+
+    if (result.missingEmployee) {
+      return res.status(403).json({
+        success: false,
+        message: "Không xác định được nhân viên từ phiên đăng nhập",
+      });
+    }
+
+    if (result.notFound) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy hợp đồng trong phạm vi dữ liệu được phép",
+      });
+    }
+
+    if (result.missingFile) {
+      return res.status(404).json({
+        success: false,
+        message: "Hợp đồng này chưa có bản hợp đồng chính thức",
+      });
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    return res.download(result.filePath, result.fileName);
+  } catch (error) {
+    console.error("Lỗi tải bản hợp đồng chính thức của nhân viên:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Có lỗi xảy ra khi tải hợp đồng",
+    });
+  }
+};
+
+export const getMyOfficialContractEditorConfigHandler = async (req, res) => {
+  const contractId = parseContractId(req.params.id);
+
+  if (!contractId) {
+    return res.status(400).json({
+      success: false,
+      message: "Hợp đồng không hợp lệ",
+    });
+  }
+
+  try {
+    const result = await getMyOfficialContractEditorConfig(req.user, contractId);
+
+    if (result.missingEmployee) {
+      return res.status(403).json({
+        success: false,
+        message: "Không xác định được nhân viên từ phiên đăng nhập",
+      });
+    }
+
+    if (result.notFound || result.forbidden) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy hợp đồng trong phạm vi dữ liệu được phép",
+      });
+    }
+
+    if (result.missingFile) {
+      return res.status(404).json({
+        success: false,
+        message: "Hợp đồng này chưa có bản hợp đồng chính thức",
+      });
+    }
+
+    if (result.unsupported) {
+      return res.status(400).json({
+        success: false,
+        message: "Chỉ hỗ trợ xem trực tiếp file DOCX trên trình xem tài liệu",
+      });
+    }
+
+    if (result.disabled) {
+      return res.status(503).json({
+        success: false,
+        onlyoffice_configured: false,
+        message: "ONLYOFFICE chưa được cấu hình",
+      });
+    }
+
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    console.error("Lỗi tạo trình xem hợp đồng chính thức:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Có lỗi xảy ra khi mở trình xem tài liệu",
+    });
+  }
+};
+
+export const listContractSignaturesHandler = async (req, res) => {
+  const contractId = parseContractId(req.params.id);
+
+  if (!contractId) {
+    return res.status(400).json({
+      success: false,
+      message: "Hợp đồng không hợp lệ",
+    });
+  }
+
+  try {
+    const context = await getContractAccessContext(req.user, contractId);
+    if (context.notFound || !context.permissions.canView) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy hợp đồng trong phạm vi dữ liệu được phép",
+      });
+    }
+
+    const signatures = await getContractSignatures(contractId);
+    return res.status(200).json({ success: true, signatures });
+  } catch (error) {
+    console.error("Lỗi lấy lịch sử ký hợp đồng:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Có lỗi xảy ra khi lấy lịch sử ký hợp đồng",
+    });
+  }
+};
+
+export const signContractHandler = async (req, res) => {
+  const contractId = parseContractId(req.params.id);
+
+  if (!contractId) {
+    return res.status(400).json({
+      success: false,
+      message: "Hợp đồng không hợp lệ",
+    });
+  }
+
+  try {
+    const result = await signContract(req.user, contractId, req.body || {});
+
+    if (result.notFound) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy hợp đồng trong phạm vi dữ liệu được phép",
+      });
+    }
+
+    if (result.forbidden || result.missingSigner) {
+      return res.status(403).json({
+        success: false,
+        message: result.reason || "Bạn không có quyền ký hợp đồng",
+      });
+    }
+
+    if (result.invalidState) {
+      return res.status(409).json({
+        success: false,
+        message: "Hợp đồng không ở trạng thái chờ ký hoặc đã được xử lý",
+        approval: result.approval || null,
+      });
+    }
+
+    if (result.alreadySigned) {
+      return res.status(409).json({
+        success: false,
+        message: "Hợp đồng đã được ký chính thức",
+      });
+    }
+
+    if (result.missingFile) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy file hợp đồng đã được Giám đốc phê duyệt",
+      });
+    }
+
+    if (result.confirmationRequired) {
+      return res.status(422).json({
+        success: false,
+        message: "Vui lòng xác nhận trước khi ký hợp đồng",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Đã ký chính thức hợp đồng. Đây là xác nhận nội bộ, không phải chữ ký số.",
+      signature_id: result.signature_id,
+      signed_at: result.signed_at,
+      signer_id: result.signer_id,
+      signer_name: result.signer_name,
+      signer_role: result.signer_role,
+      signature_method: result.signature_method,
+      submission_id: result.submission_id,
+      version_id: result.version_id,
+      version_no: result.version_no,
+      official_file_name: result.official_file_name,
+      approval: result.approval,
+      permissions: result.permissions,
+    });
+  } catch (error) {
+    console.error("Lỗi ký hợp đồng:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Có lỗi xảy ra khi ký hợp đồng",
+    });
+  }
+};
+
+export const requestContractSigningRevisionHandler = async (req, res) => {
+  const contractId = parseContractId(req.params.id);
+
+  if (!contractId) {
+    return res.status(400).json({
+      success: false,
+      message: "Hợp đồng không hợp lệ",
+    });
+  }
+
+  try {
+    const result = await requestContractSigningRevision(
+      req.user,
+      contractId,
+      req.body || {},
+    );
+
+    if (result.notFound) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy hợp đồng trong phạm vi dữ liệu được phép",
+      });
+    }
+
+    if (result.forbidden || result.missingSigner) {
+      return res.status(403).json({
+        success: false,
+        message: result.reason || "Bạn không có quyền yêu cầu chỉnh sửa hợp đồng",
+      });
+    }
+
+    if (result.invalidState || result.alreadySigned) {
+      return res.status(409).json({
+        success: false,
+        message: "Hợp đồng không ở trạng thái chờ ký hoặc đã được xử lý",
+      });
+    }
+
+    if (result.validationErrors?.length) {
+      return res.status(422).json({
+        success: false,
+        message: "Vui lòng cung cấp đầy đủ thông tin yêu cầu chỉnh sửa",
+        errors: result.validationErrors,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Đã gửi yêu cầu chỉnh sửa cho HR",
+      approval: result.approval,
+      permissions: result.permissions,
+    });
+  } catch (error) {
+    console.error("Lỗi gửi yêu cầu chỉnh sửa hợp đồng:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Có lỗi xảy ra khi gửi yêu cầu chỉnh sửa hợp đồng",
     });
   }
 };
@@ -255,6 +732,13 @@ export const submitContractApprovalHandler = async (req, res) => {
       });
     }
 
+    if (result.staleVersion) {
+      return res.status(422).json({
+        success: false,
+        message: result.reason || "Cần cập nhật file hợp đồng trước khi gửi duyệt lại",
+      });
+    }
+
     if (result.validationErrors?.length) {
       return res.status(422).json({
         success: false,
@@ -288,6 +772,92 @@ export const submitContractApprovalHandler = async (req, res) => {
   }
 };
 
+const handleContractReview = async (req, res, decision) => {
+  const contractId = parseContractId(req.params.id);
+
+  if (!contractId) {
+    return res.status(400).json({
+      success: false,
+      message: "Hợp đồng không hợp lệ",
+    });
+  }
+
+  try {
+    const result = await reviewContractApproval(
+      req.user,
+      contractId,
+      decision,
+      req.body || {},
+    );
+
+    if (result.notFound) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy hợp đồng trong phạm vi dữ liệu được phép",
+      });
+    }
+
+    if (result.invalidDecision) {
+      return res.status(400).json({
+        success: false,
+        message: "Quyết định phê duyệt không hợp lệ",
+      });
+    }
+
+    if (result.forbidden || result.missingReviewer) {
+      return res.status(403).json({
+        success: false,
+        message: "Chỉ Giám đốc được phê duyệt hợp đồng",
+      });
+    }
+
+    if (result.invalidState) {
+      return res.status(409).json({
+        success: false,
+        message: "Yêu cầu duyệt không còn hiệu lực hoặc đã được xử lý",
+        approval: result.approval || null,
+      });
+    }
+
+    if (result.validationErrors?.length) {
+      return res.status(422).json({
+        success: false,
+        message:
+          decision === "APPROVE"
+            ? "Không thể phê duyệt hợp đồng"
+            : "Vui lòng cung cấp đầy đủ thông tin từ chối",
+        errors: result.validationErrors,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        decision === "APPROVE"
+          ? "Đã phê duyệt hợp đồng"
+          : "Đã từ chối hợp đồng và gửi yêu cầu chỉnh sửa",
+      decision: result.decision,
+      submissionId: result.submissionId,
+      approvalRound: result.approvalRound,
+      decidedAt: result.decidedAt,
+      approval: result.approval,
+      permissions: result.permissions,
+    });
+  } catch (error) {
+    console.error("Lỗi phê duyệt hợp đồng:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Có lỗi xảy ra khi phê duyệt hợp đồng",
+    });
+  }
+};
+
+export const approveContractApprovalHandler = (req, res) =>
+  handleContractReview(req, res, "APPROVE");
+
+export const rejectContractApprovalHandler = (req, res) =>
+  handleContractReview(req, res, "REJECT");
+
 export const getContractEditorConfigHandler = async (req, res) => {
   const contractId = parseContractId(req.params.id);
 
@@ -303,6 +873,7 @@ export const getContractEditorConfigHandler = async (req, res) => {
       req.user,
       contractId,
       req.query.mode === "edit" ? "edit" : "view",
+      parseContractId(req.query.versionId),
     );
 
     if (result.notFound || result.forbidden) {
@@ -352,17 +923,23 @@ export const getContractFileByTokenHandler = async (req, res) => {
       return res.status(401).json({ success: false, message: "Link không hợp lệ" });
     }
 
+    const isTemplateFile = result.purpose === "template";
+
     if (result.notFound || result.forbidden) {
       return res.status(404).json({
         success: false,
-        message: "Không tìm thấy file hợp đồng",
+        message: isTemplateFile
+          ? "Không tìm thấy mẫu hợp đồng"
+          : "Không tìm thấy file hợp đồng",
       });
     }
 
     if (result.missingFile) {
       return res.status(404).json({
         success: false,
-        message: "Hợp đồng này chưa có file đính kèm",
+        message: isTemplateFile
+          ? "Mẫu hợp đồng này chưa có file"
+          : "Hợp đồng này chưa có file đính kèm",
       });
     }
 
@@ -387,7 +964,8 @@ export const onlyOfficeCallbackHandler = async (req, res) => {
 
   try {
     const payload = jwt.verify(String(req.query.token || ""), secret);
-    if (payload?.purpose !== "onlyoffice_edit") {
+    const isTemplateCallback = payload?.purpose === "onlyoffice_template_edit";
+    if (payload?.purpose !== "onlyoffice_edit" && !isTemplateCallback) {
       return res.status(401).json({ error: 1, message: "Token không hợp lệ" });
     }
 
@@ -395,9 +973,18 @@ export const onlyOfficeCallbackHandler = async (req, res) => {
       return res.status(401).json({ error: 1, message: "Thiếu token ONLYOFFICE" });
     }
     const body = jwt.verify(String(req.body.token), secret);
-    const result = await saveOnlyOfficeCallbackFile(payload, body);
+    const result = isTemplateCallback
+      ? await saveOnlyOfficeTemplateCallbackFile(payload, body)
+      : await saveOnlyOfficeCallbackFile(payload, body);
 
-    if (result.forbidden || result.invalidUrl || result.downloadFailed || result.invalidFile) {
+    if (
+      result.forbidden ||
+      result.invalidUrl ||
+      result.downloadFailed ||
+      result.invalidFile ||
+      result.notFound ||
+      result.invalidToken
+    ) {
       return res.status(403).json({ error: 1, message: "Không thể lưu file chỉnh sửa" });
     }
 
@@ -467,6 +1054,51 @@ export const uploadContractTemplateHandler = async (req, res) => {
   } catch (error) {
     console.error("Lỗi upload mẫu hợp đồng:", error);
     return fail(500, "Có lỗi xảy ra khi upload mẫu hợp đồng");
+  }
+};
+
+export const getContractTemplateEditorConfigHandler = async (req, res) => {
+  const templateId = parseTemplateId(req.params.id);
+
+  if (!templateId) {
+    return res.status(400).json({
+      success: false,
+      message: "Mẫu hợp đồng không hợp lệ",
+    });
+  }
+
+  try {
+    const result = await getContractTemplateEditorConfig(req.user, templateId);
+
+    if (result.forbidden) {
+      return res.status(403).json({
+        success: false,
+        message: "Bạn không có quyền chỉnh sửa mẫu hợp đồng",
+      });
+    }
+
+    if (result.notFound || result.missingFile) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy file mẫu hợp đồng",
+      });
+    }
+
+    if (result.disabled) {
+      return res.status(503).json({
+        success: false,
+        onlyoffice_configured: false,
+        message: "ONLYOFFICE chưa được cấu hình",
+      });
+    }
+
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    console.error("Lỗi tạo cấu hình ONLYOFFICE cho mẫu hợp đồng:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Không thể mở trình soạn thảo mẫu hợp đồng",
+    });
   }
 };
 

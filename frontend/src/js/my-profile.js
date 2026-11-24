@@ -20,6 +20,12 @@ const CONTRACT_STATUS = {
   EXPIRING_SOON: { label: "Sắp hết hạn", classes: "bg-amber-50 text-amber-900" },
   EXPIRED: { label: "Quá hạn", classes: "bg-red-50 text-red-700" },
   TERMINATED: { label: "Đã thanh lý", classes: "bg-surface-container-high text-on-surface-variant" },
+  SIGNED: { label: "Đã ký", classes: "bg-emerald-50 text-emerald-800" },
+  APPROVED: { label: "Đã duyệt", classes: "bg-blue-50 text-blue-800" },
+  PENDING_SIGN: { label: "Chờ ký", classes: "bg-amber-50 text-amber-900" },
+  PENDING_APPROVAL: { label: "Chờ duyệt", classes: "bg-amber-50 text-amber-900" },
+  REJECTED: { label: "Bị từ chối", classes: "bg-red-50 text-red-700" },
+  DRAFT: { label: "Nháp", classes: "bg-surface-container-high text-on-surface-variant" },
 };
 
 const ACTION_TYPE = {
@@ -56,6 +62,16 @@ const ROLE_LABELS = {
 const state = {
   profile: null,
   bound: false,
+  myContracts: [],
+  contractViewer: {
+    contract: null,
+    type: null,
+    objectUrl: null,
+    editor: null,
+    scriptUrl: "",
+    loading: false,
+    error: "",
+  },
 };
 
 const escapeHtml = (value) =>
@@ -157,7 +173,6 @@ const renderProfile = (data) => {
   state.profile = data;
 
   const employee = data.employee || {};
-  const contracts = data.contracts || [];
   const workHistories = data.work_histories || [];
   const dependents = data.dependents || [];
   const rewards = data.rewards_disciplines || [];
@@ -216,23 +231,23 @@ const renderProfile = (data) => {
   document.getElementById("profileEmployeeCodeBadge").textContent =
     `MÃ NV: ${employee.employee_code || "—"}`;
 
-  document.getElementById("statContracts").textContent = String(contracts.length);
   document.getElementById("statWorkHistories").textContent = String(workHistories.length);
   document.getElementById("statDependents").textContent = String(
     dependents.filter((item) => item.status === "ACTIVE").length,
   );
   document.getElementById("statRewards").textContent = String(rewards.length);
 
-  document.getElementById("contractsCount").textContent = `${contracts.length} bản ghi`;
   document.getElementById("workHistoriesCount").textContent = `${workHistories.length} bản ghi`;
   document.getElementById("dependentsCount").textContent = `${dependents.length} bản ghi`;
   document.getElementById("rewardsCount").textContent = `${rewards.length} bản ghi`;
 
-  renderContracts(contracts);
   renderWorkHistories(workHistories);
   renderDependents(dependents);
   renderRewards(rewards);
 };
+
+const contractStatusValue = (row) =>
+  row?.approval_status === "SIGNED" ? "SIGNED" : row?.status;
 
 const renderContracts = (rows) => {
   const body = document.getElementById("contractsBody");
@@ -240,8 +255,11 @@ const renderContracts = (rows) => {
 
   body.innerHTML = rows.length
     ? rows
-        .map(
-          (row) => `
+        .map((row) => {
+          const contractId = Number(row.id);
+          const signedAt = formatDate(row.official?.signed_at);
+
+          return `
             <tr class="hover:bg-surface-container-low align-top">
               <td class="px-space-sm py-2 font-mono whitespace-nowrap">${escapeHtml(row.contract_code)}</td>
               <td class="px-space-sm py-2">${escapeHtml(row.contract_type)}</td>
@@ -249,13 +267,365 @@ const renderContracts = (rows) => {
               <td class="px-space-sm py-2 whitespace-nowrap">${formatDate(row.end_date)}</td>
               <td class="px-space-sm py-2 whitespace-nowrap font-semibold">${formatCurrency(row.signed_salary)}</td>
               <td class="px-space-sm py-2 whitespace-nowrap">${formatCurrency(row.insurance_salary)}</td>
-              <td class="px-space-sm py-2 whitespace-nowrap">${statusBadge(CONTRACT_STATUS, row.status)}</td>
-              <td class="px-space-sm py-2 min-w-[160px]">${escapeHtml(row.note || "—")}</td>
+              <td class="px-space-sm py-2 whitespace-nowrap">${statusBadge(CONTRACT_STATUS, contractStatusValue(row))}</td>
+              <td class="px-space-sm py-2 min-w-[200px]">
+                <span class="block">${escapeHtml(row.note || "—")}</span>
+                <span class="block text-on-surface-variant">Ký ngày ${signedAt}</span>
+              </td>
+              <td class="px-space-sm py-2 whitespace-nowrap">
+                <div class="flex items-center gap-1.5">
+                  <button
+                    class="h-8 px-space-sm rounded bg-surface-container text-on-surface hover:bg-surface-container-high font-label-sm text-label-sm inline-flex items-center gap-1"
+                    data-view-my-contract="${contractId}"
+                    type="button"
+                  >
+                    <span class="material-symbols-outlined text-[16px]">visibility</span>
+                    Xem
+                  </button>
+                  <button
+                    class="h-8 px-space-sm rounded bg-primary text-on-primary hover:opacity-90 font-label-sm text-label-sm inline-flex items-center gap-1"
+                    data-download-my-contract="${contractId}"
+                    type="button"
+                  >
+                    <span class="material-symbols-outlined text-[16px]">download</span>
+                    Tải
+                  </button>
+                </div>
+              </td>
             </tr>
-          `,
-        )
+          `;
+        })
         .join("")
-    : emptyRow(8);
+    : emptyRow(9);
+};
+
+const loadMyContracts = async () => {
+  const setCounts = (count) => {
+    const stat = document.getElementById("statContracts");
+    const label = document.getElementById("contractsCount");
+    if (stat) stat.textContent = String(count);
+    if (label) label.textContent = `${count} bản ghi`;
+  };
+
+  try {
+    const response = await api.get("/contracts/mine");
+    const contracts = Array.isArray(response.data?.contracts)
+      ? response.data.contracts
+      : [];
+
+    state.myContracts = contracts;
+    setCounts(contracts.length);
+    renderContracts(contracts);
+  } catch (error) {
+    state.myContracts = [];
+    setCounts(0);
+    renderContracts([]);
+    showToast(
+      error.response?.data?.message || "Không thể tải danh sách hợp đồng",
+      "error",
+    );
+  }
+};
+
+const destroyMyContractViewer = () => {
+  const viewer = state.contractViewer;
+
+  if (viewer.editor?.destroyEditor) {
+    try {
+      viewer.editor.destroyEditor();
+    } catch {}
+  }
+
+  if (viewer.objectUrl) {
+    window.URL.revokeObjectURL(viewer.objectUrl);
+  }
+
+  state.contractViewer = {
+    contract: null,
+    type: null,
+    objectUrl: null,
+    editor: null,
+    scriptUrl: "",
+    loading: false,
+    error: "",
+  };
+};
+
+const renderMyContractViewer = () => {
+  const viewer = state.contractViewer;
+  const title = document.getElementById("myContractViewerTitle");
+  const subtitle = document.getElementById("myContractViewerSubtitle");
+  const body = document.getElementById("myContractViewerBody");
+  const downloadButton = document.getElementById("btnDownloadMyContract");
+  if (!title || !subtitle || !body) return;
+
+  const contract = viewer.contract;
+  title.textContent = contract ? `Hợp đồng ${contract.contract_code}` : "Xem hợp đồng";
+  subtitle.textContent = contract
+    ? `${contract.contract_type || "—"} • ${contract.official?.file_name || "—"} • Ký ngày ${formatDate(contract.official?.signed_at)}`
+    : "—";
+  if (downloadButton) downloadButton.disabled = !contract;
+
+  if (viewer.loading) {
+    body.innerHTML = `<div class="flex h-full min-h-[320px] items-center justify-center gap-2 text-on-surface-variant font-body-sm text-body-sm"><span class="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>Đang tải trình xem tài liệu...</div>`;
+    return;
+  }
+
+  if (viewer.error) {
+    body.innerHTML = `<div class="flex h-full min-h-[320px] flex-col items-center justify-center gap-2 p-space-md text-center"><span class="material-symbols-outlined text-[30px] text-outline">error</span><p class="font-body-sm text-body-sm text-error">${escapeHtml(viewer.error)}</p><button class="h-9 px-space-md rounded bg-primary text-on-primary font-label-md text-label-md" type="button" data-retry-my-contract-view>Thử lại</button></div>`;
+    return;
+  }
+
+  if (viewer.type === "pdf") {
+    body.innerHTML = `<iframe class="w-full h-full min-h-[420px] border-0" title="Xem hợp đồng chính thức" src="${escapeHtml(viewer.objectUrl || "")}"></iframe>`;
+    return;
+  }
+
+  body.innerHTML = `<div id="myContractOnlyOfficeViewer" class="w-full h-full min-h-[420px]"></div>`;
+};
+
+let myContractOnlyOfficeScriptPromise = null;
+let myContractOnlyOfficeScriptUrl = "";
+
+const loadOnlyOfficeScriptForMyContract = (url) => {
+  if (!url) {
+    return Promise.reject(new Error("ONLYOFFICE chưa được cấu hình"));
+  }
+  if (window.DocsAPI?.DocEditor) {
+    return Promise.resolve();
+  }
+  if (
+    myContractOnlyOfficeScriptPromise &&
+    myContractOnlyOfficeScriptUrl === url
+  ) {
+    return myContractOnlyOfficeScriptPromise;
+  }
+
+  document
+    .querySelectorAll("script[data-onlyoffice-api='true']")
+    .forEach((element) => element.remove());
+  myContractOnlyOfficeScriptUrl = url;
+  const pending = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.async = true;
+    script.dataset.onlyofficeApi = "true";
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error) {
+        script.remove();
+        reject(error);
+        return;
+      }
+      if (!window.DocsAPI?.DocEditor) {
+        script.remove();
+        reject(new Error("ONLYOFFICE tải xong nhưng DocsAPI chưa sẵn sàng"));
+        return;
+      }
+      resolve();
+    };
+    const timeout = setTimeout(() => {
+      finish(
+        new Error(
+          "Không thể tải ONLYOFFICE. Kiểm tra Document Server đang chạy và địa chỉ ONLYOFFICE_PUBLIC_URL.",
+        ),
+      );
+    }, 15000);
+
+    script.onload = () => finish();
+    script.onerror = () =>
+      finish(
+        new Error(
+          "Không thể tải ONLYOFFICE. Kiểm tra Document Server đang chạy và địa chỉ ONLYOFFICE_PUBLIC_URL.",
+        ),
+      );
+    document.head.appendChild(script);
+  }).finally(() => {
+    if (myContractOnlyOfficeScriptPromise === pending) {
+      myContractOnlyOfficeScriptPromise = null;
+    }
+  });
+  myContractOnlyOfficeScriptPromise = pending;
+  return pending;
+};
+
+const initMyContractOnlyOffice = async (config) => {
+  const container = document.getElementById("myContractOnlyOfficeViewer");
+  if (!container) return;
+
+  await loadOnlyOfficeScriptForMyContract(state.contractViewer.scriptUrl);
+  if (!window.DocsAPI?.DocEditor) {
+    throw new Error("ONLYOFFICE chưa sẵn sàng");
+  }
+
+  state.contractViewer.editor = new window.DocsAPI.DocEditor(container.id, config);
+};
+
+const showMyContractModal = () => {
+  const modal = document.getElementById("modal-my-contract-view");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+};
+
+const hideMyContractModal = () => {
+  const modal = document.getElementById("modal-my-contract-view");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+};
+
+const openMyContractViewer = async (contractId) => {
+  const contract = state.myContracts.find(
+    (item) => Number(item.id) === Number(contractId),
+  );
+  if (!contract) {
+    showToast("Không tìm thấy hợp đồng trong phạm vi của bạn", "error");
+    return;
+  }
+
+  destroyMyContractViewer();
+  state.contractViewer = {
+    contract,
+    type: null,
+    objectUrl: null,
+    editor: null,
+    scriptUrl: "",
+    loading: true,
+    error: "",
+  };
+  const viewer = state.contractViewer;
+  const official = contract.official || {};
+  const isPdf =
+    /\.pdf$/i.test(official.file_name || "") ||
+    official.mime_type === "application/pdf";
+
+  showMyContractModal();
+  renderMyContractViewer();
+
+  try {
+    if (isPdf) {
+      const response = await api.get(
+        `/contracts/mine/${contract.id}/official-file`,
+        { responseType: "blob", params: { _: Date.now() } },
+      );
+      if (state.contractViewer !== viewer) return;
+
+      viewer.type = "pdf";
+      viewer.objectUrl = window.URL.createObjectURL(
+        new Blob([response.data], {
+          type: response.headers?.["content-type"] || "application/pdf",
+        }),
+      );
+      viewer.loading = false;
+      renderMyContractViewer();
+      return;
+    }
+
+    const response = await api.get(
+      `/contracts/mine/${contract.id}/editor-config`,
+    );
+    if (state.contractViewer !== viewer) return;
+
+    const payload = response.data || {};
+    viewer.type = "docx";
+    viewer.scriptUrl = payload.editorScriptUrl || "";
+    viewer.loading = false;
+    renderMyContractViewer();
+    await initMyContractOnlyOffice(payload.config);
+  } catch (error) {
+    if (state.contractViewer !== viewer) return;
+    viewer.loading = false;
+    viewer.error =
+      error.response?.data?.message ||
+      error.message ||
+      "Không thể mở trình xem tài liệu";
+    renderMyContractViewer();
+  }
+};
+
+const closeMyContractViewer = () => {
+  destroyMyContractViewer();
+  hideMyContractModal();
+};
+
+const downloadMyContractFile = async (contractId) => {
+  const contract =
+    state.contractViewer.contract ||
+    state.myContracts.find((item) => Number(item.id) === Number(contractId));
+  if (!contract) return;
+
+  try {
+    const response = await api.get(
+      `/contracts/mine/${contract.id}/official-file/download`,
+      { responseType: "blob", params: { _: Date.now() } },
+    );
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = contract.official?.file_name || "hop-dong.pdf";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    showToast(
+      error.response?.data?.message || "Không thể tải file hợp đồng",
+      "error",
+    );
+  }
+};
+
+const bindMyContracts = () => {
+  const body = document.getElementById("contractsBody");
+  body?.addEventListener("click", (event) => {
+    const viewButton = event.target.closest("[data-view-my-contract]");
+    const downloadButton = event.target.closest("[data-download-my-contract]");
+
+    if (viewButton) {
+      openMyContractViewer(viewButton.dataset.viewMyContract);
+      return;
+    }
+
+    if (downloadButton) {
+      downloadMyContractFile(downloadButton.dataset.downloadMyContract);
+    }
+  });
+
+  const modal = document.getElementById("modal-my-contract-view");
+  modal?.addEventListener("click", (event) => {
+    if (
+      event.target === modal ||
+      event.target.closest("[data-my-contract-close]")
+    ) {
+      closeMyContractViewer();
+      return;
+    }
+
+    if (event.target.closest("[data-retry-my-contract-view]")) {
+      const contract = state.contractViewer.contract;
+      if (contract) openMyContractViewer(contract.id);
+    }
+  });
+
+  document.getElementById("btnDownloadMyContract")?.addEventListener("click", () => {
+    const contract = state.contractViewer.contract;
+    if (contract) downloadMyContractFile(contract.id);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      !document
+        .getElementById("modal-my-contract-view")
+        ?.classList.contains("hidden")
+    ) {
+      closeMyContractViewer();
+    }
+  });
 };
 
 const renderWorkHistories = (rows) => {
@@ -368,6 +738,7 @@ const loadProfile = async () => {
   try {
     const response = await api.get("/my-profile");
     renderProfile(response.data.data);
+    await loadMyContracts();
     const hasFace = Boolean(response.data.data?.employee?.has_face_descriptor);
     updateCurrentUser({ has_face_descriptor: hasFace });
     updateFaceButtonState(getCurrentUser());
@@ -644,6 +1015,7 @@ export const initMyProfile = (providedUser) => {
   }
 
   bindModal();
+  bindMyContracts();
   bindFaceEnrollModal();
   updateFaceButtonState(user);
   loadProfile();

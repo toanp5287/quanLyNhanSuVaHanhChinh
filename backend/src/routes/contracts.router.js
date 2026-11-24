@@ -4,19 +4,32 @@ import crypto from "node:crypto";
 import express from "express";
 import multer from "multer";
 import {
+  approveContractApprovalHandler,
   createContractHandler,
   createDraftContractHandler,
   downloadContractFileHandler,
+  downloadContractOfficialFileHandler,
   downloadContractTemplateHandler,
+  downloadContractVersionHandler,
+  getContractTemplateEditorConfigHandler,
   getContractDetailHandler,
   getContractEditorConfigHandler,
   getContractFileByTokenHandler,
+  getMyOfficialContractEditorConfigHandler,
   listContractTemplatesHandler,
+  listContractSignaturesHandler,
+  listContractVersionsHandler,
   listContracts,
+  listMyOfficialContracts,
   onlyOfficeCallbackHandler,
   previewContractTemplateHandler,
+  rejectContractApprovalHandler,
+  requestContractSigningRevisionHandler,
+  signContractHandler,
   submitContractApprovalHandler,
   terminateContractHandler,
+  downloadMyOfficialContractFileHandler,
+  viewMyOfficialContractFileHandler,
   uploadContractFileHandler,
   uploadContractTemplateHandler,
 } from "../controllers/contracts/contracts.controller.js";
@@ -24,6 +37,7 @@ import {
   requirePermission,
   verifyToken,
 } from "../middlewares/auth.middleware.js";
+import { hasPermission } from "../utils/helper.js";
 
 const draftStorage = multer.diskStorage({
   destination: (_req, _file, callback) => {
@@ -162,20 +176,38 @@ const handleContractFileUpload = (req, res, next) => {
   });
 };
 
+const canListContracts = (req, res, next) => {
+  const role = String(req.user?.role_id || "").toUpperCase();
+  if (
+    role === "DIRECTOR" ||
+    hasPermission(req.user?.permissions, "HR.CONTRACT_MANAGE") ||
+    hasPermission(req.user?.permissions, "HR.CONTRACT_SIGN")
+  ) {
+    return next();
+  }
+
+  return res.status(403).json({
+    success: false,
+    message: "Bạn không có quyền truy cập danh sách hợp đồng",
+  });
+};
+
 const routerContracts = express.Router();
 
-routerContracts.get(
-  "/",
-  verifyToken,
-  requirePermission("HR.CONTRACT_MANAGE"),
-  listContracts,
-);
+routerContracts.get("/", verifyToken, canListContracts, listContracts);
 
 routerContracts.get(
   "/templates",
   verifyToken,
   requirePermission("HR.CONTRACT_MANAGE"),
   listContractTemplatesHandler,
+);
+
+routerContracts.get(
+  "/templates/:id/editor-config",
+  verifyToken,
+  requirePermission("HR.CONTRACT_MANAGE"),
+  getContractTemplateEditorConfigHandler,
 );
 
 routerContracts.get(
@@ -216,6 +248,26 @@ routerContracts.post(
   onlyOfficeCallbackHandler,
 );
 
+routerContracts.get("/mine", verifyToken, listMyOfficialContracts);
+
+routerContracts.get(
+  "/mine/:id/official-file",
+  verifyToken,
+  viewMyOfficialContractFileHandler,
+);
+
+routerContracts.get(
+  "/mine/:id/official-file/download",
+  verifyToken,
+  downloadMyOfficialContractFileHandler,
+);
+
+routerContracts.get(
+  "/mine/:id/editor-config",
+  verifyToken,
+  getMyOfficialContractEditorConfigHandler,
+);
+
 routerContracts.get(
   "/:id/editor-config",
   verifyToken,
@@ -224,7 +276,45 @@ routerContracts.get(
 
 routerContracts.get("/:id", verifyToken, getContractDetailHandler);
 
+routerContracts.get(
+  "/:id/versions",
+  verifyToken,
+  listContractVersionsHandler,
+);
+
+routerContracts.get(
+  "/:id/versions/:fileId/file",
+  verifyToken,
+  downloadContractVersionHandler,
+);
+
+routerContracts.get(
+  "/:id/official-file",
+  verifyToken,
+  downloadContractOfficialFileHandler,
+);
+
+routerContracts.get(
+  "/:id/signatures",
+  verifyToken,
+  listContractSignaturesHandler,
+);
+
 routerContracts.get("/:id/file", verifyToken, downloadContractFileHandler);
+
+routerContracts.post(
+  "/:id/sign",
+  verifyToken,
+  requirePermission("HR.CONTRACT_SIGN"),
+  signContractHandler,
+);
+
+routerContracts.post(
+  "/:id/request-signing-revision",
+  verifyToken,
+  requirePermission("HR.CONTRACT_SIGN"),
+  requestContractSigningRevisionHandler,
+);
 
 routerContracts.post(
   "/:id/file",
@@ -241,6 +331,18 @@ routerContracts.post(
   requirePermission("HR.CONTRACT_MANAGE"),
   requirePermission("HR.PROFILE_MANAGE"),
   submitContractApprovalHandler,
+);
+
+routerContracts.post(
+  "/:id/approve",
+  verifyToken,
+  approveContractApprovalHandler,
+);
+
+routerContracts.post(
+  "/:id/reject",
+  verifyToken,
+  rejectContractApprovalHandler,
 );
 
 routerContracts.post(
