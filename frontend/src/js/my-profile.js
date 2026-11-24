@@ -243,16 +243,9 @@ const renderProfile = (data) => {
   );
   document.getElementById("statRewards").textContent = String(rewards.length);
 
-<<<<<<< HEAD
   document.getElementById("workHistoriesCount").textContent = `${workHistories.length} bản ghi`;
   document.getElementById("dependentsCount").textContent = `${dependents.length} bản ghi`;
   document.getElementById("rewardsCount").textContent = `${rewards.length} bản ghi`;
-=======
-  document.getElementById("contractsCount").textContent = String(contracts.length);
-  document.getElementById("workHistoriesCount").textContent = String(workHistories.length);
-  document.getElementById("dependentsCount").textContent = String(dependents.length);
-  document.getElementById("rewardsCount").textContent = String(rewards.length);
->>>>>>> origin/main
 
   renderWorkHistories(workHistories);
   renderDependents(dependents);
@@ -751,11 +744,7 @@ const loadProfile = async () => {
   try {
     const response = await api.get("/my-profile");
     renderProfile(response.data.data);
-<<<<<<< HEAD
     await loadMyContracts();
-    const hasFace = Boolean(response.data.data?.employee?.has_face_descriptor);
-    updateCurrentUser({ has_face_descriptor: hasFace });
-=======
     const employee = response.data.data?.employee || {};
     const faceStatus = employee.face_status || (employee.has_face_descriptor ? "ACTIVE" : "UNREGISTERED");
     updateCurrentUser({
@@ -763,7 +752,6 @@ const loadProfile = async () => {
       face_status: faceStatus,
       face_enrolled_at: employee.face_enrolled_at || null,
     });
->>>>>>> origin/main
     updateFaceButtonState(getCurrentUser());
   } catch (error) {
     const message =

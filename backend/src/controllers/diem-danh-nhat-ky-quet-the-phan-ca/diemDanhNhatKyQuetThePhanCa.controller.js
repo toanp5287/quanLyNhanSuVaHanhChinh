@@ -6,12 +6,8 @@ import {
   createShiftAssignment,
   createWorkShift,
   deleteShiftAssignment,
-<<<<<<< HEAD
-=======
-  deleteWorkShift,
   getAttendanceDetail,
   getMyAttendanceHistory,
->>>>>>> origin/main
   getTodayStatus,
   listAttendanceByDate,
   listExplanations,
@@ -21,6 +17,7 @@ import {
   quickMarkAttendance,
   rejectExplanation,
   submitExplanation,
+  updateAttendanceManual,
   updateShiftAssignment,
   updateWorkShift,
   validateShiftPayload,
@@ -84,11 +81,8 @@ export const attendanceCheckIn = async (req, res) => {
       const messages = {
         NO_SHIFT: "Chưa cấu hình ca làm việc cho nhân viên",
         ALREADY_CHECKED_IN: "Đã chấm công vào ca hôm nay",
-<<<<<<< HEAD
-=======
         CHECK_IN_WINDOW_CLOSED: "Ngoài khung giờ cho phép chấm công vào ca",
         DOUBLE_PUNCH_TOO_FAST: `Quét quá nhanh sau lần chấm trước. Vui lòng đợi ${result.wait_seconds || 0} giây.`,
->>>>>>> origin/main
       };
       return res.status(result.error === "ALREADY_CHECKED_IN" ? 409 : 400).json({
         success: false,
@@ -141,11 +135,8 @@ export const attendanceCheckOut = async (req, res) => {
       const messages = {
         NO_CHECK_IN_FOUND: "Bạn chưa chấm công Vào hôm nay, không thể chấm Ra!",
         ALREADY_CHECKED_OUT: "Đã chấm công tan ca hôm nay",
-<<<<<<< HEAD
-=======
         CHECK_OUT_WINDOW_CLOSED: "Ngoài khung giờ cho phép chấm công tan ca",
         DOUBLE_PUNCH_TOO_FAST: `Quét quá nhanh sau lần chấm trước. Vui lòng đợi ${result.wait_seconds || 0} giây.`,
->>>>>>> origin/main
       };
       return res.status(result.error === "ALREADY_CHECKED_OUT" ? 409 : 400).json({
         success: false,
@@ -195,8 +186,6 @@ export const attendanceList = async (req, res) => {
   }
 };
 
-<<<<<<< HEAD
-=======
 export const attendanceMyHistory = async (req, res) => {
   try {
     const data = await getMyAttendanceHistory(req.user, req.query?.month);
@@ -233,7 +222,6 @@ export const attendanceManualUpdate = async (req, res) => {
   }
 };
 
->>>>>>> origin/main
 export const attendanceQuickMark = async (req, res) => {
   try {
     const { employee_id, date, type } = req.body || {};
