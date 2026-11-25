@@ -8,6 +8,7 @@ import {
 } from "../../services/auth/auth.service.js";
 import { getEmployeesByScope } from "../../services/user/user.service.js";
 import { canViewSalary, hasPermission } from "../../utils/helper.js";
+import { loginIpGuard } from "../../middlewares/deviceSecurity.middleware.js";
 
 const buildTokenPayload = (user) => ({
   user_id: user.user_id,
@@ -58,7 +59,7 @@ export const login = async (req, res) => {
       });
     }
 
-    const isPasswordValid = await verifyPassword(
+        const isPasswordValid = await verifyPassword(
       plainPassword,
       user.password_hash,
     );
@@ -66,9 +67,13 @@ export const login = async (req, res) => {
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
-        message: "Tài khoản hoặc mật khẩu không đúng",
+        message: "T�i kho?n ho?c m?t kh?u kh�ng d�ng",
       });
     }
+
+    req.authenticatedUser = user;
+    await loginIpGuard(req, res, () => undefined);
+    if (res.headersSent) return;
 
     await updateLastLogin(user.user_id);
 
@@ -78,7 +83,7 @@ export const login = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Đăng nhập thành công",
+      message: "�ang nh?p th�nh c�ng",
       token,
       user: toAuthUser(user),
     });

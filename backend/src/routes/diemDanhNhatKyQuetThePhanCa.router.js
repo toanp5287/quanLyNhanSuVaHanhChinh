@@ -4,30 +4,36 @@ import {
   updateMyFaceDescriptor,
   verifyMyFacePassword,
 } from "../controllers/my-profile/myProfile.controller.js";
-import { kioskAttendance } from "../services/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
+import {
+  createAttendanceChallenge,
+  kioskAttendance,
+  logAttendanceFraud,
+} from "../services/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 
 import {
-  requireAllowedAttendanceDevice,
-  requireAllowedAttendanceIp,
   requireAnyPermission,
   requirePermission,
   verifyToken,
 } from "../middlewares/auth.middleware.js";
+import { verifyAuthorizedDevice } from "../middlewares/deviceSecurity.middleware.js";
 import {
   approveExplanationHandler,
   attendanceCheckIn,
   attendanceCheckOut,
-  attendanceDetail,
   attendanceList,
   attendanceManualUpdate,
+  attendanceMyHistory,
   attendanceQuickMark,
   attendanceQuickMarkAll,
-  attendanceRecalculateDate,
   attendanceToday,
   cancelExplanationHandler,
   getExplanations,
   getShiftAssignments,
+  getKioskConfigHandler,
   getWorkShifts,
+  listAttendancePoliciesHandler,
+  removeAttendancePolicyHandler,
+  saveAttendancePolicyHandler,
   postExplanation,
   postShiftAssignment,
   postWorkShift,
@@ -35,7 +41,8 @@ import {
   putWorkShift,
   rejectExplanationHandler,
   removeShiftAssignment,
-  removeWorkShift,
+
+  updateKioskConfigHandler,
 } from "../controllers/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.controller.js";
 
 const router = express.Router();
@@ -81,10 +88,18 @@ const faceEnrollLimiter = createFailureLimiter(
   "Quá nhiều lần đăng ký FaceID chưa thành công. Vui lòng chờ một phút rồi thử lại.",
 );
 
+router.get(
+  "/challenge",
+  verifyAuthorizedDevice("attendance"),
+  async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    return res.json({ success: true, data: createAttendanceChallenge() });
+  },
+);
+
 router.post(
   "/kiosk/:action",
-  requireAllowedAttendanceIp,
-  requireAllowedAttendanceDevice,
+  verifyAuthorizedDevice("attendance"),
   kioskLimiter,
   async (req, res) => {
     res.set("Cache-Control", "no-store");
@@ -92,31 +107,56 @@ router.post(
       const data = await kioskAttendance(
         req.params.action,
         req.body?.embeddings,
-        req.ip,
-        req.body?.blink_verified,
+        req.clientIp || req.ip,
         req.headers["x-device-id"] || null,
         req.body?.capture,
+        req.body || {},
+        req.authorizedDevice?.id || null,
+        req.clientIp || null,
       );
       res.json({
         success: true,
         message:
           data.message ||
-          (req.params.action === "check-in"
+          (data.action === "check-in"
             ? "Điểm danh vào ca thành công"
             : "Điểm danh tan ca thành công"),
         data,
       });
     } catch (error) {
+      if (error.fraud)
+        logAttendanceFraud({
+          reason: error.code || "ATTENDANCE_FRAUD",
+          scores: error.scores || null,
+          ip: req.ip,
+          deviceId: req.headers["x-device-id"] || null,
+          path: req.originalUrl,
+          userAgent: req.headers["user-agent"] || null,
+        });
       if (!error.status) console.error("Lỗi FaceID kiosk:", error);
       res.status(error.status || 500).json({
         success: false,
         message: error.status
           ? error.message
           : "Không thể ghi nhận chấm công. Vui lòng thử lại.",
+        code: error.code || null,
+        wait_seconds: error.wait_seconds || 0,
       });
     }
   },
 );
+
+router.get("/kiosk/config", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    return await getKioskConfigHandler(req, res);
+  } catch (error) {
+    res.status(error.status || 500).json({
+      success: false,
+      message: error.status ? error.message : "Không thể tải cấu hình kiosk",
+    });
+  }
+});
 
 router.use(verifyToken);
 
@@ -124,50 +164,46 @@ router.get("/today", requirePermission("ESS.SELF_PROFILE"), attendanceToday);
 router.post(
   "/verify-face-password",
   requirePermission("ESS.SELF_PROFILE"),
+  verifyAuthorizedDevice("face_enroll"),
   faceAuthLimiter,
   verifyMyFacePassword,
 );
 router.post(
   "/check-face-owner",
   requirePermission("ESS.SELF_PROFILE"),
+  verifyAuthorizedDevice("face_enroll"),
   faceAuthLimiter,
   checkMyFaceOwner,
 );
 router.post(
   "/register-face",
   requirePermission("ESS.SELF_PROFILE"),
+  verifyAuthorizedDevice("face_enroll"),
   faceEnrollLimiter,
   updateMyFaceDescriptor,
 );
 router.post(
   "/check-in",
   requirePermission("ESS.SELF_PROFILE"),
-  requireAllowedAttendanceIp,
-  requireAllowedAttendanceDevice,
+  verifyAuthorizedDevice("attendance"),
   attendanceCheckIn,
 );
 router.post(
   "/check-out",
   requirePermission("ESS.SELF_PROFILE"),
-  requireAllowedAttendanceIp,
-  requireAllowedAttendanceDevice,
+  verifyAuthorizedDevice("attendance"),
   attendanceCheckOut,
 );
 
 router.get(
+  "/my-history",
+  requirePermission("ESS.SELF_PROFILE"),
+  attendanceMyHistory,
+);
+router.get(
   "/logs",
   requireAnyPermission(["ATT.VIEW", "HR.PROFILE_MANAGE"]),
   attendanceList,
-);
-router.get(
-  "/detail",
-  requireAnyPermission(["ATT.VIEW", "HR.PROFILE_MANAGE"]),
-  attendanceDetail,
-);
-router.put(
-  "/manual",
-  requirePermission("ATT.SHIFT_OT_MANAGE"),
-  attendanceManualUpdate,
 );
 router.post(
   "/quick-mark",
@@ -178,11 +214,6 @@ router.post(
   "/quick-mark-all",
   requirePermission("ATT.SHIFT_OT_MANAGE"),
   attendanceQuickMarkAll,
-);
-router.post(
-  "/recalculate-date",
-  requirePermission("ATT.SHIFT_OT_MANAGE"),
-  attendanceRecalculateDate,
 );
 
 // Danh mục ca làm việc
@@ -197,10 +228,37 @@ router.put(
   requirePermission("ATT.SHIFT_OT_MANAGE"),
   putWorkShift,
 );
-router.delete(
-  "/shifts/:id",
+
+// Quy chế tính công & cấu hình kiosk
+router.get(
+  "/policies",
+  requireAnyPermission(["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"]),
+  listAttendancePoliciesHandler,
+);
+router.post(
+  "/policies",
   requirePermission("ATT.SHIFT_OT_MANAGE"),
-  removeWorkShift,
+  saveAttendancePolicyHandler,
+);
+router.put(
+  "/policies/:id",
+  requirePermission("ATT.SHIFT_OT_MANAGE"),
+  saveAttendancePolicyHandler,
+);
+router.delete(
+  "/policies/:id",
+  requirePermission("ATT.SHIFT_OT_MANAGE"),
+  removeAttendancePolicyHandler,
+);
+router.get(
+  "/kiosk-config",
+  requireAnyPermission(["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"]),
+  getKioskConfigHandler,
+);
+router.put(
+  "/kiosk-config",
+  requirePermission("ATT.SHIFT_OT_MANAGE"),
+  updateKioskConfigHandler,
 );
 
 // Phân ca nhân viên

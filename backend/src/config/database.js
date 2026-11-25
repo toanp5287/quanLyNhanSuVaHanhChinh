@@ -2,27 +2,27 @@ import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 dotenv.config();
 
+const dbTimezone = process.env.DB_TIMEZONE || "+07:00";
+
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   port: Number(process.env.DB_PORT),
-  timezone: "+07:00",
 
   ssl: {
     minVersion: "TLSv1.2",
   },
 
+  timezone: dbTimezone,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
 });
 
 db.on("connection", (connection) => {
-  connection.query("SET SESSION time_zone = '+07:00'", (error) => {
-    if (error) console.error("Không thể thiết lập múi giờ MySQL:", error);
-  });
+  connection.query("SET time_zone = ?", [dbTimezone]);
 });
 
 export { db };

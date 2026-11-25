@@ -7,8 +7,19 @@ const escapeHtml = (value) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char],
   );
 
-const time = (value) => (value ? String(value).slice(0, 5) : "-");
-const timeInput = (value) => (value ? String(value).slice(0, 5) : "");
+const isBlankTimeValue = (value) => {
+  const text = String(value ?? "").trim();
+  return !text || /^[-–—:.\s]*(AM|PM|SA|CH|NG)?$/i.test(text);
+};
+const time = (value) => (isBlankTimeValue(value) ? "-" : String(value).slice(0, 5));
+const timeInput = (value) => (isBlankTimeValue(value) ? "" : String(value).slice(0, 5));
+const formTime = (value) => (isBlankTimeValue(value) ? null : String(value).trim());
+const checkinEndLabel = (shift) =>
+  isBlankTimeValue(shift?.checkin_end) ? "Không giới hạn" : time(shift.checkin_end);
+const workdayValue = (shift) => {
+  const value = Number(shift?.workday_value ?? shift?.standard_work_units ?? 1);
+  return value === 0.5 ? 0.5 : 1;
+};
 
 const apiErrorMessage = (error) => {
   if (error.response?.data?.message) return error.response.data.message;
@@ -37,6 +48,8 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
     assignments: [],
     employees: [],
     departments: [],
+    policies: [],
+    kioskConfig: null,
     busy: false,
   };
 
@@ -62,7 +75,7 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
     state.busy = busy;
     qa("button, input, select").forEach((el) => {
       if (el.dataset.keepEnabled === "1") return;
-      if (el.closest("#shiftForm") || el.closest("#assignForm") || el.id === "btnNewShift" || el.id === "btnNewAssign") {
+      if (el.closest("#shiftForm") || el.closest("#assignForm") || el.closest("#policyForm") || el.closest("#kioskConfigForm") || ["btnNewShift", "btnNewAssign", "btnNewPolicy"].includes(el.id)) {
         el.disabled = busy || !canManage;
       } else {
         el.disabled = busy;
@@ -94,6 +107,7 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
         const grace = s.grace_period_minutes ?? s.grace_period ?? s.grace_minutes ?? 0;
         const active = Number(s.is_active);
         const isDefault = Number(s.is_default);
+        const standardHours = Number(s.standard_hours ?? 8) || 8;
         const status = `<div class="flex flex-col gap-1 items-start">
           <span class="rounded px-2 py-1 text-xs font-semibold ${active ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-700"}">${active ? "Đang áp dụng" : "Ngừng áp dụng"}</span>
           ${isDefault ? '<span class="rounded px-2 py-1 text-xs font-semibold bg-sky-50 text-sky-800">Mặc định</span>' : ""}
@@ -114,7 +128,7 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
             <div class="text-xs text-on-surface-variant mt-0.5">Nghỉ: ${time(s.break_start)} - ${time(s.break_end)}</div>
           </td>
           <td class="px-4 py-3 text-xs sm:text-sm">
-            <div>Vào: <span class="font-medium">${time(s.checkin_start)}</span> → <span class="font-medium">${time(s.checkin_end)}</span></div>
+            <div>Vào: <span class="font-medium">${time(s.checkin_start)}</span> → <span class="font-medium">${checkinEndLabel(s)}</span></div>
             <div class="mt-0.5">Ra: <span class="font-medium">${time(s.checkout_start)}</span> → <span class="font-medium">${time(s.checkout_end)}</span></div>
           </td>
           <td class="px-4 py-3 text-xs sm:text-sm">
@@ -123,13 +137,25 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
           </td>
           <td class="px-4 py-3 text-xs sm:text-sm">
             <div>OT tối thiểu: <span class="font-medium">${escapeHtml(s.min_ot_minutes ?? 0)} phút</span></div>
-            <div class="text-on-surface-variant mt-0.5">${escapeHtml(s.standard_hours ?? 8)} giờ/ngày • ${escapeHtml(s.workday_value ?? s.standard_work_units ?? 1)} công</div>
+            <div class="text-on-surface-variant mt-0.5">${standardHours} giờ/ngày • ${workdayValue(s)} công${active ? "" : " (ca ngừng áp dụng)"}</div>
           </td>
           <td class="px-4 py-3">${status}</td>
           <td class="px-4 py-3 text-right">${actions}</td>
         </tr>`;
       })
       .join("");
+  };
+
+  const renderPolicyOptions = () => {
+    const select = q("#shiftPolicy");
+    if (!select) return;
+    const previous = select.value;
+    select.innerHTML =
+      '<option value="">Quy chế mặc định</option>' +
+      state.policies
+        .map((policy) => `<option value="${policy.id}">${escapeHtml(policy.code)} - ${escapeHtml(policy.name)}</option>`)
+        .join("");
+    select.value = previous;
   };
 
   const fillShiftForm = (shift = null) => {
@@ -147,7 +173,21 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
     q("#shiftGrace").value = shift?.grace_period_minutes ?? shift?.grace_period ?? shift?.grace_minutes ?? 15;
     q("#shiftMinOt").value = shift?.min_ot_minutes ?? 30;
     q("#shiftStandardHours").value = shift?.standard_hours ?? 8;
-    q("#shiftWorkdayValue").value = String(shift?.workday_value ?? shift?.standard_work_units ?? 1);
+    q("#shiftWorkdayValue").value = String(workdayValue(shift));
+    q("#shiftHasBreak").checked = shift ? Boolean(Number(shift?.has_break ?? 1)) : true;
+    q("#shiftRequireBreakPunch").checked = Boolean(Number(shift?.require_break_punch));
+    q("#shiftIsOvernight").checked = Boolean(Number(shift?.is_overnight));
+    q("#shiftAllowCheckoutAnytime").checked = shift
+      ? Boolean(Number(shift?.allow_checkout_anytime ?? 1))
+      : true;
+    q("#shiftCheckinOpenBefore").value = shift?.checkin_open_before_min ?? 120;
+    q("#shiftWorkingDays").value = shift?.working_days
+      ? typeof shift.working_days === "string"
+        ? shift.working_days
+        : JSON.stringify(shift.working_days)
+      : "";
+    renderPolicyOptions();
+    q("#shiftPolicy").value = shift?.policy_id || "";
     q("#shiftIsDefault").checked = Boolean(Number(shift?.is_default));
     q("#shiftIsActive").checked = shift ? Boolean(Number(shift?.is_active)) : true;
     q("#shiftFormTitle").textContent = shift ? `Sửa ca: ${shift.code}` : "Thêm ca làm việc";
@@ -232,7 +272,20 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
     if (!canManage) return;
     q("#assignId").value = assign?.id || "";
     q("#assignEmployee").value = assign?.employee_id || "";
-    q("#assignShift").value = assign?.shift_id || "";
+    const shiftSelect = q("#assignShift");
+    const assignedShift = assign
+      ? state.shifts.find((s) => String(s.id) === String(assign.shift_id))
+      : null;
+    if (shiftSelect && assignedShift && !Number(assignedShift.is_active)) {
+      const option = document.createElement("option");
+      option.value = String(assignedShift.id);
+      option.textContent = `${assignedShift.code} - ${assignedShift.name} (ngừng áp dụng)`;
+      option.dataset.inactive = "1";
+      if (!Array.from(shiftSelect.options).some((item) => item.value === option.value)) {
+        shiftSelect.appendChild(option);
+      }
+    }
+    shiftSelect.value = assign?.shift_id || "";
     q("#assignFrom").value = assign?.effective_from || new Date().toISOString().slice(0, 10);
     q("#assignTo").value = assign?.effective_to || "";
     q("#assignFormTitle").textContent = assign ? "Sửa phân ca" : "Phân ca nhân viên";
@@ -243,12 +296,33 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
   const closeAssignForm = () => {
     q("#assignFormWrap")?.classList.add("hidden");
     if (q("#assignId")) q("#assignId").value = "";
+    qa("#assignShift option[data-inactive='1']").forEach((option) => option.remove());
     q("#assignForm")?.reset();
   };
 
   const loadShifts = async () => {
     const res = await api.get("/attendance/shifts");
     state.shifts = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
+  };
+
+  const loadPolicies = async () => {
+    try {
+      const res = await api.get("/attendance/policies");
+      state.policies = Array.isArray(res.data?.data) ? res.data.data : [];
+    } catch (e) {
+      if (e.response?.status !== 403) throw e;
+      state.policies = [];
+    }
+  };
+
+  const loadKioskConfig = async () => {
+    try {
+      const res = await api.get("/attendance/kiosk-config");
+      state.kioskConfig = res.data?.data || null;
+    } catch (e) {
+      if (e.response?.status !== 403) throw e;
+      state.kioskConfig = null;
+    }
   };
 
   const loadAssignments = async () => {
@@ -284,16 +358,75 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
     }
   };
 
+  const renderPolicies = () => {
+    const tbody = q("#policyTableBody");
+    if (!tbody) return;
+    if (!state.policies.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-6 text-center text-on-surface-variant">Chưa có quy chế tính công.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = state.policies
+      .map((policy) => {
+        const rules = policy.rules || policy.rules_json || {};
+        const mode = rules.work_day_mode === "CUSTOM_TIERS" ? "CUSTOM_TIERS" : "PRO_RATA";
+        const summary = mode === "PRO_RATA"
+          ? `Bước ${rules.pro_rata?.round_step ?? 0.25} công`
+          : `${(rules.tiers || []).length} bậc công`;
+        const actions = canManage
+          ? `<button data-edit-policy="${policy.id}" class="text-primary hover:underline mr-3">Sửa</button><button data-del-policy="${policy.id}" class="text-error hover:underline">Xóa</button>`
+          : `<span class="text-on-surface-variant">Chỉ xem</span>`;
+        return `<tr><td class="px-4 py-3"><div class="font-semibold">${escapeHtml(policy.code)}</div><div class="text-xs text-on-surface-variant">${escapeHtml(policy.name)}</div></td><td class="px-4 py-3">${mode}${Number(policy.is_default) ? ' <span class="rounded bg-sky-50 px-2 py-1 text-xs text-sky-800">Mặc định</span>' : ""}</td><td class="px-4 py-3 text-xs">${escapeHtml(summary)}</td><td class="px-4 py-3 text-right">${actions}</td></tr>`;
+      })
+      .join("");
+  };
+
+  const fillPolicyForm = (policy = null) => {
+    const rules = policy?.rules || policy?.rules_json || {};
+    q("#policyId").value = policy?.id || "";
+    q("#policyCode").value = policy?.code || "";
+    q("#policyName").value = policy?.name || "";
+    q("#policyMode").value = rules.work_day_mode === "CUSTOM_TIERS" ? "CUSTOM_TIERS" : "PRO_RATA";
+    q("#policyRoundStep").value = rules.pro_rata?.round_step ?? 0.25;
+    q("#policyRoundMethod").value = rules.pro_rata?.round_method || "ROUND";
+    q("#policyGrace").value = rules.grace_late_minutes ?? 5;
+    q("#policyTiers").value = JSON.stringify(
+      rules.tiers || [{ min_hours: 7.5, work_day: 1, label: "Đủ công" }],
+      null,
+      2,
+    );
+    q("#policyIsDefault").checked = Boolean(Number(policy?.is_default));
+    q("#policyFormTitle").textContent = policy ? `Sửa quy chế: ${policy.code}` : "Thêm quy chế";
+  };
+
+  const fillKioskConfigForm = () => {
+    const config = state.kioskConfig || {};
+    q("#kioskPunchMode").value = config.punch_mode || "AUTO_SMART";
+    q("#kioskAntiDouble").value = config.anti_double_punch_minutes ?? 3;
+    q("#kioskConfirmSeconds").value = config.checkout_confirm_seconds ?? 2;
+    q("#kioskRepeatPolicy").value = config.checkout_repeat_policy || "OVERWRITE_LATEST";
+    q("#kioskRequireCheckin").checked = Boolean(Number(config.require_checkin_for_checkout ?? 1));
+    q("#kioskShowWorkday").checked = Boolean(Number(config.show_estimated_workday ?? 1));
+    q("#kioskNetworkConfig").value = JSON.stringify(config.network_config || {
+      strict_ip: false,
+      allowed_ips: [],
+      exempt_department_ids: [],
+      exempt_employee_ids: [],
+    }, null, 2);
+  };
+
   const refreshAll = async ({ showSuccess = false } = {}) => {
     if (state.busy) return;
     try {
       setBusy(true);
       setNotice("");
-      await Promise.all([loadShifts(), loadLookups()]);
+      await Promise.all([loadShifts(), loadLookups(), loadPolicies(), loadKioskConfig()]);
       await loadAssignments();
       renderShifts();
       renderSelectOptions();
       renderAssignments();
+      renderPolicyOptions();
+      renderPolicies();
+      fillKioskConfigForm();
       if (showSuccess) setNotice("Đã tải dữ liệu quản lý ca làm.", "success");
     } catch (e) {
       setNotice(apiErrorMessage(e), "error");
@@ -352,17 +485,26 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
       name: q("#shiftName").value.trim(),
       start_time: q("#shiftStart").value,
       end_time: q("#shiftEnd").value,
-      checkin_start: q("#shiftCheckinStart").value || null,
-      checkin_end: q("#shiftCheckinEnd").value || null,
-      checkout_start: q("#shiftCheckoutStart").value || null,
-      checkout_end: q("#shiftCheckoutEnd").value || null,
-      break_start: q("#shiftBreakStart").value || null,
-      break_end: q("#shiftBreakEnd").value || null,
+      checkin_start: formTime(q("#shiftCheckinStart").value),
+      checkin_end: formTime(q("#shiftCheckinEnd").value),
+      checkout_start: formTime(q("#shiftCheckoutStart").value),
+      checkout_end: formTime(q("#shiftCheckoutEnd").value),
+      break_start: formTime(q("#shiftBreakStart").value),
+      break_end: formTime(q("#shiftBreakEnd").value),
       grace_period: Number(q("#shiftGrace").value || 0),
       grace_period_minutes: Number(q("#shiftGrace").value || 0),
       min_ot_minutes: Number(q("#shiftMinOt").value || 0),
       standard_hours: Number(q("#shiftStandardHours").value || 8),
+      standard_work_hours: Number(q("#shiftStandardHours").value || 8),
       workday_value: Number(q("#shiftWorkdayValue").value || 1),
+      has_break: q("#shiftHasBreak").checked ? 1 : 0,
+      require_break_punch: q("#shiftRequireBreakPunch").checked ? 1 : 0,
+      is_overnight: q("#shiftIsOvernight").checked ? 1 : 0,
+      allow_checkout_anytime: q("#shiftAllowCheckoutAnytime").checked ? 1 : 0,
+      checkin_open_before_min: Number(q("#shiftCheckinOpenBefore").value || 0),
+      checkin_close_after_min: null,
+      working_days: q("#shiftWorkingDays").value.trim() || null,
+      policy_id: q("#shiftPolicy").value || null,
       is_default: q("#shiftIsDefault").checked ? 1 : 0,
       is_active: q("#shiftIsActive").checked ? 1 : 0,
     };
@@ -447,14 +589,126 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
     }
   });
 
+  q("#btnNewPolicy")?.addEventListener("click", () => {
+    if (!canManage) return;
+    fillPolicyForm(null);
+    q("#policyFormWrap")?.classList.remove("hidden");
+  });
+  q("#btnCancelPolicy")?.addEventListener("click", () => q("#policyFormWrap")?.classList.add("hidden"));
+  q("#btnCancelPolicyEdit")?.addEventListener("click", () => q("#policyFormWrap")?.classList.add("hidden"));
+  q("#policyTableBody")?.addEventListener("click", async (e) => {
+    if (!canManage) return;
+    const edit = e.target.closest("[data-edit-policy]");
+    const del = e.target.closest("[data-del-policy]");
+    if (edit) {
+      const policy = state.policies.find((p) => String(p.id) === String(edit.dataset.editPolicy));
+      if (policy) {
+        fillPolicyForm(policy);
+        q("#policyFormWrap")?.classList.remove("hidden");
+      }
+      return;
+    }
+    if (del) {
+      const policy = state.policies.find((p) => String(p.id) === String(del.dataset.delPolicy));
+      if (!window.confirm(`Xóa quy chế "${policy?.code || del.dataset.delPolicy}"?`)) return;
+      try {
+        setBusy(true);
+        await api.delete(`/attendance/policies/${del.dataset.delPolicy}`);
+        setNotice("Đã xóa quy chế tính công.", "success");
+        await loadPolicies();
+        renderPolicies();
+        renderPolicyOptions();
+      } catch (err) {
+        setNotice(apiErrorMessage(err), "error");
+      } finally {
+        setBusy(false);
+      }
+    }
+  });
+  q("#policyForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!canManage || state.busy) return;
+    let tiers;
+    try {
+      tiers = JSON.parse(q("#policyTiers").value || "[]");
+      if (!Array.isArray(tiers)) throw new Error("invalid");
+    } catch {
+      setNotice("Các bậc công phải là JSON mảng hợp lệ.", "error");
+      return;
+    }
+    const payload = {
+      code: q("#policyCode").value.trim().toUpperCase(),
+      name: q("#policyName").value.trim(),
+      is_default: q("#policyIsDefault").checked ? 1 : 0,
+      rules: {
+        work_day_mode: q("#policyMode").value,
+        pro_rata: {
+          round_step: Number(q("#policyRoundStep").value || 0.25),
+          round_method: q("#policyRoundMethod").value,
+        },
+        tiers,
+        grace_late_minutes: Number(q("#policyGrace").value || 0),
+      },
+    };
+    const id = q("#policyId").value;
+    try {
+      setBusy(true);
+      if (id) await api.put(`/attendance/policies/${id}`, payload);
+      else await api.post("/attendance/policies", payload);
+      setNotice(id ? "Đã cập nhật quy chế." : "Đã tạo quy chế.", "success");
+      q("#policyFormWrap")?.classList.add("hidden");
+      await loadPolicies();
+      renderPolicies();
+      renderPolicyOptions();
+    } catch (err) {
+      setNotice(apiErrorMessage(err), "error");
+    } finally {
+      setBusy(false);
+    }
+  });
+  q("#btnResetKiosk")?.addEventListener("click", fillKioskConfigForm);
+  q("#kioskConfigForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!canManage || state.busy) return;
+    const parseConfigJson = (value, fallback) => {
+      try {
+        const parsed = JSON.parse(value || "{}");
+        return parsed && typeof parsed === "object" ? parsed : fallback;
+      } catch {
+        return fallback;
+      }
+    };
+    const payload = {
+      punch_mode: q("#kioskPunchMode").value,
+      require_checkin_for_checkout: q("#kioskRequireCheckin").checked ? 1 : 0,
+      anti_double_punch_minutes: Number(q("#kioskAntiDouble").value || 0),
+      checkout_repeat_policy: q("#kioskRepeatPolicy").value,
+      checkout_confirm_seconds: Number(q("#kioskConfirmSeconds").value || 0),
+      show_estimated_workday: q("#kioskShowWorkday").checked ? 1 : 0,
+      network_config: parseConfigJson(q("#kioskNetworkConfig").value, {}),
+    };
+    try {
+      setBusy(true);
+      const res = await api.put("/attendance/kiosk-config", payload);
+      state.kioskConfig = res.data?.data || payload;
+      setNotice("Đã lưu cấu hình máy chấm công.", "success");
+      fillKioskConfigForm();
+    } catch (err) {
+      setNotice(apiErrorMessage(err), "error");
+    } finally {
+      setBusy(false);
+    }
+  });
+
   if (q("#shiftScope")) {
     q("#shiftScope").textContent = canManage
-      ? "Bạn có quyền tạo/sửa ca làm việc và phân ca."
-      : "Chế độ chỉ xem: tra cứu danh mục ca và phân ca được phép.";
+      ? "Bạn có quyền tạo/sửa ca làm việc, phân ca, quy chế tính công và cấu hình kiosk."
+      : "Chế độ chỉ xem: tra cứu danh mục ca, phân ca, quy chế và cấu hình kiosk.";
   }
   if (!canManage) {
     q("#btnNewShift")?.classList.add("hidden");
     q("#btnNewAssign")?.classList.add("hidden");
+    q("#btnNewPolicy")?.classList.add("hidden");
   }
 
   setTab("shifts");

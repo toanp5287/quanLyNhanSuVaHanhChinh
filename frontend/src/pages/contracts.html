@@ -328,6 +328,130 @@
 
           <div class="grid grid-cols-2 xl:grid-cols-4 gap-space-md">
             <button
+              class="hidden text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-blue-300 transition-colors"
+              id="contractPendingCard"
+              data-contract-status="PENDING_APPROVAL"
+              type="button"
+            >
+              <div class="flex items-start justify-between gap-space-sm">
+                <div>
+                  <span
+                    class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block"
+                    >Chờ Giám đốc duyệt</span
+                  >
+                  <span
+                    class="font-headline-lg text-headline-lg text-blue-700 font-bold"
+                    id="countContractPending"
+                    >-</span
+                  >
+                </div>
+                <span
+                  class="w-9 h-9 rounded bg-blue-100 text-blue-700 flex items-center justify-center"
+                >
+                  <span class="material-symbols-outlined text-[20px]"
+                    >fact_check</span
+                  >
+                </span>
+              </div>
+              <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+                Hợp đồng đã được gửi và đang chờ quyết định.
+              </p>
+            </button>
+
+            <button
+              class="hidden text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-red-300 transition-colors"
+              id="contractRejectedCard"
+              data-contract-status="REJECTED"
+              type="button"
+            >
+              <div class="flex items-start justify-between gap-space-sm">
+                <div>
+                  <span
+                    class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block"
+                    >Bị Giám đốc từ chối</span
+                  >
+                  <span
+                    class="font-headline-lg text-headline-lg text-red-700 font-bold"
+                    id="countContractRejected"
+                    >-</span
+                  >
+                </div>
+                <span
+                  class="w-9 h-9 rounded bg-red-100 text-red-700 flex items-center justify-center"
+                >
+                  <span class="material-symbols-outlined text-[20px]"
+                    >edit_document</span
+                  >
+                </span>
+              </div>
+              <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+                Hợp đồng cần HR chỉnh sửa và gửi duyệt lại.
+              </p>
+            </button>
+
+            <button
+              class="hidden text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-sky-300 transition-colors"
+              id="contractPendingSignCard"
+              data-contract-status="PENDING_SIGN"
+              type="button"
+            >
+              <div class="flex items-start justify-between gap-space-sm">
+                <div>
+                  <span
+                    class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block"
+                    >Chờ ký chính thức</span
+                  >
+                  <span
+                    class="font-headline-lg text-headline-lg text-sky-700 font-bold"
+                    id="countContractPendingSign"
+                    >-</span
+                  >
+                </div>
+                <span
+                  class="w-9 h-9 rounded bg-sky-100 text-sky-700 flex items-center justify-center"
+                >
+                  <span class="material-symbols-outlined text-[20px]"
+                    >draw</span
+                  >
+                </span>
+              </div>
+              <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+                Hợp đồng đã được phê duyệt, chờ người có thẩm quyền ký.
+              </p>
+            </button>
+
+            <button
+              class="hidden text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-emerald-300 transition-colors"
+              id="contractSignedCard"
+              data-contract-status="SIGNED"
+              type="button"
+            >
+              <div class="flex items-start justify-between gap-space-sm">
+                <div>
+                  <span
+                    class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block"
+                    >Đã ký chính thức</span
+                  >
+                  <span
+                    class="font-headline-lg text-headline-lg text-emerald-700 font-bold"
+                    id="countContractSigned"
+                    >-</span
+                  >
+                </div>
+                <span
+                  class="w-9 h-9 rounded bg-emerald-100 text-emerald-700 flex items-center justify-center"
+                >
+                  <span class="material-symbols-outlined text-[20px]"
+                    >task_alt</span
+                  >
+                </span>
+              </div>
+              <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+                Hợp đồng đã hoàn tất ký và lưu bản chính thức.
+              </p>
+            </button>
+
+            <button
               class="text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-emerald-300 transition-colors"
               data-contract-status="ACTIVE"
               type="button"
@@ -463,6 +587,58 @@
                 <span
                   class="rounded-full bg-surface-container-high px-1.5 text-[11px] font-semibold"
                   id="countTabAll"
+                  >-</span
+                >
+              </button>
+              <button
+                class="hidden contract-tab h-9 px-space-sm rounded-t-lg font-label-md text-label-md flex items-center gap-1.5 border-b-2 border-transparent text-on-surface-variant hover:text-primary transition-colors"
+                id="contractPendingTab"
+                data-contract-tab="PENDING_APPROVAL"
+                type="button"
+              >
+                <span>Chờ duyệt</span>
+                <span
+                  class="rounded-full bg-blue-100 px-1.5 text-[11px] font-semibold text-blue-700"
+                  id="countTabPending"
+                  >-</span
+                >
+              </button>
+              <button
+                class="hidden contract-tab h-9 px-space-sm rounded-t-lg font-label-md text-label-md flex items-center gap-1.5 border-b-2 border-transparent text-on-surface-variant hover:text-primary transition-colors"
+                id="contractRejectedTab"
+                data-contract-tab="REJECTED"
+                type="button"
+              >
+                <span>Bị từ chối</span>
+                <span
+                  class="rounded-full bg-red-100 px-1.5 text-[11px] font-semibold text-red-700"
+                  id="countTabRejected"
+                  >-</span
+                >
+              </button>
+              <button
+                class="hidden contract-tab h-9 px-space-sm rounded-t-lg font-label-md text-label-md flex items-center gap-1.5 border-b-2 border-transparent text-on-surface-variant hover:text-primary transition-colors"
+                id="contractPendingSignTab"
+                data-contract-tab="PENDING_SIGN"
+                type="button"
+              >
+                <span>Chờ ký</span>
+                <span
+                  class="rounded-full bg-sky-100 px-1.5 text-[11px] font-semibold text-sky-700"
+                  id="countTabPendingSign"
+                  >-</span
+                >
+              </button>
+              <button
+                class="hidden contract-tab h-9 px-space-sm rounded-t-lg font-label-md text-label-md flex items-center gap-1.5 border-b-2 border-transparent text-on-surface-variant hover:text-primary transition-colors"
+                id="contractSignedTab"
+                data-contract-tab="SIGNED"
+                type="button"
+              >
+                <span>Đã ký</span>
+                <span
+                  class="rounded-full bg-emerald-100 px-1.5 text-[11px] font-semibold text-emerald-700"
+                  id="countTabSigned"
                   >-</span
                 >
               </button>
@@ -604,6 +780,7 @@
                     <th class="min-w-[190px] px-3 py-2.5">Loại hợp đồng</th>
                     <th class="min-w-[110px] px-3 py-2.5">Ngày bắt đầu</th>
                     <th class="min-w-[110px] px-3 py-2.5">Ngày kết thúc</th>
+                    <th class="min-w-[160px] px-3 py-2.5">Ngày gửi duyệt</th>
                     <th class="min-w-[125px] px-3 py-2.5 text-right">
                       Lương ký HĐ
                     </th>
@@ -626,7 +803,7 @@
                   <tr>
                     <td
                       class="px-3 py-6 text-center text-on-surface-variant"
-                      colspan="12"
+                      colspan="13"
                     >
                       Đang tải danh sách hợp đồng...
                     </td>
@@ -647,6 +824,7 @@
               </span>
             </div>
           </section>
+          <div id="contractRenewalMount" class="hidden mt-space-md"></div>
         </div>
       </main>
     </div>
@@ -703,6 +881,129 @@
             </select>
           </div>
 
+          <section
+            class="rounded-lg border border-surface-variant bg-surface-container-low p-space-md"
+            id="contractEmployeeInfoWrap"
+          >
+            <div class="flex items-center justify-between gap-space-sm">
+              <h4 class="font-label-lg text-label-lg font-bold text-on-surface">
+                Thông tin nhân viên
+              </h4>
+              <span
+                class="font-body-sm text-body-sm text-on-surface-variant"
+                id="contractEmployeeInfoHint"
+                >Tự động điền từ hồ sơ nhân sự</span
+              >
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-space-sm mt-3">
+              <div>
+                <label class="block font-label-sm text-label-sm text-on-surface mb-1" for="contractEmployeeCode">Mã nhân viên <span class="text-error">*</span></label>
+                <input class="w-full h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-body-sm font-body-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none" id="contractEmployeeCode" type="text" />
+              </div>
+              <div>
+                <label class="block font-label-sm text-label-sm text-on-surface mb-1" for="contractEmployeeName">Họ tên <span class="text-error">*</span></label>
+                <input class="w-full h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-body-sm font-body-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none" id="contractEmployeeName" type="text" />
+              </div>
+              <div>
+                <label class="block font-label-sm text-label-sm text-on-surface mb-1" for="contractDob">Ngày sinh <span class="text-error">*</span></label>
+                <input class="w-full h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-body-sm font-body-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none" id="contractDob" type="date" />
+              </div>
+              <div>
+                <label class="block font-label-sm text-label-sm text-on-surface mb-1" for="contractGender">Giới tính</label>
+                <select class="w-full h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-body-sm font-body-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none" id="contractGender">
+                  <option value="">Chưa có dữ liệu</option>
+                  <option value="MALE">Nam</option>
+                  <option value="FEMALE">Nữ</option>
+                  <option value="OTHER">Khác</option>
+                </select>
+              </div>
+              <div class="md:col-span-2">
+                <label class="block font-label-sm text-label-sm text-on-surface mb-1" for="contractAddress">Địa chỉ <span class="text-error">*</span></label>
+                <input class="w-full h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-body-sm font-body-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none" id="contractAddress" type="text" />
+              </div>
+              <div>
+                <label class="block font-label-sm text-label-sm text-on-surface mb-1" for="contractPhone">Số điện thoại <span class="text-error">*</span></label>
+                <input class="w-full h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-body-sm font-body-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none" id="contractPhone" type="text" />
+              </div>
+              <div>
+                <label class="block font-label-sm text-label-sm text-on-surface mb-1" for="contractEmail">Email</label>
+                <input class="w-full h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-body-sm font-body-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none" id="contractEmail" type="email" />
+              </div>
+              <div>
+                <label class="block font-label-sm text-label-sm text-on-surface mb-1" for="contractDepartmentName">Phòng ban</label>
+                <input class="w-full h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-body-sm font-body-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none" id="contractDepartmentName" type="text" />
+              </div>
+              <div>
+                <label class="block font-label-sm text-label-sm text-on-surface mb-1" for="contractPositionName">Chức vụ</label>
+                <input class="w-full h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-body-sm font-body-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none" id="contractPositionName" type="text" />
+              </div>
+            </div>
+          </section>
+
+          <section
+            class="rounded-lg border border-surface-variant p-space-md"
+            id="contractCreationWrap"
+          >
+            <h4 class="font-label-lg text-label-lg font-bold text-on-surface">
+              Cách tạo hợp đồng
+            </h4>
+            <div class="flex flex-wrap items-center gap-space-md mt-2">
+              <label class="inline-flex items-center gap-2 font-body-sm text-body-sm text-on-surface cursor-pointer" for="contractCreationFromTemplate">
+                <input class="accent-primary" id="contractCreationFromTemplate" name="contractCreationMethod" type="radio" value="FROM_TEMPLATE" checked />
+                Tạo từ mẫu Word có sẵn.
+              </label>
+              <label class="inline-flex items-center gap-2 font-body-sm text-body-sm text-on-surface cursor-pointer" for="contractCreationUpload">
+                <input class="accent-primary" id="contractCreationUpload" name="contractCreationMethod" type="radio" value="UPLOAD_DOCX" />
+                Upload file DOCX.
+              </label>
+            </div>
+
+            <div class="mt-3" id="contractTemplateModeWrap">
+              <label class="block font-label-sm text-label-sm text-on-surface mb-1" for="contractTemplateType">Chọn loại hợp đồng</label>
+              <select class="w-full h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-body-sm font-body-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none" id="contractTemplateType">
+                <option value="INTERNSHIP">Hợp đồng thực tập</option>
+                <option value="PROBATION">Hợp đồng thử việc</option>
+                <option value="FIXED_TERM">Hợp đồng xác định thời hạn</option>
+                <option value="INDEFINITE">Hợp đồng không xác định thời hạn</option>
+              </select>
+
+              <div class="mt-3 rounded-lg border border-surface-variant bg-surface-container-low p-space-md" id="contractTemplateFileCard">
+                <div class="flex items-start justify-between gap-space-md">
+                  <div class="flex items-start gap-space-sm min-w-0">
+                    <span class="material-symbols-outlined text-primary mt-0.5">description</span>
+                    <div class="min-w-0">
+                      <p class="font-label-md text-label-md font-semibold text-on-surface truncate" id="contractTemplateFileName">Chưa có file mẫu</p>
+                      <p class="mt-1 font-body-sm text-body-sm text-on-surface-variant" id="contractTemplateFileMeta">—</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0" id="contractTemplateActions">
+                    <button class="h-8 px-3 rounded border border-surface-variant text-on-surface hover:bg-surface-container transition-colors font-label-sm text-label-sm" id="btnViewTemplateFile" type="button">Xem</button>
+                    <button class="h-8 px-3 rounded border border-surface-variant text-on-surface hover:bg-surface-container transition-colors font-label-sm text-label-sm" id="btnEditTemplateFile" type="button">Chỉnh sửa</button>
+                    <button class="h-8 px-3 rounded bg-primary text-on-primary hover:opacity-90 transition-opacity font-label-sm text-label-sm" id="btnSaveTemplateFile" title="Tải file mẫu hợp đồng về máy" type="button">Lưu file mẫu</button>
+                    <button class="h-8 px-3 rounded border border-primary text-primary hover:bg-primary/10 transition-colors font-label-sm text-label-sm" id="btnReplaceTemplateFile" type="button">Thay thế mẫu</button>
+                  </div>
+                </div>
+                <p class="hidden mt-2 font-body-sm text-body-sm text-error" id="contractTemplateCardError"></p>
+              </div>
+              <input class="hidden" id="contractTemplateSelect" type="hidden" value="" />
+            </div>
+
+            <div class="hidden mt-3" id="contractUploadWrap">
+              <label class="block font-label-sm text-label-sm text-on-surface mb-1" for="contractFileInput">File hợp đồng DOCX <span class="text-error">*</span></label>
+              <input class="block w-full text-body-sm text-body-sm text-on-surface file:mr-3 file:h-9 file:px-3 file:rounded file:border-0 file:bg-primary file:text-on-primary file:font-label-md file:cursor-pointer" id="contractFileInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+              <p class="mt-1 font-body-sm text-body-sm text-on-surface-variant" id="contractFileHelp">Chỉ chấp nhận .docx, tối đa 10MB.</p>
+            </div>
+
+            <div class="mt-4 rounded-lg border-2 border-dashed border-surface-variant bg-surface-container-low p-space-lg text-center" id="contractTemplateUploadArea">
+              <span class="material-symbols-outlined text-3xl text-on-surface-variant">upload_file</span>
+              <h5 class="mt-2 font-label-lg text-label-lg font-bold text-on-surface">Upload file mẫu hợp đồng</h5>
+              <p class="mt-1 font-body-sm text-body-sm text-on-surface-variant">Tải file DOCX lên để thêm mẫu mới hoặc thay thế mẫu hiện tại</p>
+              <button class="mt-3 h-9 px-4 rounded bg-primary text-on-primary font-label-md text-label-md hover:opacity-90 transition-opacity" id="btnPickTemplateUpload" type="button">+ Chọn file DOCX</button>
+              <input class="hidden" id="contractTemplateUploadInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+              <p class="mt-2 font-body-sm text-body-sm text-on-surface-variant" id="contractTemplateUploadHint">File sẽ được gắn với loại hợp đồng đang chọn.</p>
+            </div>
+          </section>
+
           <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
             <div>
               <label
@@ -733,7 +1034,7 @@
               />
             </div>
 
-            <div>
+            <div id="contractTypeFieldWrap">
               <label
                 class="block font-label-md text-label-md text-on-surface mb-1"
                 for="contractType"
@@ -747,7 +1048,7 @@
               </select>
             </div>
 
-            <div>
+            <div id="contractStatusWrap">
               <label
                 class="block font-label-md text-label-md text-on-surface mb-1"
                 for="contractStatus"
@@ -953,7 +1254,7 @@
       aria-labelledby="contractDetailTitle"
     >
       <div
-        class="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl bg-surface-container-lowest shadow-2xl"
+        class="w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-xl bg-surface-container-lowest shadow-2xl"
       >
         <div
           class="flex items-start justify-between gap-space-md px-space-lg py-space-md border-b border-surface-variant sticky top-0 bg-surface-container-lowest z-10"
@@ -987,6 +1288,50 @@
             <span class="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
+        <div class="px-space-lg pt-space-md border-b border-surface-variant">
+          <div class="flex flex-wrap gap-space-sm" role="tablist" aria-label="Thông tin chi tiết hợp đồng">
+            <button
+              class="h-9 px-space-md rounded-t-lg font-label-md text-label-md font-semibold transition-colors"
+              id="contractDetailTabInfo"
+              data-contract-detail-tab="info"
+              type="button"
+              role="tab"
+              aria-selected="true"
+            >
+              Thông tin hợp đồng
+            </button>
+            <button
+              class="h-9 px-space-md rounded-t-lg font-label-md text-label-md font-semibold transition-colors"
+              id="contractDetailTabFile"
+              data-contract-detail-tab="file"
+              type="button"
+              role="tab"
+              aria-selected="false"
+            >
+              File hợp đồng
+            </button>
+            <button
+              class="h-9 px-space-md rounded-t-lg font-label-md text-label-md font-semibold transition-colors"
+              id="contractDetailTabHistory"
+              data-contract-detail-tab="history"
+              type="button"
+              role="tab"
+              aria-selected="false"
+            >
+              Lịch sử duyệt
+            </button>
+            <button
+              class="h-9 px-space-md rounded-t-lg font-label-md text-label-md font-semibold transition-colors"
+              id="contractDetailTabSigning"
+              data-contract-detail-tab="signing"
+              type="button"
+              role="tab"
+              aria-selected="false"
+            >
+              Ký hợp đồng
+            </button>
+          </div>
+        </div>
         <div class="p-space-lg" id="contractDetailBody"></div>
         <div
           class="px-space-lg py-space-md border-t border-surface-variant flex items-center justify-end gap-space-sm sticky bottom-0 bg-surface-container-lowest"
@@ -997,6 +1342,38 @@
             type="button"
           >
             Đóng
+          </button>
+          <button
+            class="hidden h-9 px-space-md rounded bg-error text-on-error hover:bg-error/90 transition-colors font-label-lg text-label-lg items-center gap-1.5"
+            id="contractDetailReject"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[18px]">close</span>
+            <span>Từ chối</span>
+          </button>
+          <button
+            class="hidden h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container transition-colors font-label-lg text-label-lg items-center gap-1.5"
+            id="contractDetailApprove"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[18px]">fact_check</span>
+            <span>Phê duyệt</span>
+          </button>
+          <button
+            class="hidden h-9 px-space-md rounded bg-error text-on-error hover:bg-error/90 transition-colors font-label-lg text-label-lg items-center gap-1.5"
+            id="contractDetailRequestSigningRevision"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[18px]">edit_document</span>
+            <span>Yêu cầu chỉnh sửa</span>
+          </button>
+          <button
+            class="hidden h-9 px-space-md rounded bg-emerald-700 text-on-primary hover:bg-emerald-800 transition-colors font-label-lg text-label-lg items-center gap-1.5"
+            id="contractDetailSign"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[18px]">draw</span>
+            <span>Ký hợp đồng</span>
           </button>
           <button
             class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container transition-colors font-label-lg text-label-lg flex items-center gap-1.5"
@@ -1017,6 +1394,203 @@
               >contract_delete</span
             >
             <span>Thanh lý</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="hidden fixed inset-0 z-[110] items-center justify-center bg-black/40 p-4"
+      id="modal-contract-submit-approval"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="contractSubmitTitle"
+    >
+      <div class="w-full max-w-lg rounded-xl bg-surface-container-lowest shadow-2xl">
+        <div class="flex items-start justify-between gap-space-md px-space-lg py-space-md border-b border-surface-variant">
+          <div>
+            <h3 class="font-headline-sm text-headline-sm font-bold text-on-surface" id="contractSubmitTitle">Gửi hợp đồng cho Giám đốc duyệt</h3>
+            <p class="mt-0.5 font-body-sm text-body-sm text-on-surface-variant">Kiểm tra thông tin trước khi xác nhận</p>
+          </div>
+          <button class="w-8 h-8 rounded hover:bg-surface-container text-on-surface-variant flex items-center justify-center" id="btnCloseContractSubmit" type="button" title="Đóng">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+        <div class="p-space-lg flex flex-col gap-space-md">
+          <div class="rounded-lg bg-surface-container-low p-space-md space-y-1.5">
+            <div class="flex items-center justify-between gap-space-md">
+              <span class="font-body-sm text-body-sm text-on-surface-variant">Mã hợp đồng</span>
+              <span class="font-label-md text-label-md font-bold text-on-surface" id="contractSubmitCode">—</span>
+            </div>
+            <div class="flex items-center justify-between gap-space-md">
+              <span class="font-body-sm text-body-sm text-on-surface-variant">Nhân viên</span>
+              <span class="font-label-md text-label-md font-bold text-on-surface" id="contractSubmitEmployee">—</span>
+            </div>
+          </div>
+          <div id="contractSubmitErrors" class="hidden rounded-lg border border-error/30 bg-error-container/30 p-space-md"></div>
+          <label class="flex flex-col gap-1">
+            <span class="font-label-md text-label-md font-semibold text-on-surface">Ghi chú gửi duyệt</span>
+            <textarea id="contractSubmitNote" rows="3" maxlength="1000" placeholder=" Nhập yêu cầu hoặc ghi chú cho Giám đốc (không bắt buộc)" class="w-full rounded-lg border border-outline-variant bg-surface-container-lowest p-space-sm font-body-sm text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"></textarea>
+          </label>
+        </div>
+        <div class="px-space-lg py-space-md border-t border-surface-variant flex items-center justify-end gap-space-sm">
+          <button class="h-9 px-space-md rounded bg-surface-container text-on-surface hover:bg-surface-container-high font-label-md text-label-md" id="btnCancelContractSubmit" type="button">Hủy</button>
+          <button class="h-9 px-space-md rounded bg-primary text-on-primary hover:opacity-90 font-label-md text-label-md inline-flex items-center gap-1.5" id="btnConfirmContractSubmit" type="button">
+            <span class="material-symbols-outlined text-[18px]">send</span>
+            Xác nhận gửi
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="hidden fixed inset-0 z-[120] items-center justify-center bg-black/40 p-4"
+      id="modal-contract-review"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="contractReviewTitle"
+    >
+      <div class="w-full max-w-lg rounded-xl bg-surface-container-lowest shadow-2xl">
+        <div class="flex items-start justify-between gap-space-md px-space-lg py-space-md border-b border-surface-variant">
+          <div>
+            <h3 class="font-headline-sm text-headline-sm font-bold text-on-surface" id="contractReviewTitle">Phê duyệt hợp đồng</h3>
+            <p class="mt-0.5 font-body-sm text-body-sm text-on-surface-variant" id="contractReviewSubtitle">Kiểm tra thông tin trước khi xác nhận</p>
+          </div>
+          <button class="w-8 h-8 rounded hover:bg-surface-container text-on-surface-variant flex items-center justify-center" id="btnCloseContractReview" type="button" title="Đóng">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+        <div class="p-space-lg flex flex-col gap-space-md">
+          <div class="rounded-lg bg-surface-container-low p-space-md space-y-1.5">
+            <div class="flex items-center justify-between gap-space-md">
+              <span class="font-body-sm text-body-sm text-on-surface-variant">Mã hợp đồng</span>
+              <span class="font-label-md text-label-md font-bold text-on-surface" id="contractReviewCode">—</span>
+            </div>
+            <div class="flex items-center justify-between gap-space-md">
+              <span class="font-body-sm text-body-sm text-on-surface-variant">Nhân viên</span>
+              <span class="font-label-md text-label-md font-bold text-on-surface" id="contractReviewEmployee">—</span>
+            </div>
+          </div>
+          <div id="contractReviewErrors" class="hidden rounded-lg border border-error/30 bg-error-container/30 p-space-md"></div>
+          <div id="contractRejectFields" class="hidden flex-col gap-space-md">
+            <label class="flex flex-col gap-1">
+              <span class="font-label-md text-label-md font-semibold text-on-surface">Lý do từ chối <span class="text-error">*</span></span>
+              <textarea id="contractRejectionReason" rows="3" maxlength="1000" placeholder="Nhập lý do Giám đốc từ chối hợp đồng" class="w-full rounded-lg border border-outline-variant bg-surface-container-lowest p-space-sm font-body-sm text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-error"></textarea>
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="font-label-md text-label-md font-semibold text-on-surface">Yêu cầu chỉnh sửa <span class="text-error">*</span></span>
+              <textarea id="contractRevisionRequest" rows="3" maxlength="1000" placeholder="Nhập nội dung cần HR chỉnh sửa trước khi gửi lại" class="w-full rounded-lg border border-outline-variant bg-surface-container-lowest p-space-sm font-body-sm text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-error"></textarea>
+            </label>
+          </div>
+        </div>
+        <div class="px-space-lg py-space-md border-t border-surface-variant flex items-center justify-end gap-space-sm">
+          <button class="h-9 px-space-md rounded bg-surface-container text-on-surface hover:bg-surface-container-high font-label-md text-label-md" id="btnCancelContractReview" type="button">Hủy</button>
+          <button class="h-9 px-space-md rounded bg-primary text-on-primary hover:opacity-90 font-label-md text-label-md inline-flex items-center gap-1.5" id="btnConfirmContractReview" type="button">
+            <span class="material-symbols-outlined text-[18px]" id="contractReviewConfirmIcon">fact_check</span>
+            <span id="contractReviewConfirmLabel">Xác nhận phê duyệt</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="hidden fixed inset-0 z-[130] items-center justify-center bg-black/40 p-4"
+      id="modal-contract-sign"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="contractSignTitle"
+    >
+      <div class="w-full max-w-lg rounded-xl bg-surface-container-lowest shadow-2xl">
+        <div class="flex items-start justify-between gap-space-md px-space-lg py-space-md border-b border-surface-variant">
+          <div>
+            <h3 class="font-headline-sm text-headline-sm font-bold text-on-surface" id="contractSignTitle">Ký chính thức hợp đồng</h3>
+            <p class="mt-0.5 font-body-sm text-body-sm text-on-surface-variant">Xác nhận nội bộ, không phải chữ ký số</p>
+          </div>
+          <button class="w-8 h-8 rounded hover:bg-surface-container text-on-surface-variant flex items-center justify-center" id="btnCloseContractSign" type="button" title="Đóng">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+        <div class="p-space-lg flex flex-col gap-space-md">
+          <div class="rounded-lg bg-surface-container-low p-space-md space-y-1.5">
+            <div class="flex items-center justify-between gap-space-md">
+              <span class="font-body-sm text-body-sm text-on-surface-variant">Mã hợp đồng</span>
+              <span class="font-label-md text-label-md font-bold text-on-surface" id="contractSignCode">—</span>
+            </div>
+            <div class="flex items-center justify-between gap-space-md">
+              <span class="font-body-sm text-body-sm text-on-surface-variant">Nhân viên</span>
+              <span class="font-label-md text-label-md font-bold text-on-surface" id="contractSignEmployee">—</span>
+            </div>
+            <div class="flex items-center justify-between gap-space-md">
+              <span class="font-body-sm text-body-sm text-on-surface-variant">Phiên bản đã duyệt</span>
+              <span class="font-label-md text-label-md font-bold text-on-surface" id="contractSignVersion">—</span>
+            </div>
+          </div>
+          <div class="rounded-lg border border-sky-300 bg-sky-50 p-space-md font-body-sm text-body-sm text-sky-900">
+            Hệ thống sẽ sao chép đúng file đã được Giám đốc phê duyệt thành bản chính thức, lưu thông tin người ký và cập nhật trạng thái hợp đồng. Đây là xác nhận nội bộ, không tạo chữ ký điện tử.
+          </div>
+          <div id="contractSignErrors" class="hidden rounded-lg border border-error/30 bg-error-container/30 p-space-md"></div>
+          <label class="flex items-start gap-2 cursor-pointer">
+            <input class="mt-0.5 w-4 h-4 accent-primary" id="contractConfirmSignCheck" type="checkbox" />
+            <span class="font-body-sm text-body-sm text-on-surface">Tôi xác nhận đã kiểm tra nội dung hợp đồng và ký chính thức với tư cách người có thẩm quyền.</span>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="font-label-md text-label-md font-semibold text-on-surface">Mã tham chiếu <span class="font-body-sm text-body-sm text-on-surface-variant">(không bắt buộc)</span></span>
+            <input class="w-full h-9 rounded-lg border border-outline-variant bg-surface-container-lowest px-space-sm font-body-sm text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary" id="contractSignTransactionRef" maxlength="100" placeholder="Nhập mã tham chiếu nếu có" type="text" />
+          </label>
+        </div>
+        <div class="px-space-lg py-space-md border-t border-surface-variant flex items-center justify-end gap-space-sm">
+          <button class="h-9 px-space-md rounded bg-surface-container text-on-surface hover:bg-surface-container-high font-label-md text-label-md" id="btnCancelContractSign" type="button">Hủy</button>
+          <button class="h-9 px-space-md rounded bg-emerald-700 text-on-primary hover:opacity-90 font-label-md text-label-md inline-flex items-center gap-1.5" id="btnConfirmContractSign" type="button">
+            <span class="material-symbols-outlined text-[18px]">draw</span>
+            Xác nhận ký
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="hidden fixed inset-0 z-[140] items-center justify-center bg-black/40 p-4"
+      id="modal-contract-signing-revision"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="contractSigningRevisionTitle"
+    >
+      <div class="w-full max-w-lg rounded-xl bg-surface-container-lowest shadow-2xl">
+        <div class="flex items-start justify-between gap-space-md px-space-lg py-space-md border-b border-surface-variant">
+          <div>
+            <h3 class="font-headline-sm text-headline-sm font-bold text-on-surface" id="contractSigningRevisionTitle">Yêu cầu chỉnh sửa hợp đồng đã duyệt</h3>
+            <p class="mt-0.5 font-body-sm text-body-sm text-on-surface-variant">Hợp đồng sẽ được trả lại cho HR để cập nhật phiên bản mới</p>
+          </div>
+          <button class="w-8 h-8 rounded hover:bg-surface-container text-on-surface-variant flex items-center justify-center" id="btnCloseContractSigningRevision" type="button" title="Đóng">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+        <div class="p-space-lg flex flex-col gap-space-md">
+          <div class="rounded-lg bg-surface-container-low p-space-md space-y-1.5">
+            <div class="flex items-center justify-between gap-space-md">
+              <span class="font-body-sm text-body-sm text-on-surface-variant">Mã hợp đồng</span>
+              <span class="font-label-md text-label-md font-bold text-on-surface" id="contractSigningRevisionCode">—</span>
+            </div>
+            <div class="flex items-center justify-between gap-space-md">
+              <span class="font-body-sm text-body-sm text-on-surface-variant">Nhân viên</span>
+              <span class="font-label-md text-label-md font-bold text-on-surface" id="contractSigningRevisionEmployee">—</span>
+            </div>
+          </div>
+          <div id="contractSigningRevisionErrors" class="hidden rounded-lg border border-error/30 bg-error-container/30 p-space-md"></div>
+          <label class="flex flex-col gap-1">
+            <span class="font-label-md text-label-md font-semibold text-on-surface">Lý do yêu cầu chỉnh sửa <span class="text-error">*</span></span>
+            <textarea class="w-full rounded-lg border border-outline-variant bg-surface-container-lowest p-space-sm font-body-sm text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-error" id="contractSigningRevisionReason" rows="3" maxlength="1000" placeholder="Nhập lý do trả lại hợp đồng"></textarea>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="font-label-md text-label-md font-semibold text-on-surface">Nội dung cần chỉnh sửa <span class="text-error">*</span></span>
+            <textarea class="w-full rounded-lg border border-outline-variant bg-surface-container-lowest p-space-sm font-body-sm text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-error" id="contractSigningRevisionRequest" rows="3" maxlength="1000" placeholder="Nhập nội dung cụ thể cần HR chỉnh sửa"></textarea>
+          </label>
+        </div>
+        <div class="px-space-lg py-space-md border-t border-surface-variant flex items-center justify-end gap-space-sm">
+          <button class="h-9 px-space-md rounded bg-surface-container text-on-surface hover:bg-surface-container-high font-label-md text-label-md" id="btnCancelContractSigningRevision" type="button">Hủy</button>
+          <button class="h-9 px-space-md rounded bg-error text-on-error hover:opacity-90 font-label-md text-label-md inline-flex items-center gap-1.5" id="btnConfirmContractSigningRevision" type="button">
+            <span class="material-symbols-outlined text-[18px]">send</span>
+            Gửi yêu cầu
           </button>
         </div>
       </div>

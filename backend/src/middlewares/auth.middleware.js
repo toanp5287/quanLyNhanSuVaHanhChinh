@@ -1,34 +1,46 @@
 import jwt from "jsonwebtoken";
 import { hasAnyPermission, hasPermission } from "../utils/helper.js";
+import { loginIpGuard } from "./deviceSecurity.middleware.js";
 
-export const verifyToken = (req, res, next) => {
+const extractToken = (req) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.split(" ")[1];
+  }
+  if (req.query?.token) return String(req.query.token);
+  return null;
+};
+
+const authorizeRequest = (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    const token = extractToken(req);
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!token) {
       return res.status(401).json({
         success: false,
-        message: "Bạn chưa đăng nhập",
+        message: "B?n chua dang nh?p",
       });
     }
 
-    const token = authHeader.split(" ")[1];
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    req.user = decoded;
-
-    next();
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    if (req.path === "/logout" || req.originalUrl?.includes("/auth/logout")) {
+      return next();
+    }
+    return loginIpGuard(req, res, next);
   } catch (error) {
     return res.status(401).json({
       success: false,
       message:
         error.name === "TokenExpiredError"
-          ? "Token đã hết hạn, vui lòng đăng nhập lại"
-          : "Token không hợp lệ",
+          ? "Token d� h?t h?n, vui l�ng dang nh?p l?i"
+          : "Token kh�ng h?p l?",
     });
   }
 };
+
+export const verifyToken = authorizeRequest;
+
+export const verifyStreamToken = authorizeRequest;
 
 export const requireRole = (roleId) => {
   return (req, res, next) => {
@@ -42,6 +54,8 @@ export const requireRole = (roleId) => {
     next();
   };
 };
+
+export const requireAdmin = requireRole("SUPER_ADMIN");
 
 export const requirePermission = (permissionCode) => {
   return (req, res, next) => {

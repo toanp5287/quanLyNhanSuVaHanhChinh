@@ -1,0 +1,155 @@
+<div id="informationRoot" class="flex flex-col w-full gap-space-lg pb-space-xl">
+  <section class="flex flex-col md:flex-row md:items-end justify-between gap-space-md">
+    <div class="flex flex-col gap-space-xs">
+      <div class="flex items-center gap-1.5 text-body-sm font-body-sm text-on-surface-variant">
+        <span>Trang chủ</span>
+        <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+        <span class="text-primary font-medium">Bản tin &amp; Nội quy</span>
+      </div>
+      <div>
+        <h1 class="font-headline-md text-headline-md text-on-surface font-bold">
+          Bản tin &amp; Nội quy công ty
+        </h1>
+        <p class="mt-1 text-body-md font-body-md text-on-surface-variant max-w-2xl">
+          Theo dõi thông báo nội bộ theo đối tượng nhận và tra cứu các văn bản quy chế hiện hành tại một nơi.
+        </p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary-container text-on-primary-container font-label-sm text-label-sm font-medium">
+        <span class="material-symbols-outlined text-[16px]">campaign</span>
+        <span id="informationTabCount">0 thông báo</span>
+      </span>
+      <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-sm text-label-sm font-medium">
+        <span class="material-symbols-outlined text-[16px]">description</span>
+        5 văn bản
+      </span>
+    </div>
+  </section>
+
+  <div class="inline-flex items-center gap-1 p-1 rounded-lg bg-surface-container-low w-fit">
+    <button
+      class="h-9 px-space-md rounded-md flex items-center gap-1.5 font-label-lg text-label-lg bg-surface-container-lowest text-primary shadow-sm transition-colors info-tab-active"
+      data-info-tab="bulletin"
+      type="button"
+    >
+      <span class="material-symbols-outlined text-[18px]">newspaper</span>
+      Thông báo
+    </button>
+    <button
+      class="h-9 px-space-md rounded-md flex items-center gap-1.5 font-label-lg text-label-lg text-on-surface-variant hover:text-on-surface transition-colors"
+      data-info-tab="document"
+      type="button"
+    >
+      <span class="material-symbols-outlined text-[18px]">menu_book</span>
+      Nội quy &amp; văn bản
+    </button>
+  </div>
+
+  <section id="informationBulletinPanel" class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-space-sm">
+      <div class="flex items-center gap-space-xs">
+        <span class="material-symbols-outlined text-primary text-[22px]">campaign</span>
+        <div>
+          <h2 class="text-title-md font-title-md text-on-surface">Bản tin đến bạn</h2>
+          <p class="text-body-sm font-body-sm text-on-surface-variant">Toàn công ty · Phòng ban · Cá nhân</p>
+        </div>
+      </div>
+      <span id="informationBulletinCount" class="px-2.5 py-1 rounded-full bg-primary-container text-on-primary-container font-label-sm text-label-sm font-semibold">0 bản tin</span>
+    </div>
+
+    <div class="mt-space-md grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-space-xs">
+      <div class="relative lg:col-span-4">
+        <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-outline text-[18px]">search</span>
+        <input
+          id="informationSearch"
+          class="w-full h-9 pl-8 pr-3 text-body-sm font-body-sm bg-surface-container-low rounded focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary outline-none transition-all"
+          placeholder="Tìm theo tiêu đề, nội dung..."
+          type="search"
+        />
+      </div>
+      <div class="relative lg:col-span-3">
+        <select
+          id="informationFilterScope"
+          class="w-full h-9 pl-2.5 pr-8 text-body-sm font-body-sm bg-surface-container-low rounded text-on-surface focus:ring-1 focus:ring-primary outline-none cursor-pointer appearance-none"
+        >
+          <option value="">Tất cả đối tượng nhận</option>
+          <option value="COMPANY">Toàn công ty</option>
+          <option value="DEPARTMENT">Phòng ban</option>
+          <option value="INDIVIDUAL">Cá nhân</option>
+          <option value="ROLE">Theo vai trò</option>
+        </select>
+        <span class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant text-[18px]">arrow_drop_down</span>
+      </div>
+      <div class="relative lg:col-span-2">
+        <select
+          id="informationFilterLevel"
+          class="w-full h-9 pl-2.5 pr-8 text-body-sm font-body-sm bg-surface-container-low rounded text-on-surface focus:ring-1 focus:ring-primary outline-none cursor-pointer appearance-none"
+        >
+          <option value="">Mọi mức độ</option>
+          <option value="CRITICAL">Khẩn cấp</option>
+          <option value="HIGH">Quan trọng</option>
+          <option value="MEDIUM">Trung bình</option>
+          <option value="LOW">Thông tin chung</option>
+        </select>
+        <span class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant text-[18px]">arrow_drop_down</span>
+      </div>
+      <div class="relative lg:col-span-2">
+        <select
+          id="informationFilterYear"
+          class="w-full h-9 pl-2.5 pr-8 text-body-sm font-body-sm bg-surface-container-low rounded text-on-surface focus:ring-1 focus:ring-primary outline-none cursor-pointer appearance-none"
+        >
+          <option value="">Tất cả năm</option>
+          <option value="2026">Năm 2026</option>
+          <option value="2025">Năm 2025</option>
+        </select>
+        <span class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant text-[18px]">arrow_drop_down</span>
+      </div>
+      <div class="lg:col-span-1 flex justify-end">
+        <button
+          id="informationResetFilters"
+          class="h-9 w-9 rounded bg-surface-container-low hover:bg-surface-container-high text-on-surface-variant flex items-center justify-center"
+          title="Xóa bộ lọc"
+          type="button"
+        >
+          <span class="material-symbols-outlined text-[18px]">filter_alt_off</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="informationBulletinList" class="mt-space-md grid grid-cols-1 lg:grid-cols-2 gap-space-sm"></div>
+  </section>
+
+  <div id="informationDocumentPanel" class="hidden grid-cols-1 xl:grid-cols-12 gap-space-lg items-start">
+    <section class="xl:col-span-4 bg-surface-container-lowest rounded-xl p-space-md shadow-sm">
+      <div class="flex items-center justify-between gap-space-sm">
+        <div class="flex items-center gap-space-xs">
+          <span class="material-symbols-outlined text-primary text-[20px]">description</span>
+          <h2 class="text-title-md font-title-md text-on-surface">Văn bản hiện hành</h2>
+        </div>
+        <span class="font-label-sm text-label-sm text-on-surface-variant">5 mục</span>
+      </div>
+      <div id="documentMasterList" class="mt-space-sm flex flex-col gap-1"></div>
+    </section>
+
+    <section id="documentDetail" class="xl:col-span-8 bg-surface-container-lowest rounded-xl p-space-lg shadow-sm"></section>
+  </div>
+
+  <footer class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col md:flex-row items-center justify-between gap-space-sm text-on-surface-variant font-body-sm text-body-sm">
+    <div class="flex items-center gap-2 text-center md:text-left">
+      <span class="material-symbols-outlined text-primary text-[18px]">verified</span>
+      <span>
+        Văn bản ban hành trên cổng thông tin có giá trị thi hành kể từ ngày ký duyệt, tuân thủ
+        <strong>Bộ luật Lao động 45/2019/QH14</strong> và <strong>Luật Giao dịch điện tử</strong>.
+      </span>
+    </div>
+    <div class="flex items-center gap-3 shrink-0 font-label-sm text-label-sm">
+      <span>Phiên bản: <strong>v4.28-Enterprise</strong></span>
+      <span>•</span>
+      <span class="inline-flex items-center gap-1 text-emerald-700">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+        Đồng bộ thời gian thực
+      </span>
+    </div>
+  </footer>
+</div>
