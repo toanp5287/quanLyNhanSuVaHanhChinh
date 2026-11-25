@@ -6,6 +6,7 @@ import {
   updateCurrentUser,
 } from "../services/auth.service.js";
 import api from "../services/api.js";
+import { requireDevicePermission } from "../services/deviceSecurity.js";
 import { Human } from "@vladmandic/human";
 
 const ROLE_LABELS = {
@@ -22,13 +23,12 @@ const CARD_PERMISSIONS = {
   "Tất cả nhân viên": ["HR.PROFILE_VIEW"],
   "Nhân viên đang làm": ["HR.PROFILE_VIEW"],
   "Nhân viên đã nghỉ": ["HR.PROFILE_VIEW"],
-  "Hợp đồng lao động": ["HR.CONTRACT_MANAGE"],
+  "Hợp đồng lao động": ["HR.CONTRACT_MANAGE", "HR.CONTRACT_SIGN"],
   "Sơ đồ phòng ban": ["HR.PROFILE_VIEW"],
   "Bảng chấm công tháng": ["ATT.VIEW"],
-  "Phân ca làm việc": ["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"],
-  "Quản lý ca làm việc": ["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"],
+  "Phân ca làm việc": ["ATT.SHIFT_OT_MANAGE"],
   "Dữ liệu máy chấm công": ["ATT.VIEW"],
-  "Làm thêm giờ (OT)": ["ATT.SHIFT_OT_MANAGE"],
+  "Làm thêm giờ (OT)": ["ATT.SHIFT_OT_MANAGE", "ESS.SELF_PROFILE"],
   "Giải trình đi muộn/về sớm": ["ATT.VIEW"],
   "Quỹ phép năm": ["LEAVE.QUOTA_MANAGE", "LEAVE.VIEW_REQUEST"],
   "Đơn xin nghỉ phép": ["LEAVE.VIEW_REQUEST", "LEAVE.APPROVE"],
@@ -64,6 +64,7 @@ const CARD_PERMISSIONS = {
   "Thu hồi khi nghỉ việc": ["ASSET.ALLOCATE_MANAGE"],
   "Báo hỏng & Đền bù": ["ASSET.VIEW_OWN", "ASSET.ALLOCATE_MANAGE"],
   "Cổng thông tin cá nhân": [],
+  "Lịch sử chấm công": ["ESS.SELF_PROFILE"],
   "Tạo đơn từ trực tuyến": ["LEAVE.VIEW_REQUEST"],
   "Trung tâm Phê duyệt": ["LEAVE.APPROVE", "ATT.SHIFT_OT_MANAGE"],
   "Bản tin & Nội quy công ty": [],
@@ -86,10 +87,17 @@ const NAV_PERMISSIONS = {
   "danh-gia": ["EVAL.SELF_ASSESS", "EVAL.REVIEW_9BOX"],
   "tai-san": ["ASSET.VIEW_OWN", "ASSET.ALLOCATE_MANAGE"],
   "bao-cao": ["BI.DASHBOARD_VIEW"],
+  "thong-tin-noi-bo": [],
+  "cham-cong": ["ATT.VIEW"],
 };
 
 const ACTION_BUTTONS = {
   SUPER_ADMIN: [
+    {
+      label: "Ký hợp đồng đã duyệt",
+      icon: "draw",
+      permission: "HR.CONTRACT_SIGN",
+    },
     {
       label: "Cấp phát / Thu hồi thiết bị",
       icon: "inventory",
@@ -157,6 +165,11 @@ const ACTION_BUTTONS = {
   ],
   CB_PAYROLL: [
     {
+      label: "Ký hợp đồng đã duyệt",
+      icon: "draw",
+      permission: "HR.CONTRACT_SIGN",
+    },
+    {
       label: "Chốt bảng công",
       icon: "task_alt",
       permission: "ATT.SHIFT_OT_MANAGE",
@@ -178,6 +191,11 @@ const ACTION_BUTTONS = {
     },
   ],
   OFFICE_ADMIN: [
+    {
+      label: "Ký hợp đồng đã duyệt",
+      icon: "draw",
+      permission: "HR.CONTRACT_SIGN",
+    },
     {
       label: "Nhập kho thiết bị",
       icon: "add_box",
@@ -422,18 +440,23 @@ const applyNavPermissions = (user) => {
 
 const ensurePermissionsNav = (user) => {
   const nav = document.querySelector("aside nav");
-  if (!nav || nav.querySelector('[data-path="phan-quyen"]')) return;
+  if (!nav || user?.role_id !== "SUPER_ADMIN") return;
 
-  if (user.role_id !== "SUPER_ADMIN") return;
-
-  nav.insertAdjacentHTML(
-    "beforeend",
-    `
-      <a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="phan-quyen" href="#" title="Phân quyền" data-tooltip="Phân quyền" aria-label="Phân quyền">
-        <span class="material-symbols-outlined text-[20px]">admin_panel_settings</span>
+  const adminLinks = [
+    { path: "phan-quyen", title: "Phân quyền", icon: "admin_panel_settings" },
+    { path: "quan-ly-thiet-bi", title: "Thiết bị & Mạng", icon: "router" },
+  ];
+  adminLinks.forEach((link) => {
+    if (nav.querySelector(`[data-path="${link.path}"]`)) return;
+    nav.insertAdjacentHTML(
+      "beforeend",
+      `
+      <a class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="${link.path}" href="#" title="${link.title}" data-tooltip="${link.title}" aria-label="${link.title}">
+        <span class="material-symbols-outlined text-[20px]">${link.icon}</span>
       </a>
     `,
-  );
+    );
+  });
 };
 
 const showToast = (message, options = {}) => {
@@ -458,23 +481,26 @@ const DEBUG_FACE_SCAN = false;
 const FACE_CAPTURE_MODEL = "human-faceres1024-subjectlock-v3";
 const FACE_SAMPLE_COUNT = 5;
 const FACE_ENROLL_CONFIG = {
-  scanIntervalMs: 140,
-  sampleIntervalMs: 350,
-  faceHeightMin: 0.25,
-  faceHeightMax: 0.55,
-  maxAngleRad: 0.28,
+  scanIntervalMs: 80,
+  sampleIntervalMs: 180,
+  faceHeightMin: 0.28,
+  faceHeightMax: 0.62,
+  maxYawRad: 12 * Math.PI / 180,
+  maxPitchRad: 15 * Math.PI / 180,
+  maxRollRad: 10 * Math.PI / 180,
   luminanceMin: 65,
   luminanceMax: 215,
   blurScoreMin: 30,
+  realMin: 0.72,
+  liveMin: 0.68,
+  scoreMin: 0.85,
   emotionScoreMax: 0.28,
   marMax: 0.14,
   mouthWidthRatioMax: 0.44,
-  baselineEarFrames: 5,
-  blinkCloseRatio: 0.75,
-  blinkOpenRatio: 0.9,
-  blinkMinMs: 100,
-  blinkMaxMs: 800,
-  intraScoreMin: 0.82,
+  intraScoreMin: 0.84,
+  staticSampleMax: 0.9988,
+  duplicateHardThreshold: 0.72,
+  duplicateWarnThreshold: 0.64,
 };
 const TRACK_CONFIG = {
   face: {
@@ -508,7 +534,10 @@ const ENROLL_RECOGNIZE_CONFIG = {
 const human = new Human({
   modelBasePath: "https://cdn.jsdelivr.net/npm/@vladmandic/human/models/",
   cacheSensitivity: 0,
-  ...TRACK_CONFIG,
+  face: { enabled: true, detector: { maxDetected: 2, rotation: true }, mesh: { enabled: true },
+    iris: { enabled: true }, description: { enabled: true, skipFrames: 0, skipTime: 0 }, antispoof: { enabled: true, skipFrames: 0, skipTime: 0 }, liveness: { enabled: true, skipFrames: 0, skipTime: 0 },
+    emotion: { enabled: false } },
+  body: { enabled: false }, hand: { enabled: false }, object: { enabled: false }, gesture: { enabled: true },
 });
 let faceModelPromise;
 let faceEnrollStream = null;
@@ -552,10 +581,7 @@ const setFaceEnrollStatus = (text, hint) => {
 };
 
 export const ensureFaceModels = async () => {
-  if (!faceModelPromise) faceModelPromise = (async () => {
-    await human.load(TRACK_CONFIG);
-    await human.load(RECOGNIZE_CONFIG);
-  })().catch(error => { faceModelPromise = null; throw error; });
+  if (!faceModelPromise) faceModelPromise = (async () => { await human.load(); await human.warmup(); })().catch(error => { faceModelPromise = null; throw error; });
   await faceModelPromise;
 };
 
@@ -933,7 +959,7 @@ const buildCaptureMetadata = (state) => {
   };
 };
 
-const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}, isActive = () => true, probeOnly = false, timeoutMs = 75000, enrollmentMode = false, initialBaseline = null }) => {
+const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}, isActive = () => true, probeOnly = false, timeoutMs = 25000, enrollmentMode = false, initialBaseline = null }) => {
   if (enrollmentMode) await ensureEnrollFaceModels();
   else await ensureFaceModels();
   const host = video.parentElement;
@@ -980,6 +1006,11 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
       if (tracked.otherPersons > 0) state.rejectedOthers += 1;
       drawFaceGuides(guide, video, state.subject, tracked.message);
       const idleMs = enrollmentMode ? FACE_ENROLL_CONFIG.scanIntervalMs : 60;
+      if (enrollmentMode && candidates.length !== 1) {
+        onStage(candidates.length > 1 ? "Chỉ được có 1 khuôn mặt trong khung hình khi đăng ký." : tracked.message);
+        await new Promise(resolve => setTimeout(resolve, idleMs));
+        continue;
+      }
       if (!state.subject?.locked) {
         onStage(tracked.message);
         await new Promise(resolve => setTimeout(resolve, idleMs));
@@ -991,21 +1022,27 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
       const face = recognition.face?.length === 1 ? recognition.face[0] : null;
       const metrics = cropMetrics(context, faceCanvas.width);
       const angle = face?.rotation?.angle;
-      const maxAngle = enrollmentMode ? FACE_ENROLL_CONFIG.maxAngleRad : 0.22;
-      const facing = angle && Math.abs(angle.yaw) <= maxAngle && Math.abs(angle.pitch) <= maxAngle && Math.abs(angle.roll) <= maxAngle;
+      const facing = enrollmentMode
+        ? Boolean(angle
+          && Math.abs(angle.yaw) <= FACE_ENROLL_CONFIG.maxYawRad
+          && Math.abs(angle.pitch) <= FACE_ENROLL_CONFIG.maxPitchRad
+          && Math.abs(angle.roll) <= FACE_ENROLL_CONFIG.maxRollRad)
+        : Boolean(angle && Math.abs(angle.yaw) <= 0.22 && Math.abs(angle.pitch) <= 0.22 && Math.abs(angle.roll) <= 0.22);
       const box = face?.box;
       const boxValid = box && box[0] >= 10 && box[1] >= 10 && box[0] + box[2] <= 310 && box[1] + box[3] <= 310 && box[2] >= 130;
       const framing = enrollmentMode ? evaluateEnrollmentFraming(state.subject, width, height) : { ok: true, message: "", faceHeightRatio: 0 };
       const neutral = enrollmentMode ? evaluateNeutralFace(face) : { ok: true, message: "", mar: 0, mouthWidthRatio: 0, emotion: null };
       const currentEar = enrollmentMode ? eyeRatio(face) : null;
       if (!enrollmentMode && face && Number(face.score) >= 0.7 && detectEyeBlink(face, recognition.gesture, state.blinkState)) state.blinks += 1;
-      if (enrollmentMode && face && framing.ok && neutral.ok && facing && Number(face.score) >= 0.7 && detectEnrollmentBlink(face, recognition.gesture, state, performance.now())) state.blinks += 1;
       const embeddingLength = face?.embedding?.length || 0;
       const embeddingValid = enrollmentMode ? embeddingLength === 1024 : embeddingLength >= 512;
       const blurMinimum = enrollmentMode ? FACE_ENROLL_CONFIG.blurScoreMin : 30;
       const brightnessMinimum = enrollmentMode ? FACE_ENROLL_CONFIG.luminanceMin : 50;
       const brightnessMaximum = enrollmentMode ? FACE_ENROLL_CONFIG.luminanceMax : 220;
-      const quality = face && facing && framing.ok && neutral.ok && Number(face.real) >= 0.7 && Number(face.live) >= 0.7 && eyeRatio(face) > 0.18 && boxValid && Number(face.score) >= 0.85 && embeddingValid && metrics.brightness >= brightnessMinimum && metrics.brightness <= brightnessMaximum && metrics.sharpness >= blurMinimum;
+      const realMin = enrollmentMode ? FACE_ENROLL_CONFIG.realMin : 0.7;
+      const liveMin = enrollmentMode ? FACE_ENROLL_CONFIG.liveMin : 0.7;
+      const scoreMin = enrollmentMode ? FACE_ENROLL_CONFIG.scoreMin : 0.85;
+      const quality = face && facing && framing.ok && neutral.ok && Number(face.real) >= realMin && Number(face.live) >= liveMin && eyeRatio(face) > 0.18 && boxValid && Number(face.score) >= scoreMin && embeddingValid && metrics.brightness >= brightnessMinimum && metrics.brightness <= brightnessMaximum && metrics.sharpness >= blurMinimum;
       if (DEBUG_FACE_SCAN) {
         console.log("[FACE_SCAN]", JSON.stringify({
           detectMs: Math.round(performance.now() - cycleStarted),
@@ -1039,7 +1076,7 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
       updateMin("minFaceWidth", box[2]);
       const values = Array.from(face.embedding);
       if (probeOnly) return { embedding: values, capture: buildCaptureMetadata(state), blinkBaseline: { baselineEars: state.baselineEars, baselineEAR: state.baselineEAR } };
-      if (!state.blinks) {
+      if (!enrollmentMode && !state.blinks) {
         onStage("Đã khóa đúng người quét. HÃY CHỚP MẮT 1 LẦN ĐỂ BẮT ĐẦU QUÉT");
         await new Promise(resolve => setTimeout(resolve, idleMs));
         continue;
@@ -1062,9 +1099,24 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
       onStage(`Đang lấy mẫu khuôn mặt: ${state.samples.length}/${FACE_SAMPLE_COUNT}. Người đi qua lại đã được bỏ qua.`);
       if (state.samples.length === FACE_SAMPLE_COUNT) {
         if (enrollmentMode) {
-          const intraScore = Math.min(...state.samples.map(vector => vectorSimilarity(vector, meanVector(state.samples))));
-          state.lastIntraScore = intraScore;
-          if (intraScore < FACE_ENROLL_CONFIG.intraScoreMin) {
+          let minSim = 1;
+          let maxSim = -1;
+          for (let i = 0; i < state.samples.length; i++) {
+            for (let j = i + 1; j < state.samples.length; j++) {
+              const score = vectorSimilarity(state.samples[i], state.samples[j]);
+              minSim = Math.min(minSim, score);
+              maxSim = Math.max(maxSim, score);
+            }
+          }
+          state.lastIntraScore = minSim;
+          if (maxSim > FACE_ENROLL_CONFIG.staticSampleMax) {
+            state.samples = [];
+            state.lastCapture = 0;
+            onStage("Phát hiện ảnh tĩnh không hợp lệ. Vui lòng quét khuôn mặt thật trực tiếp.");
+            await new Promise(resolve => setTimeout(resolve, idleMs));
+            continue;
+          }
+          if (minSim < FACE_ENROLL_CONFIG.intraScoreMin) {
             state.samples = [];
             state.lastCapture = 0;
             onStage("Giữ yên khuôn mặt và thử lại");
@@ -1072,7 +1124,7 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
             continue;
           }
         }
-        return { embeddings: state.samples, blink_verified: true, capture: buildCaptureMetadata(state) };
+        return { embeddings: state.samples, blink_verified: !enrollmentMode, capture: buildCaptureMetadata(state) };
       }
       await new Promise(resolve => setTimeout(resolve, betweenSamplesMs));
     }
@@ -1085,32 +1137,57 @@ const runFaceCapture = async (video, { onProgress = () => {}, onStage = () => {}
 };
 
 export const captureFaceSamples = async (video, onProgress = () => {}, isActive = () => true, onStage = () => {}, options = {}) =>
-  runFaceCapture(video, { onProgress, onStage, isActive, probeOnly: false, timeoutMs: 75000, ...options });
+  runFaceCapture(video, { onProgress, onStage, isActive, probeOnly: false, timeoutMs: 25000, ...options });
 
 const captureFaceProbe = async (video, isActive = () => true, onStage = () => {}) =>
   runFaceCapture(video, { onStage, isActive, probeOnly: true, timeoutMs: 25000, enrollmentMode: true });
 
 
+const isVirtualCameraLabel = (label = "") => {
+  const normalized = String(label || "").toLowerCase();
+  return ["obs", "virtual", "manycam", "snap camera", "splitcam", "youcam", "camtwist", "vcam", "iriun", "droidcam"].some((pattern) => normalized.includes(pattern));
+};
+
 const showFaceEnrollConflict = (error, retryLabel = "Quét lại khuôn mặt") => {
-  const conflict = error.response?.data?.conflict_employee;
-  const code = error.response?.data?.error_code;
-  if (!conflict || !["FACE_DUPLICATE_CONFLICT", "FACE_ALREADY_ACTIVATED"].includes(code)) return false;
+  const data = error.response?.data || {};
+  const code = data.error_code;
+  const conflict = data.conflict_employee;
+  const blockingCodes = new Set([
+    "FACE_DUPLICATE_CONFLICT",
+    "FACE_ALREADY_ACTIVATED",
+    "DUPLICATE_FACE_DETECTED",
+    "SIMILAR_FACE_REVIEW_REQUIRED",
+    "FACE_ALREADY_ENROLLED",
+  ]);
+  if (!blockingCodes.has(code)) return false;
   document.getElementById("faceEnrollConflict")?.remove();
   const warning = document.createElement("div");
   warning.id = "faceEnrollConflict";
   warning.className = "mt-3 rounded-lg border border-red-400 bg-red-50 p-3 text-sm text-red-900";
   warning.setAttribute("role", "alert");
-  const title = document.createElement("p"); title.className = "font-bold"; title.textContent = "KHUÔN MẶT ĐÃ ĐƯỢC KÍCH HOẠT CHO TÀI KHOẢN KHÁC";
+  const title = document.createElement("p");
+  title.className = "font-bold";
+  title.textContent = code === "FACE_ALREADY_ENROLLED"
+    ? "TÀI KHOẢN ĐÃ KÍCH HOẠT FACEID"
+    : "KHÔNG THỂ KÍCH HOẠT FACEID";
   warning.appendChild(title);
-  for (const text of [`Mã hồ sơ: ${conflict.employee_code}`, `Họ tên: ${conflict.full_name}`, `Độ khớp: ${conflict.similarity_percent}%`, ...(conflict.matched_samples ? [`Mẫu đạt ngưỡng: ${conflict.matched_samples}`] : []), "Một khuôn mặt chỉ được dùng cho một tài khoản. Không cho phép quét hoặc gán cho tài khoản này."]) {
-    const line = document.createElement("p"); line.textContent = text; warning.appendChild(line);
+  const message = document.createElement("p");
+  message.textContent = data.message || "Không thể kích hoạt FaceID.";
+  warning.appendChild(message);
+  if (conflict && ["FACE_DUPLICATE_CONFLICT", "FACE_ALREADY_ACTIVATED"].includes(code)) {
+    for (const text of [`Mã hồ sơ: ${conflict.employee_code}`, `Họ tên: ${conflict.full_name}`, `Độ khớp: ${conflict.similarity_percent}%`]) {
+      const line = document.createElement("p"); line.textContent = text; warning.appendChild(line);
+    }
   }
-  const retry = document.createElement("button"); retry.type = "button"; retry.textContent = retryLabel;
-  retry.className = "mt-2 rounded border px-3 py-2 font-semibold"; retry.addEventListener("click", runFaceEnrollScan);
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.textContent = code === "FACE_ALREADY_ENROLLED" ? "Đã hiểu" : retryLabel;
+  retry.className = "mt-2 rounded border px-3 py-2 font-semibold";
+  retry.addEventListener("click", code === "FACE_ALREADY_ENROLLED" ? closeFaceEnrollModal : runFaceEnrollScan);
   warning.appendChild(retry);
   document.getElementById("faceEnrollHint")?.parentElement.appendChild(warning);
-  setFaceEnrollStatus("Không cho phép kích hoạt khuôn mặt", error.response.data.message);
-  showToast(error.response.data.message, { duration: 6000 });
+  setFaceEnrollStatus("Không cho phép kích hoạt khuôn mặt", data.message || "Vui lòng liên hệ Admin/HR.");
+  showToast(data.message || "Không thể kích hoạt FaceID.", { duration: 6000 });
   return true;
 };
 
@@ -1138,7 +1215,7 @@ const runFaceEnrollScan = async () => {
     await api.post("/attendance/check-face-owner", { embedding: probe.embedding, capture: probe.capture });
     if (session !== faceEnrollSession || !document.getElementById("modal-faceid-enroll")?.isConnected) return;
     if (startBtn) startBtn.querySelector("span:last-child").textContent = "Bắt đầu quét";
-    setFaceEnrollStatus("Đang lấy 5 mẫu khuôn mặt...", "Giữ khuôn mặt tự nhiên, nhìn thẳng, không cười và giữ yên khi được yêu cầu.");
+    setFaceEnrollStatus("Đang lấy 5 mẫu khuôn mặt...", "Giữ khuôn mặt tự nhiên, nhìn thẳng, không cười, giữ yên trong ~1.2 giây.");
     faceEnrollDescriptor = await captureFaceSamples(
       video,
       (count, total) => setFaceEnrollStatus(`Đang quét mẫu: ${count}/${total} (${Math.round(count / total * 100)}%)`),
@@ -1170,6 +1247,12 @@ const enableFaceEnrollCamera = async () => {
   video?.classList.remove("hidden");
   setFaceEnrollStatus("Đang mở camera...", "Cho phép trình duyệt sử dụng webcam nếu được hỏi.");
   if (startBtn) startBtn.disabled = true;
+  const deviceAllowed = await requireDevicePermission("face_enroll", async () => {});
+  if (!deviceAllowed) {
+    setFaceEnrollStatus("Thiết bị chưa được cấp phép", "Máy này chưa được cấp quyền FaceID. Vui lòng liên hệ quản trị viên để được hỗ trợ.");
+    if (startBtn) startBtn.disabled = false;
+    return;
+  }
   try {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       throw new Error("Camera cần trang HTTPS hoặc localhost và trình duyệt hỗ trợ webcam.");
@@ -1179,10 +1262,20 @@ const enableFaceEnrollCamera = async () => {
       stream.getTracks().forEach(track => track.stop());
       return;
     }
+    const track = stream.getVideoTracks()[0];
+    const label = track?.label || "";
+    const settings = track?.getSettings?.() || {};
+    if (isVirtualCameraLabel(label)) {
+      stream.getTracks().forEach(t => t.stop());
+      throw new Error("Phát hiện camera ảo. Vui lòng dùng webcam vật lý để đăng ký FaceID.");
+    }
     faceEnrollStream = stream;
     if (!video) throw new Error("Không tìm thấy vùng hiển thị camera.");
     video.srcObject = stream;
     await video.play();
+    if (!settings.width || !settings.height) {
+      // best-effort metadata; continue after play
+    }
     if (session !== faceEnrollSession) return;
     setFaceEnrollStatus("Camera sẵn sàng", "Nhấn Bắt đầu quét để thu nhận mẫu khuôn mặt.");
     if (startBtn) { startBtn.disabled = false; startBtn.querySelector("span:last-child").textContent = "Bắt đầu quét"; }
@@ -1208,10 +1301,14 @@ const enableFaceEnrollCamera = async () => {
 export const openFaceEnrollModal = async () => {
   const modal = document.getElementById("modal-faceid-enroll");
   if (!modal) return;
-  if (resolveFaceStatus(getCurrentUser()) === "ACTIVE") {
-    showToast("Tài khoản đã kích hoạt FaceID. Liên hệ Admin/HR để Reset nếu cần đăng ký lại.", { duration: 5000 });
+  const currentUser = getCurrentUser();
+  if (resolveFaceStatus(currentUser) === "ACTIVE") {
+    const enrolledAt = currentUser?.face_enrolled_at ? ` lúc ${currentUser.face_enrolled_at}` : "";
+    showToast(`Tài khoản đã kích hoạt FaceID${enrolledAt}. Liên hệ Admin/HR nếu cần cấp lại.`, { duration: 5500 });
     return;
   }
+  const deviceAllowed = await requireDevicePermission("face_enroll", async () => {});
+  if (!deviceAllowed) return;
   void ensureEnrollFaceModels().catch(() => undefined);
 
   modal.classList.remove("hidden");
@@ -1265,6 +1362,7 @@ const saveFaceDescriptor = async () => {
       face_enrolled_at: response.data?.data?.face_enrolled_at || null,
     });
     closeFaceEnrollModal();
+    window.dispatchEvent(new CustomEvent("hrm:face-updated", { detail: updated }));
     showToast("Cập nhật mẫu khuôn mặt FaceID thành công.");
     const btn = document.getElementById("btnFaceEnrollHeader");
     if (btn) {
@@ -1378,6 +1476,179 @@ const promptFaceEnrollmentIfMissing = (user) => {
   }
 };
 
+const notificationState = {
+  items: [],
+  loaded: false,
+};
+
+const formatNotificationTime = (value) => {
+  if (!value) return "";
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+  return match ? `${match[3]}/${match[2]} ${match[4]}:${match[5]}` : String(value);
+};
+
+const renderNotifications = () => {
+  const list = document.getElementById("notificationList");
+  const badge = document.getElementById("notificationBadge");
+  if (!list || !badge) return;
+
+  const unread = notificationState.items.filter((item) => !item.is_read).length;
+  badge.textContent = String(unread > 99 ? 99 : unread);
+  badge.classList.toggle("hidden", unread === 0);
+  badge.classList.toggle("flex", unread > 0);
+
+  if (!notificationState.items.length) {
+    list.innerHTML =
+      '<div class="p-space-lg text-center font-body-sm text-body-sm text-on-surface-variant">Không có thông báo nào</div>';
+    return;
+  }
+
+  list.innerHTML = notificationState.items
+    .map((item) => {
+      const payload = item.payload || {};
+      const isSigned = item.type === "CONTRACT_SIGNED";
+      const isSigningRevision =
+        payload.decision === "REJECT" && Boolean(payload.signer_name);
+      const isDecision =
+        payload.decision === "APPROVE" || payload.decision === "REJECT";
+      const meta = isSigned
+        ? [
+            payload.employee_name,
+            payload.contract_code,
+            payload.signer_name ? `Người ký: ${payload.signer_name}` : "",
+            payload.version_no ? `v${payload.version_no}` : "",
+            formatNotificationTime(payload.signed_at || item.created_at),
+          ]
+        : isDecision
+          ? [
+              payload.employee_name,
+              payload.contract_code,
+              isSigningRevision
+                ? `Người yêu cầu: ${payload.signer_name || ""}`
+                : payload.approver_name,
+              formatNotificationTime(payload.decided_at || item.created_at),
+              payload.decision === "REJECT"
+                ? payload.revision_request || payload.rejection_reason || "Xem chi tiết yêu cầu chỉnh sửa"
+                : "",
+            ]
+          : [
+              payload.employee_name,
+              payload.contract_code,
+              payload.submitted_by_name,
+              formatNotificationTime(payload.submitted_at || item.created_at),
+            ];
+      const notificationIcon = isSigned
+        ? "draw"
+        : isSigningRevision
+          ? "edit_document"
+          : item.type === "CONTRACT_APPROVAL"
+            ? "approval"
+            : "notifications";
+      const metaText = meta
+        .filter(Boolean)
+        .map((value) => escapeHtml(value))
+        .join(" • ");
+      return `
+        <button type="button" class="w-full text-left px-space-md py-space-sm border-b border-surface-variant hover:bg-surface-container-low flex gap-space-sm ${item.is_read ? "" : "bg-primary-fixed/30"}" data-notification-id="${item.id}" data-target-type="${escapeHtml(item.target_type)}" data-target-id="${item.target_id}">
+          <span class="w-8 h-8 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[18px]">${notificationIcon}</span>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="flex items-center justify-between gap-2">
+              <span class="font-label-md text-label-md font-semibold text-on-surface truncate">${escapeHtml(item.title)}</span>
+              ${item.is_read ? "" : '<span class="w-2 h-2 rounded-full bg-primary shrink-0"></span>'}
+            </span>
+            <span class="mt-0.5 block font-body-sm text-body-sm text-on-surface-variant line-clamp-2">${escapeHtml(item.body)}</span>
+            <span class="mt-1 block font-label-sm text-label-sm text-on-surface-variant truncate">${metaText}</span>
+          </span>
+        </button>`;
+    })
+    .join("");
+};
+
+const loadNotifications = async () => {
+  try {
+    const response = await api.get("/notifications", { params: { limit: 30 } });
+    notificationState.items = Array.isArray(response.data?.notifications)
+      ? response.data.notifications
+      : [];
+    notificationState.loaded = true;
+    renderNotifications();
+  } catch {
+    notificationState.items = [];
+    notificationState.loaded = false;
+    renderNotifications();
+  }
+};
+
+const openNotificationTarget = async (notification) => {
+  if (!notification.is_read) {
+    try {
+      await api.post(`/notifications/${notification.id}/read`);
+    } catch {}
+  }
+
+  notificationState.items = notificationState.items.map((item) =>
+    item.id === notification.id ? { ...item, is_read: true } : item,
+  );
+  renderNotifications();
+  document.getElementById("notificationDropdown")?.classList.add("hidden");
+
+  if (notification.target_type !== "CONTRACT" || !notification.target_id) return;
+
+  if (window.location.hash !== "#/hop-dong") {
+    window.location.hash = "#/hop-dong";
+  }
+  window.setTimeout(() => {
+    window.dispatchEvent(
+      new CustomEvent("hrm:open-contract", {
+        detail: { contractId: Number(notification.target_id) },
+      }),
+    );
+  }, 150);
+};
+
+const bindNotifications = () => {
+  const bell = document.getElementById("notificationBellBtn");
+  const dropdown = document.getElementById("notificationDropdown");
+  if (!bell || !dropdown || bell.dataset.bound === "true") return;
+  bell.dataset.bound = "true";
+
+  bell.addEventListener("click", async () => {
+    const willOpen = dropdown.classList.contains("hidden");
+    dropdown.classList.toggle("hidden", !willOpen);
+    if (willOpen && !notificationState.loaded) await loadNotifications();
+  });
+
+  document.getElementById("btnMarkAllNotificationsRead")?.addEventListener("click", async () => {
+    try {
+      await api.post("/notifications/read-all");
+      notificationState.items = notificationState.items.map((item) => ({
+        ...item,
+        is_read: true,
+      }));
+      renderNotifications();
+    } catch {}
+  });
+
+  document.getElementById("notificationList")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-notification-id]");
+    if (!button) return;
+    const item = notificationState.items.find(
+      (entry) => Number(entry.id) === Number(button.dataset.notificationId),
+    );
+    if (item) openNotificationTarget(item);
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!dropdown.contains(event.target) && !bell.contains(event.target)) {
+      dropdown.classList.add("hidden");
+    }
+  });
+
+  loadNotifications();
+};
+
 const bindActions = () => {
     document.getElementById("logoutBtn")?.addEventListener("click", () => {
       window.dispatchEvent(new CustomEvent("hrm:logout-request"));
@@ -1406,6 +1677,7 @@ export const setupShell = (user = getCurrentUser()) => {
   }
 
   setupHeaderUser(user);
+  bindNotifications();
   ensurePermissionsNav(user);
   applyNavPermissions(user);
   bindActions();

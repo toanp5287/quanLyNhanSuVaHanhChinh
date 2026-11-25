@@ -115,7 +115,7 @@
 
           <fieldset class="border border-surface-variant rounded-lg p-4">
             <legend class="px-2 font-semibold text-sm">3. Khung giờ cho phép quét chấm công</legend>
-            <p class="text-xs text-on-surface-variant mb-3">Giới hạn thời gian hệ thống/máy FaceID chấp nhận quét vào ca và tan ca. Nếu để trống, hệ thống tự dùng khung mặc định phù hợp quanh giờ ca. Quét ngoài khung sẽ bị từ chối.</p>
+            <p class="text-xs text-on-surface-variant mb-3">Giới hạn thời gian hệ thống/máy FaceID chấp nhận quét vào ca và tan ca. Riêng mốc <b>quét vào đến</b>: để trống (hiện "<b>--:-- SA</b>") là <b>không giới hạn giờ quét vào</b>, kể cả khi bạn đã cấu hình mốc mở quét. Quét ngoài khung đã cấu hình sẽ bị từ chối.</p>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <label class="text-sm">Cho phép quét vào từ
                 <input id="shiftCheckinStart" type="time" class="mt-1 block w-full rounded border px-3 py-2" />
@@ -123,7 +123,7 @@
               </label>
               <label class="text-sm">Cho phép quét vào đến
                 <input id="shiftCheckinEnd" type="time" class="mt-1 block w-full rounded border px-3 py-2" />
-                <span class="block text-xs text-on-surface-variant mt-1">Muộn nhất vẫn cho phép quét vào ca.</span>
+                <span class="block text-xs text-on-surface-variant mt-1">Muộn nhất vẫn cho phép quét vào ca. Để trống = không giới hạn.</span>
               </label>
               <label class="text-sm">Cho phép quét ra từ
                 <input id="shiftCheckoutStart" type="time" class="mt-1 block w-full rounded border px-3 py-2" />
@@ -135,11 +135,7 @@
               </label>
               <label class="text-sm">Mở quét Vào trước (phút)
                 <input id="shiftCheckinOpenBefore" type="number" min="0" max="720" value="120" class="mt-1 block w-full rounded border px-3 py-2" />
-                <span class="block text-xs text-on-surface-variant mt-1">Dùng khi không đặt khung giờ quét vào cụ thể.</span>
-              </label>
-              <label class="text-sm">Đóng quét Vào sau (phút)
-                <input id="shiftCheckinCloseAfter" type="number" min="0" max="720" class="mt-1 block w-full rounded border px-3 py-2" />
-                <span class="block text-xs text-on-surface-variant mt-1">Để trống = 120 phút sau giờ bắt đầu ca.</span>
+                <span class="block text-xs text-on-surface-variant mt-1">Dùng khi không đặt "Cho phép quét vào từ". Không ảnh hưởng đến mốc "quét vào đến".</span>
               </label>
             </div>
             <label class="inline-flex items-start gap-2 text-sm mt-4"><input id="shiftAllowCheckoutAnytime" type="checkbox" class="rounded mt-0.5" checked /><span>Cho phép chấm Ra mọi lúc trong ngày<span class="block text-xs text-on-surface-variant">Chỉ cần đã có giờ Vào; hệ thống vẫn tính đi muộn/ về sớm theo quy chế.</span></span></label>
@@ -314,7 +310,6 @@
         <label class="text-sm">Quét Ra lặp lại<select id="kioskRepeatPolicy" class="mt-1 block w-full rounded border px-3 py-2"><option value="OVERWRITE_LATEST">Ghi đè lần Ra cuối</option><option value="LOCK_FIRST">Khóa lần Ra đầu</option></select></label>
         <label class="inline-flex items-center gap-2 text-sm"><input id="kioskRequireCheckin" type="checkbox" class="rounded" /> Bắt buộc phải có Vào trước khi Ra</label>
         <label class="inline-flex items-center gap-2 text-sm"><input id="kioskShowWorkday" type="checkbox" class="rounded" /> Hiện công ước tính trên kiosk</label>
-        <label class="text-sm md:col-span-2">Cấu hình AI nhận diện (JSON)<textarea id="kioskAiConfig" rows="3" class="mt-1 block w-full rounded border px-3 py-2"></textarea></label>
         <label class="text-sm md:col-span-2">Cấu hình mạng/IP (JSON)<textarea id="kioskNetworkConfig" rows="3" class="mt-1 block w-full rounded border px-3 py-2"></textarea></label>
         <div class="md:col-span-2 flex justify-end gap-2"><button type="button" id="btnResetKiosk" class="rounded border px-4 py-2 text-sm">Nhập lại</button><button type="submit" class="rounded bg-primary text-white px-4 py-2 text-sm font-semibold">Lưu cấu hình</button></div>
       </form>

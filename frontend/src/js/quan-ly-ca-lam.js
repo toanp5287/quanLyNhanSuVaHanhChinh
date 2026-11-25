@@ -7,8 +7,15 @@ const escapeHtml = (value) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char],
   );
 
-const time = (value) => (value ? String(value).slice(0, 5) : "-");
-const timeInput = (value) => (value ? String(value).slice(0, 5) : "");
+const isBlankTimeValue = (value) => {
+  const text = String(value ?? "").trim();
+  return !text || /^[-–—:.\s]*(AM|PM|SA|CH|NG)?$/i.test(text);
+};
+const time = (value) => (isBlankTimeValue(value) ? "-" : String(value).slice(0, 5));
+const timeInput = (value) => (isBlankTimeValue(value) ? "" : String(value).slice(0, 5));
+const formTime = (value) => (isBlankTimeValue(value) ? null : String(value).trim());
+const checkinEndLabel = (shift) =>
+  isBlankTimeValue(shift?.checkin_end) ? "Không giới hạn" : time(shift.checkin_end);
 const workdayValue = (shift) => {
   const value = Number(shift?.workday_value ?? shift?.standard_work_units ?? 1);
   return value === 0.5 ? 0.5 : 1;
@@ -121,7 +128,7 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
             <div class="text-xs text-on-surface-variant mt-0.5">Nghỉ: ${time(s.break_start)} - ${time(s.break_end)}</div>
           </td>
           <td class="px-4 py-3 text-xs sm:text-sm">
-            <div>Vào: <span class="font-medium">${time(s.checkin_start)}</span> → <span class="font-medium">${time(s.checkin_end)}</span></div>
+            <div>Vào: <span class="font-medium">${time(s.checkin_start)}</span> → <span class="font-medium">${checkinEndLabel(s)}</span></div>
             <div class="mt-0.5">Ra: <span class="font-medium">${time(s.checkout_start)}</span> → <span class="font-medium">${time(s.checkout_end)}</span></div>
           </td>
           <td class="px-4 py-3 text-xs sm:text-sm">
@@ -174,7 +181,6 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
       ? Boolean(Number(shift?.allow_checkout_anytime ?? 1))
       : true;
     q("#shiftCheckinOpenBefore").value = shift?.checkin_open_before_min ?? 120;
-    q("#shiftCheckinCloseAfter").value = shift?.checkin_close_after_min ?? "";
     q("#shiftWorkingDays").value = shift?.working_days
       ? typeof shift.working_days === "string"
         ? shift.working_days
@@ -400,12 +406,6 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
     q("#kioskRepeatPolicy").value = config.checkout_repeat_policy || "OVERWRITE_LATEST";
     q("#kioskRequireCheckin").checked = Boolean(Number(config.require_checkin_for_checkout ?? 1));
     q("#kioskShowWorkday").checked = Boolean(Number(config.show_estimated_workday ?? 1));
-    q("#kioskAiConfig").value = JSON.stringify(config.ai_config || {
-      similarity_threshold: 0.65,
-      voting_frames: 3,
-      anti_smile_gate: true,
-      liveness_enabled: true,
-    }, null, 2);
     q("#kioskNetworkConfig").value = JSON.stringify(config.network_config || {
       strict_ip: false,
       allowed_ips: [],
@@ -485,12 +485,12 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
       name: q("#shiftName").value.trim(),
       start_time: q("#shiftStart").value,
       end_time: q("#shiftEnd").value,
-      checkin_start: q("#shiftCheckinStart").value || null,
-      checkin_end: q("#shiftCheckinEnd").value || null,
-      checkout_start: q("#shiftCheckoutStart").value || null,
-      checkout_end: q("#shiftCheckoutEnd").value || null,
-      break_start: q("#shiftBreakStart").value || null,
-      break_end: q("#shiftBreakEnd").value || null,
+      checkin_start: formTime(q("#shiftCheckinStart").value),
+      checkin_end: formTime(q("#shiftCheckinEnd").value),
+      checkout_start: formTime(q("#shiftCheckoutStart").value),
+      checkout_end: formTime(q("#shiftCheckoutEnd").value),
+      break_start: formTime(q("#shiftBreakStart").value),
+      break_end: formTime(q("#shiftBreakEnd").value),
       grace_period: Number(q("#shiftGrace").value || 0),
       grace_period_minutes: Number(q("#shiftGrace").value || 0),
       min_ot_minutes: Number(q("#shiftMinOt").value || 0),
@@ -502,9 +502,7 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
       is_overnight: q("#shiftIsOvernight").checked ? 1 : 0,
       allow_checkout_anytime: q("#shiftAllowCheckoutAnytime").checked ? 1 : 0,
       checkin_open_before_min: Number(q("#shiftCheckinOpenBefore").value || 0),
-      checkin_close_after_min: q("#shiftCheckinCloseAfter").value === ""
-        ? null
-        : Number(q("#shiftCheckinCloseAfter").value),
+      checkin_close_after_min: null,
       working_days: q("#shiftWorkingDays").value.trim() || null,
       policy_id: q("#shiftPolicy").value || null,
       is_default: q("#shiftIsDefault").checked ? 1 : 0,
@@ -687,7 +685,6 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
       checkout_repeat_policy: q("#kioskRepeatPolicy").value,
       checkout_confirm_seconds: Number(q("#kioskConfirmSeconds").value || 0),
       show_estimated_workday: q("#kioskShowWorkday").checked ? 1 : 0,
-      ai_config: parseConfigJson(q("#kioskAiConfig").value, {}),
       network_config: parseConfigJson(q("#kioskNetworkConfig").value, {}),
     };
     try {

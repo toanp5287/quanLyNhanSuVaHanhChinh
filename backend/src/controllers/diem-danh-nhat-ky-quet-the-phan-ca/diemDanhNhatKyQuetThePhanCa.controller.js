@@ -6,8 +6,8 @@ import {
   createShiftAssignment,
   createWorkShift,
   deleteShiftAssignment,
-  deleteWorkShift,
   getAttendanceDetail,
+  getMyAttendanceHistory,
   getTodayStatus,
   listAttendanceByDate,
   listExplanations,
@@ -15,13 +15,13 @@ import {
   listWorkShifts,
   quickMarkAll,
   quickMarkAttendance,
-  recalculateDateAttendance,
   rejectExplanation,
   submitExplanation,
   updateAttendanceManual,
   updateShiftAssignment,
   updateWorkShift,
   validateShiftPayload,
+  logAttendanceFraud,
 } from "../../services/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.service.js";
 import {
   deletePolicy,
@@ -34,10 +34,20 @@ import {
 const getEmployeeId = (req) => req.user?.employee_id;
 
 const respondError = (res, error, fallback) => {
+  if (error.fraud)
+    logAttendanceFraud({
+      reason: error.code || "ATTENDANCE_FRAUD",
+      scores: error.scores || null,
+      ip: res.req?.ip,
+      deviceId: res.req?.headers?.["x-device-id"] || null,
+      path: res.req?.originalUrl,
+      userAgent: res.req?.headers?.["user-agent"] || null,
+    });
   if (!error.status) console.error(fallback, error);
   return res.status(error.status || 500).json({
     success: false,
     message: error.status ? error.message : fallback,
+    code: error.code || null,
   });
 };
 
@@ -56,8 +66,13 @@ export const attendanceCheckIn = async (req, res) => {
     const result = await checkIn(employeeId, {
       embeddings: req.body?.embeddings,
       blink_verified: req.body?.blink_verified,
-      ip: req.ip,
+      challengeToken: req.body?.challengeToken,
+      liveness: req.body?.liveness,
+      snapshot: req.body?.snapshot,
+      ip: req.clientIp || req.ip,
       device_info: req.body?.device_info || req.headers["x-device-id"] || null,
+      device_id: req.authorizedDevice?.id || null,
+      client_ip: req.clientIp || null,
       user_id: req.user?.user_id,
       note: req.body?.note,
     });
@@ -105,8 +120,13 @@ export const attendanceCheckOut = async (req, res) => {
     const result = await checkOut(employeeId, {
       embeddings: req.body?.embeddings,
       blink_verified: req.body?.blink_verified,
-      ip: req.ip,
+      challengeToken: req.body?.challengeToken,
+      liveness: req.body?.liveness,
+      snapshot: req.body?.snapshot,
+      ip: req.clientIp || req.ip,
       device_info: req.body?.device_info || req.headers["x-device-id"] || null,
+      device_id: req.authorizedDevice?.id || null,
+      client_ip: req.clientIp || null,
       user_id: req.user?.user_id,
       note: req.body?.note,
     });
@@ -166,6 +186,15 @@ export const attendanceList = async (req, res) => {
   }
 };
 
+export const attendanceMyHistory = async (req, res) => {
+  try {
+    const data = await getMyAttendanceHistory(req.user, req.query?.month);
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return respondError(res, error, "Không thể tải lịch sử chấm công");
+  }
+};
+
 export const attendanceDetail = async (req, res) => {
   try {
     const data = await getAttendanceDetail(
@@ -215,24 +244,6 @@ export const attendanceQuickMark = async (req, res) => {
       .json({ success: true, message: "Đã cập nhật chấm công", data: result });
   } catch (error) {
     return respondError(res, error, "Không thể cập nhật chấm công");
-  }
-};
-
-export const attendanceRecalculateDate = async (req, res) => {
-  try {
-    const { date, department_id } = req.body || {};
-    const data = await recalculateDateAttendance(
-      date,
-      req.user,
-      department_id ? Number(department_id) : null,
-    );
-    return res.status(200).json({
-      success: true,
-      message: `Đã tính lại công ngày ${data.date} cho ${data.count} nhân viên${data.skipped ? `, bỏ qua ${data.skipped} nhân viên tháng đã khóa` : ""}.`,
-      data,
-    });
-  } catch (error) {
-    return respondError(res, error, "Không thể tính lại công theo ngày");
   }
 };
 
@@ -304,9 +315,11 @@ export const getShiftAssignments = async (req, res) => {
 export const postShiftAssignment = async (req, res) => {
   try {
     const data = await createShiftAssignment(req.user, req.body || {});
-    return res
-      .status(201)
-      .json({ success: true, message: "Phân ca thành công", data });
+    const sum = data?.recalc_summary;
+    const message = sum
+      ? `Phân ca thành công. Đã tính lại ${sum.recalculated_days} ngày công (${sum.recalculated_employees} nhân viên), bỏ qua ${sum.skipped_locked_days} ngày thuộc kỳ đã khóa.`
+      : "Phân ca thành công";
+    return res.status(201).json({ success: true, message, data });
   } catch (error) {
     return respondError(res, error, "Không thể phân ca cho nhân viên");
   }
@@ -314,14 +327,12 @@ export const postShiftAssignment = async (req, res) => {
 
 export const putShiftAssignment = async (req, res) => {
   try {
-    const data = await updateShiftAssignment(
-      req.user,
-      req.params.id,
-      req.body || {},
-    );
-    return res
-      .status(200)
-      .json({ success: true, message: "Cập nhật phân ca thành công", data });
+    const data = await updateShiftAssignment(req.user, req.params.id, req.body || {});
+    const sum = data?.recalc_summary;
+    const message = sum
+      ? `Cập nhật phân ca thành công. Đã tính lại ${sum.recalculated_days} ngày công (${sum.recalculated_employees} nhân viên), bỏ qua ${sum.skipped_locked_days} ngày thuộc kỳ đã khóa.`
+      : "Cập nhật phân ca thành công";
+    return res.status(200).json({ success: true, message, data });
   } catch (error) {
     return respondError(res, error, "Không thể cập nhật phân ca");
   }
@@ -330,9 +341,11 @@ export const putShiftAssignment = async (req, res) => {
 export const removeShiftAssignment = async (req, res) => {
   try {
     const data = await deleteShiftAssignment(req.user, req.params.id);
-    return res
-      .status(200)
-      .json({ success: true, message: "Đã xóa phân ca", data });
+    const sum = data?.recalc_summary;
+    const message = sum
+      ? `Đã xóa phân ca. Đã tính lại ${sum.recalculated_days} ngày công (${sum.recalculated_employees} nhân viên), bỏ qua ${sum.skipped_locked_days} ngày thuộc kỳ đã khóa.`
+      : "Đã xóa phân ca";
+    return res.status(200).json({ success: true, message, data });
   } catch (error) {
     return respondError(res, error, "Không thể xóa phân ca");
   }
@@ -393,20 +406,9 @@ export const cancelExplanationHandler = async (req, res) => {
     const data = await cancelExplanation(req.user, req.params.id);
     return res
       .status(200)
-      .json({ success: true, message: "�?A� h��y gi���i trA�nh cA'ng", data });
+      .json({ success: true, message: "Đã hủy giải trình công", data });
   } catch (error) {
-    return respondError(res, error, "KhA'ng th��� h��y gi���i trA�nh cA'ng");
-  }
-};
-
-export const removeWorkShift = async (req, res) => {
-  try {
-    const data = await deleteWorkShift(req.params.id);
-    return res
-      .status(200)
-      .json({ success: true, message: "Đã xóa ca làm việc", data });
-  } catch (error) {
-    return respondError(res, error, "Không thể xóa ca làm việc");
+    return respondError(res, error, "Không thể hủy giải trình công");
   }
 };
 

@@ -22,7 +22,7 @@ routerEmployees.post(
   "/:id/reset-face",
   verifyToken,
   (req, res, next) => {
-    const allowed = req.user?.role_id === "SUPER_ADMIN" || hasPermission("HR.PROFILE_MANAGE", req.user);
+    const allowed = req.user?.role_id === "SUPER_ADMIN" || hasPermission(req.user?.permissions, "HR.PROFILE_MANAGE");
     if (!allowed)
       return res.status(403).json({ success: false, message: "Chỉ Admin/HR được Reset FaceID" });
     return next();
