@@ -1,0 +1,585 @@
+<main class="relative pt-[100px] w-full min-h-screen bg-surface px-space-lg py-space-md">
+  <div class="flex flex-col w-full gap-space-lg pb-space-xl" id="documentEditorRoot">
+    <style>
+      .document-editor-toolbar button.is-active {
+        background: var(--color-primary-fixed, #e0e7ff);
+        color: var(--color-on-primary-fixed, #1e1b4b);
+      }
+      .document-editor-scroll {
+        overflow-x: auto;
+        background: #dfe3e8;
+        padding: 24px;
+      }
+      .a4-sheet {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0 auto;
+        padding: var(--a4-margin-top, 20mm) var(--a4-margin-right, 18mm) var(--a4-margin-bottom, 20mm) var(--a4-margin-left, 18mm);
+        background: #fff;
+        color: #000;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        font-family: "Times New Roman", Times, serif;
+        font-size: 13pt;
+        line-height: 1.5;
+      }
+      .document-editor-content {
+        min-height: 250mm;
+        outline: none;
+      }
+      .document-editor-content p {
+        margin: 0 0 8pt;
+      }
+      .document-editor-content h1,
+      .document-editor-content h2,
+      .document-editor-content h3 {
+        margin: 12pt 0;
+        font-weight: 700;
+        text-align: center;
+      }
+      .document-editor-content h1 {
+        font-size: 16pt;
+      }
+      .document-editor-content h2 {
+        font-size: 14pt;
+      }
+      .document-editor-content h3 {
+        font-size: 13pt;
+      }
+      .document-editor-content ul,
+      .document-editor-content ol {
+        padding-left: 24pt;
+        margin: 8pt 0;
+      }
+      .document-editor-content blockquote {
+        border-left: 3px solid #9ca3af;
+        margin: 8pt 0;
+        padding-left: 12pt;
+      }
+      .document-editor-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 12pt 0;
+        font-size: 12pt;
+      }
+      .document-editor-content th,
+      .document-editor-content td {
+        border: 1px solid #000;
+        padding: 6pt 8pt;
+        vertical-align: top;
+      }
+      .document-editor-content th {
+        background: #f3f4f6;
+        text-align: center;
+      }
+      .document-editor-content img {
+        max-width: 100%;
+        height: auto;
+      }
+      .document-editor-content .is-editor-empty:first-child::before {
+        content: attr(data-placeholder);
+        float: left;
+        height: 0;
+        color: #9ca3af;
+        pointer-events: none;
+      }
+      .document-file-viewer-body {
+        background: #dfe3e8;
+        padding: 16px;
+        overflow: auto;
+      }
+      .docx-viewer-paper {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0 auto;
+        padding: 20mm 18mm;
+        background: #fff;
+        color: #000;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+      }
+      .docx-viewer-paper section {
+        width: 100%;
+      }
+      @media print {
+        @page {
+          size: A4;
+          margin: 0;
+        }
+        body * {
+          visibility: hidden;
+        }
+        .a4-sheet,
+        .a4-sheet * {
+          visibility: visible;
+        }
+        .a4-sheet {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 210mm;
+          min-height: 297mm;
+          margin: 0;
+          padding: var(--a4-margin-top, 20mm) var(--a4-margin-right, 18mm) var(--a4-margin-bottom, 20mm) var(--a4-margin-left, 18mm);
+          box-shadow: none;
+        }
+      }
+    </style>
+
+    <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-space-md">
+      <div class="flex flex-col gap-space-xs">
+        <div class="flex items-center gap-space-xs text-on-surface-variant font-label-md text-label-md">
+          <span>Quản lý nhân sự</span>
+          <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+          <span class="text-on-surface font-semibold">Soạn văn bản A4</span>
+        </div>
+        <h1 class="font-headline-lg text-headline-lg text-on-surface" id="documentEditorTitle">
+          Soạn văn bản A4
+        </h1>
+        <p class="font-body-md text-body-md text-on-surface-variant">
+          Soạn biên bản bàn giao, thanh lý hợp đồng trên Tiptap, lưu phiên bản và xuất DOCX/PDF.
+        </p>
+      </div>
+      <div class="flex items-center gap-space-xs">
+        <span
+          class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm"
+          id="documentEditorPermissionInfo"
+        >
+          <span class="material-symbols-outlined text-[14px]">description</span>
+          Quyền: đang kiểm tra
+        </span>
+      </div>
+    </div>
+
+    <div
+      class="hidden items-start gap-space-sm rounded-lg border px-space-md py-space-sm font-body-sm text-body-sm"
+      id="documentEditorNotice"
+    ></div>
+    <div
+      class="hidden flex-col gap-1 rounded-lg border px-space-md py-space-sm font-body-sm text-body-sm"
+      id="documentEditorValidationInfo"
+    ></div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-space-lg">
+      <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant overflow-hidden">
+        <div class="flex items-center justify-between gap-space-sm flex-wrap px-space-md py-space-sm border-b border-surface-variant">
+          <div>
+            <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">Nội dung văn bản</h2>
+            <p class="font-body-sm text-body-sm text-on-surface-variant" id="documentEditorStatus">
+              Sẵn sàng soạn thảo.
+            </p>
+            <p class="font-label-sm text-label-sm text-on-surface-variant" id="documentEditorAuditInfo">
+              Người chỉnh sửa: Chưa rõ • Thời gian: chưa có thay đổi
+            </p>
+          </div>
+          <span class="font-label-sm text-label-sm text-on-surface-variant" id="documentEditorCount">0 từ • 0 ký tự</span>
+        </div>
+
+        <div class="document-editor-toolbar flex flex-wrap items-center gap-1 px-space-md py-space-sm border-b border-surface-variant bg-surface-container-low">
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="undo" title="Hoàn tác" type="button">
+            <span class="material-symbols-outlined text-[18px]">undo</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="redo" title="Làm lại" type="button">
+            <span class="material-symbols-outlined text-[18px]">redo</span>
+          </button>
+          <span class="w-px h-6 bg-surface-variant mx-1"></span>
+          <select
+            class="h-8 px-2 rounded bg-surface-container-lowest border border-surface-variant text-body-sm text-body-sm text-on-surface"
+            id="documentEditorHeading"
+            title="Kiểu đoạn"
+          >
+            <option value="">Đoạn thường</option>
+            <option value="1">Tiêu đề 1</option>
+            <option value="2">Tiêu đề 2</option>
+            <option value="3">Tiêu đề 3</option>
+          </select>
+          <span class="w-px h-6 bg-surface-variant mx-1"></span>
+          <select
+            class="h-8 px-2 rounded bg-surface-container-lowest border border-surface-variant text-body-sm text-body-sm text-on-surface"
+            id="documentEditorFontFamily"
+            title="Font chữ"
+          >
+            <option value="Times New Roman, Times, serif" selected>Times New Roman</option>
+            <option value="Arial, Helvetica, sans-serif">Arial</option>
+            <option value="Calibri, Candara, sans-serif">Calibri</option>
+            <option value="Georgia, serif">Georgia</option>
+            <option value="Courier New, monospace">Courier New</option>
+          </select>
+          <select
+            class="h-8 px-2 rounded bg-surface-container-lowest border border-surface-variant text-body-sm text-body-sm text-on-surface"
+            id="documentEditorFontSize"
+            title="Cỡ chữ"
+          >
+            <option value="10pt">10pt</option>
+            <option value="11pt">11pt</option>
+            <option value="12pt">12pt</option>
+            <option value="13pt" selected>13pt</option>
+            <option value="14pt">14pt</option>
+            <option value="16pt">16pt</option>
+            <option value="18pt">18pt</option>
+            <option value="20pt">20pt</option>
+            <option value="24pt">24pt</option>
+          </select>
+          <select
+            class="h-8 px-2 rounded bg-surface-container-lowest border border-surface-variant text-body-sm text-body-sm text-on-surface"
+            id="documentEditorLineHeight"
+            title="Giãn dòng"
+          >
+            <option value="1">1.0</option>
+            <option value="1.15">1.15</option>
+            <option value="1.25">1.25</option>
+            <option value="1.5" selected>1.5</option>
+            <option value="2">2.0</option>
+          </select>
+          <span class="w-px h-6 bg-surface-variant mx-1"></span>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="bold" title="Đậm" type="button">
+            <span class="material-symbols-outlined text-[18px]">format_bold</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="italic" title="Nghiêng" type="button">
+            <span class="material-symbols-outlined text-[18px]">format_italic</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="underline" title="Gạch chân" type="button">
+            <span class="material-symbols-outlined text-[18px]">format_underlined</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="strike" title="Gạch ngang" type="button">
+            <span class="material-symbols-outlined text-[18px]">strikethrough_s</span>
+          </button>
+          <span class="w-px h-6 bg-surface-variant mx-1"></span>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="alignLeft" title="Căn trái" type="button">
+            <span class="material-symbols-outlined text-[18px]">format_align_left</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="alignCenter" title="Căn giữa" type="button">
+            <span class="material-symbols-outlined text-[18px]">format_align_center</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="alignRight" title="Căn phải" type="button">
+            <span class="material-symbols-outlined text-[18px]">format_align_right</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="alignJustify" title="Căn đều" type="button">
+            <span class="material-symbols-outlined text-[18px]">format_align_justify</span>
+          </button>
+          <span class="w-px h-6 bg-surface-variant mx-1"></span>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="bulletList" title="Danh sách dấu chấm" type="button">
+            <span class="material-symbols-outlined text-[18px]">format_list_bulleted</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="orderedList" title="Danh sách đánh số" type="button">
+            <span class="material-symbols-outlined text-[18px]">format_list_numbered</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="blockquote" title="Trích dẫn" type="button">
+            <span class="material-symbols-outlined text-[18px]">format_quote</span>
+          </button>
+          <span class="w-px h-6 bg-surface-variant mx-1"></span>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="insertTable" title="Chèn bảng 3x3" type="button">
+            <span class="material-symbols-outlined text-[18px]">table</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="addRow" title="Thêm dòng" type="button">
+            <span class="material-symbols-outlined text-[18px]">table_row</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="addColumn" title="Thêm cột" type="button">
+            <span class="material-symbols-outlined text-[18px]">table_column</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="deleteTable" title="Xóa bảng" type="button">
+            <span class="material-symbols-outlined text-[18px]">table_rows</span>
+          </button>
+          <span class="w-px h-6 bg-surface-variant mx-1"></span>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="link" title="Chèn liên kết" type="button">
+            <span class="material-symbols-outlined text-[18px]">link</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="image" title="Chèn ảnh từ URL" type="button">
+            <span class="material-symbols-outlined text-[18px]">image</span>
+          </button>
+          <button class="h-8 px-2 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center" data-editor-action="clearMarks" title="Xóa định dạng" type="button">
+            <span class="material-symbols-outlined text-[18px]">format_clear</span>
+          </button>
+        </div>
+
+        <div class="p-space-md grid grid-cols-1 md:grid-cols-2 gap-space-sm border-b border-surface-variant">
+          <div class="flex flex-col gap-1">
+            <label class="font-label-sm text-label-sm font-semibold text-on-surface" for="documentEditorDocTitle">Tên văn bản</label>
+            <input
+              class="h-9 px-3 rounded border border-surface-variant bg-surface-container-low text-on-surface focus:ring-1 focus:ring-primary outline-none"
+              id="documentEditorDocTitle"
+              type="text"
+              placeholder="Biên bản bàn giao công việc"
+            />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="font-label-sm text-label-sm font-semibold text-on-surface" for="documentEditorDocNumber">Số / ký hiệu</label>
+            <input
+              class="h-9 px-3 rounded border border-surface-variant bg-surface-container-low text-on-surface focus:ring-1 focus:ring-primary outline-none"
+              id="documentEditorDocNumber"
+              type="text"
+              placeholder="01/2026/BB-BG"
+            />
+          </div>
+        </div>
+
+        <div class="px-space-md py-space-sm border-b border-surface-variant bg-surface-container-low">
+          <div class="flex items-center justify-between gap-space-sm flex-wrap mb-space-xs">
+            <h3 class="font-label-lg text-label-lg font-bold text-on-surface">Thiết lập lề trang A4</h3>
+            <span class="font-label-sm text-label-sm text-on-surface-variant">Khổ giấy 210 × 297 mm • đơn vị mm</span>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-space-sm">
+            <label class="flex items-center gap-2 font-body-sm text-body-sm text-on-surface-variant">
+              <span class="w-12 shrink-0">Trên</span>
+              <input class="h-8 w-full px-2 rounded border border-surface-variant bg-surface-container-lowest text-on-surface" id="documentEditorMarginTop" type="number" min="0" max="50" value="20" />
+            </label>
+            <label class="flex items-center gap-2 font-body-sm text-body-sm text-on-surface-variant">
+              <span class="w-12 shrink-0">Phải</span>
+              <input class="h-8 w-full px-2 rounded border border-surface-variant bg-surface-container-lowest text-on-surface" id="documentEditorMarginRight" type="number" min="0" max="50" value="18" />
+            </label>
+            <label class="flex items-center gap-2 font-body-sm text-body-sm text-on-surface-variant">
+              <span class="w-12 shrink-0">Dưới</span>
+              <input class="h-8 w-full px-2 rounded border border-surface-variant bg-surface-container-lowest text-on-surface" id="documentEditorMarginBottom" type="number" min="0" max="50" value="20" />
+            </label>
+            <label class="flex items-center gap-2 font-body-sm text-body-sm text-on-surface-variant">
+              <span class="w-12 shrink-0">Trái</span>
+              <input class="h-8 w-full px-2 rounded border border-surface-variant bg-surface-container-lowest text-on-surface" id="documentEditorMarginLeft" type="number" min="0" max="50" value="18" />
+            </label>
+          </div>
+        </div>
+
+        <div class="document-editor-scroll">
+          <div class="a4-sheet">
+            <div id="tiptapEditor" class="document-editor-content"></div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="flex flex-col gap-space-md">
+        <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+          <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface mb-space-sm">Mẫu văn bản có sẵn</h2>
+          <p class="font-body-sm text-body-sm text-on-surface-variant mb-space-sm" id="documentEditorTemplateHint">
+            Chọn mẫu rồi nhấn “Áp dụng mẫu”.
+          </p>
+          <div class="flex flex-col gap-space-xs">
+            <label class="font-label-sm text-label-sm font-semibold text-on-surface" for="documentEditorTemplate">Mẫu văn bản</label>
+            <select
+              class="h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-on-surface"
+              id="documentEditorTemplate"
+            ></select>
+            <button class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container font-label-lg text-label-lg flex items-center gap-1.5" id="btnApplyDocumentTemplate" type="button">
+              <span class="material-symbols-outlined text-[18px]">note_add</span>
+              <span>Áp dụng mẫu</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+          <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface mb-space-sm">Dữ liệu tự động điền</h2>
+          <div class="flex flex-col gap-space-xs">
+            <label class="font-label-sm text-label-sm font-semibold text-on-surface" for="documentEditorEmployeeSelect">Nhân viên</label>
+            <select
+              class="h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-on-surface"
+              id="documentEditorEmployeeSelect"
+            >
+              <option value="self">Nhân viên hiện tại</option>
+            </select>
+            <label class="font-label-sm text-label-sm font-semibold text-on-surface" for="documentEditorRequestSelect">Đơn từ</label>
+            <select
+              class="h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-on-surface"
+              id="documentEditorRequestSelect"
+            >
+              <option value="">Không dùng đơn từ</option>
+            </select>
+            <button class="h-9 px-space-md rounded border border-primary/40 text-primary hover:bg-primary-fixed font-label-lg text-label-lg flex items-center gap-1.5" id="btnFillDocumentData" type="button">
+              <span class="material-symbols-outlined text-[18px]">auto_fix_high</span>
+              <span>Điền dữ liệu</span>
+            </button>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">
+              Thông tin nhân viên và đơn từ được thay thế tại các trường <code class="font-mono">{{...}}</code> trong mẫu.
+            </p>
+          </div>
+        </section>
+
+        <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+          <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface mb-space-sm">Lưu nội dung</h2>
+          <div class="flex flex-col gap-space-xs">
+            <button class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container font-label-lg text-label-lg flex items-center gap-1.5" id="btnSaveDocumentLibrary" type="button">
+              <span class="material-symbols-outlined text-[18px]">save_as</span>
+              <span>Lưu văn bản</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-surface-variant text-on-surface hover:bg-surface-container-high font-label-lg text-label-lg flex items-center gap-1.5" id="btnSaveDocumentDraft" type="button">
+              <span class="material-symbols-outlined text-[18px]">save</span>
+              <span>Lưu bản nháp nhanh</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-surface-variant text-on-surface hover:bg-surface-container-high font-label-lg text-label-lg flex items-center gap-1.5" id="btnLoadDocumentDraft" type="button">
+              <span class="material-symbols-outlined text-[18px]">folder_open</span>
+              <span>Mở bản nháp gần nhất</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-surface-variant text-on-surface hover:bg-surface-container-high font-label-lg text-label-lg flex items-center gap-1.5" id="btnValidateDocumentFormat" type="button">
+              <span class="material-symbols-outlined text-[18px]">fact_check</span>
+              <span>Kiểm tra định dạng</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-surface-variant text-on-surface hover:bg-surface-container-high font-label-lg text-label-lg flex items-center gap-1.5" id="btnExportDocumentJson" type="button">
+              <span class="material-symbols-outlined text-[18px]">download</span>
+              <span>Xuất Tiptap JSON</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-primary/40 text-primary hover:bg-primary-fixed font-label-lg text-label-lg flex items-center gap-1.5" id="btnArchiveDocumentDocx" type="button">
+              <span class="material-symbols-outlined text-[18px]">folder_zip</span>
+              <span>Lưu DOCX chính thức</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-primary/40 text-primary hover:bg-primary-fixed font-label-lg text-label-lg flex items-center gap-1.5" id="btnArchiveDocumentPdf" type="button">
+              <span class="material-symbols-outlined text-[18px]">archive</span>
+              <span>Lưu PDF chính thức</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-primary/40 text-primary hover:bg-primary-fixed font-label-lg text-label-lg flex items-center gap-1.5" id="btnExportDocumentDocx" type="button">
+              <span class="material-symbols-outlined text-[18px]">description</span>
+              <span>Xuất DOCX</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-primary/40 text-primary hover:bg-primary-fixed font-label-lg text-label-lg flex items-center gap-1.5" id="btnExportDocumentPdf" type="button">
+              <span class="material-symbols-outlined text-[18px]">picture_as_pdf</span>
+              <span>Xuất PDF</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-surface-variant text-on-surface hover:bg-surface-container-high font-label-lg text-label-lg flex items-center gap-1.5" id="btnPrintDocument" type="button">
+              <span class="material-symbols-outlined text-[18px]">print</span>
+              <span>In văn bản</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-error/40 text-error hover:bg-error-container font-label-lg text-label-lg flex items-center gap-1.5" id="btnResetDocumentEditor" type="button">
+              <span class="material-symbols-outlined text-[18px]">restart_alt</span>
+              <span>Về mẫu mặc định</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+          <div class="flex items-center justify-between gap-space-sm mb-space-sm">
+            <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">Văn bản đã lưu</h2>
+            <span class="font-label-sm text-label-sm text-on-surface-variant" id="documentEditorSavedCount">0 văn bản</span>
+          </div>
+          <div class="flex flex-col gap-space-xs">
+            <label class="font-label-sm text-label-sm font-semibold text-on-surface" for="documentEditorSavedDocSelect">Chọn văn bản</label>
+            <select
+              class="h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-on-surface"
+              id="documentEditorSavedDocSelect"
+            >
+              <option value="">Chưa có văn bản đã lưu</option>
+            </select>
+            <button class="h-9 px-space-md rounded border border-primary/40 text-primary hover:bg-primary-fixed font-label-lg text-label-lg flex items-center gap-1.5" id="btnOpenSavedDocument" type="button">
+              <span class="material-symbols-outlined text-[18px]">open_in_new</span>
+              <span>Mở lại để tiếp tục sửa</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-error/40 text-error hover:bg-error-container font-label-lg text-label-lg flex items-center gap-1.5" id="btnDeleteSavedDocument" type="button">
+              <span class="material-symbols-outlined text-[18px]">delete</span>
+              <span>Xóa văn bản</span>
+            </button>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">
+              Nội dung được lưu dưới dạng Tiptap JSON. Sau khi mở lại, bạn tiếp tục chỉnh sửa trực tiếp trên trang này.
+            </p>
+          </div>
+        </section>
+
+        <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+          <div class="flex items-center justify-between gap-space-sm mb-space-sm">
+            <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">Quản lý phiên bản</h2>
+            <span class="font-label-sm text-label-sm text-on-surface-variant" id="documentEditorVersionCount">0 phiên bản</span>
+          </div>
+          <div class="flex flex-col gap-space-xs">
+            <label class="font-label-sm text-label-sm font-semibold text-on-surface" for="documentEditorVersionSelect">Phiên bản đã lưu</label>
+            <select
+              class="h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-on-surface"
+              id="documentEditorVersionSelect"
+            >
+              <option value="">Chưa có phiên bản</option>
+            </select>
+            <p class="font-body-sm text-body-sm text-on-surface-variant" id="documentEditorVersionInfo">
+              Lưu văn bản để tạo phiên bản đầu tiên.
+            </p>
+            <button class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container font-label-lg text-label-lg flex items-center gap-1.5" id="btnSaveDocumentVersion" type="button">
+              <span class="material-symbols-outlined text-[18px]">save_as</span>
+              <span>Lưu phiên bản mới</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-primary/40 text-primary hover:bg-primary-fixed font-label-lg text-label-lg flex items-center gap-1.5" id="btnRestoreDocumentVersion" type="button">
+              <span class="material-symbols-outlined text-[18px]">history</span>
+              <span>Khôi phục phiên bản</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-error/40 text-error hover:bg-error-container font-label-lg text-label-lg flex items-center gap-1.5" id="btnDeleteDocumentVersion" type="button">
+              <span class="material-symbols-outlined text-[18px]">delete_history</span>
+              <span>Xóa phiên bản</span>
+            </button>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">
+              Mỗi lần lưu văn bản tạo một phiên bản mới, kèm người chỉnh sửa và thời gian chỉnh sửa. Khôi phục chỉ đưa nội dung vào trình soạn thảo; nhấn “Lưu phiên bản mới” để giữ lại thay đổi.
+            </p>
+          </div>
+        </section>
+
+        <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+          <div class="flex items-center justify-between gap-space-sm mb-space-sm">
+            <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">Kho văn bản chính thức</h2>
+            <span class="font-label-sm text-label-sm text-on-surface-variant" id="documentEditorOfficialCount">0 file</span>
+          </div>
+          <div class="flex flex-col gap-space-xs">
+            <label class="font-label-sm text-label-sm font-semibold text-on-surface" for="documentEditorOfficialFileSelect">File đã lưu</label>
+            <select
+              class="h-9 px-3 rounded border border-surface-variant bg-surface-container-lowest text-on-surface"
+              id="documentEditorOfficialFileSelect"
+            >
+              <option value="">Chưa có file chính thức</option>
+            </select>
+            <p class="font-body-sm text-body-sm text-on-surface-variant" id="documentEditorOfficialFileInfo">
+              Chưa có file nào được lưu.
+            </p>
+            <button class="h-9 px-space-md rounded border border-primary/40 text-primary hover:bg-primary-fixed font-label-lg text-label-lg flex items-center gap-1.5" id="btnViewOfficialFile" type="button">
+              <span class="material-symbols-outlined text-[18px]">visibility</span>
+              <span>Xem văn bản</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-primary/40 text-primary hover:bg-primary-fixed font-label-lg text-label-lg flex items-center gap-1.5" id="btnDownloadOfficialFile" type="button">
+              <span class="material-symbols-outlined text-[18px]">download</span>
+              <span>Tải văn bản</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-error/40 text-error hover:bg-error-container font-label-lg text-label-lg flex items-center gap-1.5" id="btnDeleteOfficialFile" type="button">
+              <span class="material-symbols-outlined text-[18px]">delete</span>
+              <span>Xóa file</span>
+            </button>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">
+              File được lưu trong kho IndexedDB của trình duyệt. Quyền xem, tải và xóa phụ thuộc vào vai trò của bạn.
+            </p>
+          </div>
+        </section>
+
+        <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant p-space-md">
+          <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface mb-space-sm">Thông tin kỹ thuật</h2>
+          <div class="flex flex-col gap-space-xs font-body-sm text-body-sm text-on-surface-variant">
+            <p><strong class="text-on-surface">Công nghệ:</strong> Tiptap 3.x / ProseMirror</p>
+            <p><strong class="text-on-surface">Khổ giấy:</strong> A4 210 × 297 mm</p>
+            <p><strong class="text-on-surface">Lề:</strong> chỉnh trực tiếp trong phần “Thiết lập lề trang A4”</p>
+            <p><strong class="text-on-surface">Font:</strong> chọn font, cỡ chữ, giãn dòng trên thanh công cụ</p>
+            <p><strong class="text-on-surface">Định dạng lưu:</strong> Tiptap JSON + lịch sử phiên bản</p>
+            <p><strong class="text-on-surface">Xuất file:</strong> DOCX (docx.js) và PDF (html2pdf.js)</p>
+          </div>
+        </section>
+
+        <section class="bg-primary-fixed/40 rounded-lg border border-primary/20 p-space-md">
+          <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface mb-space-sm">Ghi chú triển khai</h2>
+          <p class="font-body-sm text-body-sm text-on-surface-variant">
+            Bản nháp hiện được lưu trên trình duyệt. Khi API quản lý văn bản sẵn sàng, nội dung JSON này có thể gửi trực tiếp tới
+            <code class="font-mono">document_versions.content_json</code> mà không cần chuyển đổi.
+          </p>
+        </section>
+      </aside>
+    </div>
+
+    <div
+      class="fixed inset-0 z-[120] hidden items-center justify-center bg-black/60 p-space-md"
+      id="documentEditorFileViewer"
+    >
+      <div class="flex h-[90vh] w-full max-w-5xl flex-col rounded-lg bg-surface-container-lowest shadow-xl">
+        <div class="flex items-center justify-between gap-space-sm border-b border-surface-variant px-space-md py-space-sm">
+          <div class="flex flex-col">
+            <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface" id="documentEditorFileViewerTitle">
+              Xem văn bản
+            </h2>
+            <p class="font-body-sm text-body-sm text-on-surface-variant" id="documentEditorFileViewerMeta"></p>
+          </div>
+          <div class="flex items-center gap-space-xs">
+            <button class="h-9 px-space-md rounded border border-primary/40 text-primary hover:bg-primary-fixed font-label-lg text-label-lg flex items-center gap-1.5" id="btnDownloadFileViewer" type="button">
+              <span class="material-symbols-outlined text-[18px]">download</span>
+              <span>Tải xuống</span>
+            </button>
+            <button class="h-9 px-space-md rounded border border-surface-variant text-on-surface hover:bg-surface-container-high font-label-lg text-label-lg" id="btnCloseFileViewer" type="button">
+              Đóng
+            </button>
+          </div>
+        </div>
+        <div class="document-file-viewer-body flex-1" id="documentEditorFileViewerBody"></div>
+      </div>
+    </div>
+  </div>
+</main>

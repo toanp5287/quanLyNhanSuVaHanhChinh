@@ -28,6 +28,7 @@ import {
   getApprovalStatusFromHash,
   initRequestApprovals,
 } from "./js/request-approvals.js";
+import { initDocumentEditor } from "./js/document-editor.js";
 import {
   clearSession,
   getCurrentUser,
@@ -64,6 +65,11 @@ document.head.appendChild(transitionStyle);
 
 function mountPage(html) {
   const doc = new DOMParser().parseFromString(html, "text/html");
+
+  if (window.__HRM_DOCUMENT_EDITOR__ && !window.__HRM_DOCUMENT_EDITOR__.isDestroyed) {
+    window.__HRM_DOCUMENT_EDITOR__.destroy();
+  }
+  window.__HRM_DOCUMENT_EDITOR__ = null;
 
   document.body.className = doc.body.className;
   app.innerHTML = doc.body.innerHTML;
@@ -274,6 +280,18 @@ function showRequestApprovals(user, status = "ALL") {
   initRequestApprovals(user, status);
 }
 
+function showDocumentEditor(user) {
+  if (!user) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  mountPage(homeHtml);
+  setupShell(user);
+  initDocumentEditor(user);
+}
+
 function renderRouteView(user) {
   const hash = window.location.hash;
   const detailId = getEmployeeRequestIdFromHash(hash);
@@ -283,7 +301,9 @@ function renderRouteView(user) {
     return;
   }
 
-  if (hash === "#/face-id") {
+  if (hash === "#/soan-van-ban") {
+    showDocumentEditor(user);
+  } else if (hash === "#/face-id") {
     initFaceKiosk();
   } else if (hash === "#/phan-quyen") {
     showPermissions(user);
@@ -354,6 +374,7 @@ document.addEventListener("click", (event) => {
       "Trung tâm Phê duyệt": "#/duyet-don",
       "Đơn chờ HR xử lý": "#/hr-don-tu",
       "Đơn chờ Giám đốc duyệt": "#/giam-doc-don-tu",
+      "Soạn văn bản A4": "#/soan-van-ban",
       "Sơ đồ phòng ban": "#/so-do-phong-ban",
     };
 
