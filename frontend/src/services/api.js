@@ -5,7 +5,7 @@ export const USER_KEY = "hrm_user";
 export const LOGIN_IP_BLOCK_KEY = "hrm_login_ip_block";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:8080",
+  baseURL: import.meta.env.VITE_API_URL || "/api",
   timeout: 10000,
   withCredentials: true,
   headers: {

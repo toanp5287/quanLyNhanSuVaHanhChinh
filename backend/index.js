@@ -31,6 +31,12 @@ const allowedOrigins = String(
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const corsOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173,http://localhost:4173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const allowAllOrigins = corsOrigins.includes("*");
+
 app.use(
   cors({
     origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
@@ -38,7 +44,7 @@ app.use(
     credentials: true,
   }),
 );
-const port = process.env.PORT || 4000;
+const port = process.env.PORT || 8080;
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 app.use("/auth", routerAuth);

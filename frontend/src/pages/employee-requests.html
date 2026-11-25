@@ -1,0 +1,328 @@
+<main class="relative pt-[100px] w-full min-h-screen bg-surface px-space-lg py-space-md">
+  <div class="flex flex-col w-full gap-space-lg pb-space-xl" id="employeeRequestsRoot">
+    <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-space-md">
+      <div class="flex flex-col gap-space-xs">
+        <div class="flex items-center gap-space-xs text-on-surface-variant font-label-md text-label-md">
+          <span>Quản lý nhân sự</span>
+          <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+          <span class="text-on-surface font-semibold">Đơn từ</span>
+        </div>
+        <h1 class="font-headline-lg text-headline-lg text-on-surface" id="employeeRequestsTitle">
+          Danh sách đơn từ
+        </h1>
+        <p class="font-body-md text-body-md text-on-surface-variant" id="employeeRequestsSubtitle">
+          Theo dõi đơn xin nghỉ việc, đơn xin tạm nghỉ và trạng thái phê duyệt.
+        </p>
+      </div>
+      <div class="flex items-center flex-wrap gap-space-xs">
+        <button
+          class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container transition-colors font-label-lg text-label-lg flex items-center gap-1.5 shadow-sm"
+          id="btnCreateResignation"
+          type="button"
+        >
+          <span class="material-symbols-outlined text-[18px]">logout</span>
+          <span>Gửi đơn nghỉ việc</span>
+        </button>
+        <button
+          class="h-9 px-space-md rounded bg-secondary text-on-secondary hover:bg-secondary-container transition-colors font-label-lg text-label-lg flex items-center gap-1.5 shadow-sm"
+          id="btnCreateTemporaryLeave"
+          type="button"
+        >
+          <span class="material-symbols-outlined text-[18px]">event_busy</span>
+          <span>Gửi đơn tạm nghỉ</span>
+        </button>
+        <button
+          class="h-9 px-space-md rounded bg-surface-container-lowest text-on-surface hover:bg-surface-container transition-colors font-label-lg text-label-lg flex items-center gap-1.5 shadow-sm border border-surface-variant"
+          id="btnRefreshEmployeeRequests"
+          type="button"
+        >
+          <span class="material-symbols-outlined text-[18px]">sync</span>
+          <span>Làm mới</span>
+        </button>
+      </div>
+    </div>
+
+    <div
+      class="hidden items-start gap-space-sm rounded-lg border px-space-md py-space-sm font-body-sm text-body-sm"
+      id="employeeRequestsNotice"
+    ></div>
+
+    <div class="grid grid-cols-2 xl:grid-cols-4 gap-space-md">
+      <button
+        class="text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-primary transition-colors"
+        data-request-status="ALL"
+        type="button"
+      >
+        <div class="flex items-start justify-between gap-space-sm">
+          <div>
+            <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block">Tổng đơn</span>
+            <span class="font-headline-lg text-headline-lg text-primary font-bold" id="countRequestAll">-</span>
+          </div>
+          <span class="w-9 h-9 rounded bg-primary-fixed text-on-primary-fixed flex items-center justify-center">
+            <span class="material-symbols-outlined text-[20px]">description</span>
+          </span>
+        </div>
+        <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Tất cả đơn trong phạm vi của bạn.</p>
+      </button>
+
+      <button
+        class="text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-amber-300 transition-colors"
+        data-request-status="PENDING_GROUP"
+        type="button"
+      >
+        <div class="flex items-start justify-between gap-space-sm">
+          <div>
+            <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block">Đang xử lý</span>
+            <span class="font-headline-lg text-headline-lg text-amber-600 font-bold" id="countRequestPending">-</span>
+          </div>
+          <span class="w-9 h-9 rounded bg-amber-100 text-amber-700 flex items-center justify-center">
+            <span class="material-symbols-outlined text-[20px]">pending_actions</span>
+          </span>
+        </div>
+        <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Đơn chờ các cấp phê duyệt.</p>
+      </button>
+
+      <button
+        class="text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-emerald-300 transition-colors"
+        data-request-status="APPROVED"
+        type="button"
+      >
+        <div class="flex items-start justify-between gap-space-sm">
+          <div>
+            <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block">Đã duyệt</span>
+            <span class="font-headline-lg text-headline-lg text-emerald-700 font-bold" id="countRequestApproved">-</span>
+          </div>
+          <span class="w-9 h-9 rounded bg-emerald-100 text-emerald-700 flex items-center justify-center">
+            <span class="material-symbols-outlined text-[20px]">task_alt</span>
+          </span>
+        </div>
+        <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Đơn đã hoàn tất phê duyệt.</p>
+      </button>
+
+      <button
+        class="text-left bg-surface-container-lowest rounded-lg p-space-md shadow-sm border border-transparent hover:border-red-300 transition-colors"
+        data-request-status="REJECTED"
+        type="button"
+      >
+        <div class="flex items-start justify-between gap-space-sm">
+          <div>
+            <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block">Từ chối</span>
+            <span class="font-headline-lg text-headline-lg text-red-600 font-bold" id="countRequestRejected">-</span>
+          </div>
+          <span class="w-9 h-9 rounded bg-red-100 text-red-600 flex items-center justify-center">
+            <span class="material-symbols-outlined text-[20px]">cancel</span>
+          </span>
+        </div>
+        <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Đơn không được phê duyệt.</p>
+      </button>
+    </div>
+
+    <section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-variant overflow-hidden">
+      <div class="p-space-md flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-space-sm bg-surface-container-lowest">
+        <div class="flex flex-wrap items-center gap-space-sm flex-1">
+          <div class="relative w-full sm:w-[280px]">
+            <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-outline">search</span>
+            <input
+              class="w-full h-9 pl-8 pr-3 text-body-sm font-body-sm bg-surface-container-low rounded focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-outline"
+              id="employeeRequestSearch"
+              placeholder="Tìm theo tiêu đề, lý do, mã NV..."
+              type="search"
+            />
+          </div>
+
+          <div class="relative inline-block">
+            <select
+              class="h-9 pl-2.5 pr-8 text-body-sm font-body-sm bg-surface-container-low rounded text-on-surface focus:ring-1 focus:ring-primary outline-none cursor-pointer appearance-none"
+              id="filterEmployeeRequestType"
+            >
+              <option value="">Loại đơn: Tất cả</option>
+              <option value="RESIGNATION">Đơn xin nghỉ việc</option>
+              <option value="TEMPORARY_LEAVE">Đơn xin tạm nghỉ</option>
+            </select>
+            <span class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant text-[18px]">arrow_drop_down</span>
+          </div>
+
+          <div class="relative inline-block">
+            <select
+              class="h-9 pl-2.5 pr-8 text-body-sm font-body-sm bg-surface-container-low rounded text-on-surface focus:ring-1 focus:ring-primary outline-none cursor-pointer appearance-none"
+              id="filterEmployeeRequestStatus"
+            >
+              <option value="ALL">Trạng thái: Tất cả</option>
+              <option value="PENDING_GROUP">Đang xử lý (gộp)</option>
+              <option value="DRAFT">Nháp</option>
+              <option value="PENDING_DEPARTMENT">Chờ quản lý duyệt</option>
+              <option value="PENDING_HR">Chờ HR duyệt</option>
+              <option value="WAITING_EMPLOYEE_UPDATE">Chờ bổ sung hồ sơ</option>
+              <option value="PENDING_DIRECTOR">Chờ Giám đốc duyệt</option>
+              <option value="APPROVED">Đã duyệt</option>
+              <option value="REJECTED">Từ chối</option>
+              <option value="CANCELLED">Đã hủy</option>
+            </select>
+            <span class="material-symbols-outlined absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant text-[18px]">arrow_drop_down</span>
+          </div>
+
+          <input
+            class="h-9 px-2.5 text-body-sm font-body-sm bg-surface-container-low rounded text-on-surface focus:ring-1 focus:ring-primary outline-none"
+            id="filterEmployeeRequestFromDate"
+            type="date"
+            aria-label="Từ ngày"
+          />
+          <input
+            class="h-9 px-2.5 text-body-sm font-body-sm bg-surface-container-low rounded text-on-surface focus:ring-1 focus:ring-primary outline-none"
+            id="filterEmployeeRequestToDate"
+            type="date"
+            aria-label="Đến ngày"
+          />
+        </div>
+      </div>
+
+      <div class="w-full overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-surface-container-high text-on-surface font-label-md text-label-md uppercase tracking-wider select-none">
+              <th class="min-w-[90px] px-3 py-2.5">Mã đơn</th>
+              <th class="min-w-[150px] px-3 py-2.5">Loại đơn</th>
+              <th class="min-w-[240px] px-3 py-2.5">Tiêu đề / Lý do</th>
+              <th class="min-w-[180px] px-3 py-2.5">Nhân viên</th>
+              <th class="min-w-[140px] px-3 py-2.5">Phòng ban</th>
+              <th class="min-w-[110px] px-3 py-2.5">Ngày bắt đầu</th>
+              <th class="min-w-[120px] px-3 py-2.5">Ngày kết thúc</th>
+              <th class="min-w-[150px] px-3 py-2.5 text-center">Trạng thái</th>
+              <th class="min-w-[130px] px-3 py-2.5">Ngày gửi</th>
+              <th class="min-w-[100px] px-3 py-2.5 text-center">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody
+            class="font-body-md text-body-md divide-y divide-surface-container-high"
+            id="employeeRequestsBody"
+          >
+            <tr>
+              <td class="px-3 py-6 text-center text-on-surface-variant" colspan="10">
+                Đang tải danh sách đơn từ...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="px-space-md py-space-sm bg-surface-container-low flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs font-label-sm text-label-sm text-on-surface-variant">
+        <span id="employeeRequestsResultInfo">—</span>
+        <span id="employeeRequestsUpdatedAt">Dữ liệu trực tiếp từ hệ thống HRM</span>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div
+  class="fixed inset-0 z-[120] hidden items-center justify-center bg-black/40 p-space-sm"
+  id="modal-employee-request-form"
+>
+  <div class="w-full max-w-2xl max-h-[calc(100vh-2rem)] overflow-y-auto bg-surface-container-lowest rounded-lg shadow-xl border border-surface-variant">
+    <div class="flex items-center justify-between px-space-md py-space-sm border-b border-surface-variant sticky top-0 bg-surface-container-lowest z-10">
+      <div>
+        <h2 class="font-headline-sm text-headline-sm font-bold text-on-surface" id="employeeRequestFormTitle">Gửi đơn</h2>
+        <p class="font-body-sm text-body-sm text-on-surface-variant" id="employeeRequestFormSubtitle">Vui lòng kiểm tra thông tin trước khi gửi.</p>
+      </div>
+      <button
+        class="w-8 h-8 rounded text-on-surface-variant hover:bg-surface-container-high flex items-center justify-center"
+        id="btnCloseEmployeeRequestForm"
+        type="button"
+        aria-label="Đóng"
+      >
+        <span class="material-symbols-outlined text-[20px]">close</span>
+      </button>
+    </div>
+
+    <form id="employeeRequestForm" class="p-space-md flex flex-col gap-space-md">
+      <div
+        class="hidden rounded-lg border border-error/30 bg-error-container px-space-md py-space-sm font-body-sm text-body-sm text-on-error-container"
+        id="employeeRequestFormError"
+      ></div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+        <div class="flex flex-col gap-1" id="employeeRequestStartGroup">
+          <label class="font-label-md text-label-md font-semibold text-on-surface" for="employeeRequestStartDate">
+            Ngày bắt đầu <span class="text-error">*</span>
+          </label>
+          <input
+            class="h-10 px-3 rounded border border-surface-variant bg-surface-container-low text-on-surface focus:ring-1 focus:ring-primary outline-none"
+            id="employeeRequestStartDate"
+            type="date"
+            required
+          />
+        </div>
+
+        <div class="flex flex-col gap-1" id="employeeRequestLastWorkingGroup">
+          <label class="font-label-md text-label-md font-semibold text-on-surface" for="employeeRequestLastWorkingDate">
+            Ngày làm việc cuối <span class="text-error">*</span>
+          </label>
+          <input
+            class="h-10 px-3 rounded border border-surface-variant bg-surface-container-low text-on-surface focus:ring-1 focus:ring-primary outline-none"
+            id="employeeRequestLastWorkingDate"
+            type="date"
+            required
+          />
+        </div>
+
+        <div class="flex flex-col gap-1 hidden" id="employeeRequestEndGroup">
+          <label class="font-label-md text-label-md font-semibold text-on-surface" for="employeeRequestEndDate">
+            Ngày kết thúc tạm nghỉ <span class="text-error">*</span>
+          </label>
+          <input
+            class="h-10 px-3 rounded border border-surface-variant bg-surface-container-low text-on-surface focus:ring-1 focus:ring-primary outline-none"
+            id="employeeRequestEndDate"
+            type="date"
+          />
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="font-label-md text-label-md font-semibold text-on-surface" for="employeeRequestReason">
+          Lý do <span class="text-error">*</span>
+        </label>
+        <textarea
+          class="w-full min-h-[110px] px-3 py-2 rounded border border-surface-variant bg-surface-container-low text-on-surface focus:ring-1 focus:ring-primary outline-none resize-y"
+          id="employeeRequestReason"
+          maxlength="5000"
+          placeholder="Nhập lý do gửi đơn..."
+          required
+        ></textarea>
+        <span class="font-label-sm text-label-sm text-on-surface-variant self-end" id="employeeRequestReasonCount">0 / 5000</span>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="font-label-md text-label-md font-semibold text-on-surface" for="employeeRequestFiles">
+          File đính kèm
+        </label>
+        <input
+          class="w-full text-body-sm text-body-sm text-on-surface file:mr-3 file:rounded file:border-0 file:bg-primary-fixed file:text-on-primary-fixed file:px-3 file:py-2 file:font-semibold"
+          id="employeeRequestFiles"
+          type="file"
+          multiple
+          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+        />
+        <p class="font-label-sm text-label-sm text-on-surface-variant">
+          Hiện hệ thống chưa có API lưu file; bạn có thể nhập nội dung bổ sung ở phần lý do.
+        </p>
+      </div>
+
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-space-xs pt-space-sm border-t border-surface-variant">
+        <button
+          class="h-9 px-space-md rounded border border-surface-variant text-on-surface hover:bg-surface-container-high font-label-lg text-label-lg"
+          id="btnCancelEmployeeRequestForm"
+          type="button"
+        >
+          Hủy
+        </button>
+        <button
+          class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container font-label-lg text-label-lg flex items-center justify-center gap-1.5"
+          id="btnSubmitEmployeeRequest"
+          type="submit"
+        >
+          <span class="material-symbols-outlined text-[18px]">send</span>
+          <span>Gửi đơn</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

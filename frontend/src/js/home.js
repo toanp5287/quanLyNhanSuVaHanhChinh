@@ -384,6 +384,27 @@ const applyCardPermissions = (user) => {
       allowed = hasAnyPermission(requiredPermissions, user);
     }
 
+    if (
+      title === "Trung tâm Phê duyệt" &&
+      !["MANAGER", "DIRECTOR", "HR_ADMIN"].includes(user.role_id)
+    ) {
+      allowed = false;
+    }
+
+    if (title === "Trung tâm Phê duyệt" && user.role_id === "HR_ADMIN") {
+      const heading = card.querySelector("h4");
+      if (heading) heading.textContent = "Đơn chờ HR xử lý";
+    }
+
+    if (title === "Trung tâm Phê duyệt" && user.role_id === "DIRECTOR") {
+      const heading = card.querySelector("h4");
+      if (heading) heading.textContent = "Đơn chờ Giám đốc duyệt";
+      const description = card.querySelector("p");
+      if (description) {
+        description.textContent = "Danh sách đơn trình Giám đốc và trạng thái xử lý.";
+      }
+    }
+
     if (user.data_scope === "SELF") {
       if (["Nhân viên đang làm", "Nhân viên đã nghỉ", "Sơ đồ phòng ban"].includes(title)) {
         allowed = false;

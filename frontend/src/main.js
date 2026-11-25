@@ -22,10 +22,24 @@ import {
   initOrganization,
 } from "./js/organization.js";
 import {
+  getEmployeeRequestTypeFromHash,
+  initEmployeeRequests,
+} from "./js/employee-requests.js";
+import {
+  getEmployeeRequestIdFromHash,
+  initEmployeeRequestDetail,
+} from "./js/employee-request-detail.js";
+import {
+  getApprovalStatusFromHash,
+  initRequestApprovals,
+} from "./js/request-approvals.js";
+import { initDocumentEditor } from "./js/document-editor.js";
+import {
   clearSession,
   getCurrentUser,
   getMe,
   getToken,
+  hasAnyPermission,
   hasPermission,
   logout,
 } from "./services/auth.service.js";
@@ -45,6 +59,11 @@ document.head.appendChild(transitionStyle);
 
 function mountPage(html) {
   const doc = new DOMParser().parseFromString(html, "text/html");
+
+  if (window.__HRM_DOCUMENT_EDITOR__ && !window.__HRM_DOCUMENT_EDITOR__.isDestroyed) {
+    window.__HRM_DOCUMENT_EDITOR__.destroy();
+  }
+  window.__HRM_DOCUMENT_EDITOR__ = null;
 
   document.body.className = doc.body.className;
   app.innerHTML = doc.body.innerHTML;
@@ -274,10 +293,87 @@ function showContracts(user, status = "ALL") {
   initContracts(user, status);
 }
 
+function showEmployeeRequests(user, type = "ALL") {
+  if (
+    !user ||
+    !hasAnyPermission(
+      ["ESS.SELF_PROFILE", "LEAVE.APPROVE", "HR.PROFILE_MANAGE"],
+      user,
+    )
+  ) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  mountPage(homeHtml);
+  setupShell(user);
+  initEmployeeRequests(user, type);
+}
+
+function showEmployeeRequestDetail(user, id) {
+  if (
+    !user ||
+    !hasAnyPermission(
+      ["ESS.SELF_PROFILE", "LEAVE.APPROVE", "HR.PROFILE_MANAGE"],
+      user,
+    )
+  ) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  mountPage(homeHtml);
+  setupShell(user);
+  initEmployeeRequestDetail(user, id);
+}
+
+function showRequestApprovals(user, status = "ALL") {
+  const approverRoles = ["MANAGER", "DIRECTOR", "HR_ADMIN"];
+  if (
+    !user ||
+    !hasAnyPermission(
+      ["ESS.SELF_PROFILE", "LEAVE.APPROVE", "HR.PROFILE_MANAGE"],
+      user,
+    ) ||
+    !approverRoles.includes(user.role_id) ||
+    user.data_scope === "SELF"
+  ) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  mountPage(homeHtml);
+  setupShell(user);
+  initRequestApprovals(user, status);
+}
+
+function showDocumentEditor(user) {
+  if (!user) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+
+  mountPage(homeHtml);
+  setupShell(user);
+  initDocumentEditor(user);
+}
+
 function renderRouteView(user) {
   const hash = window.location.hash;
+  const detailId = getEmployeeRequestIdFromHash(hash);
 
-  if (hash === "#/face-id") {
+  if (detailId) {
+    showEmployeeRequestDetail(user, detailId);
+    return;
+  }
+
+  if (hash === "#/soan-van-ban") {
+    showDocumentEditor(user);
+  } else if (hash === "#/face-id") {
     initFaceKiosk();
   } else if (hash === "#/phan-quyen") {
     showPermissions(user);
@@ -290,6 +386,23 @@ function renderRouteView(user) {
     showOrganization(user, getOrganizationTabFromHash(hash));
   } else if (hash === "#/hop-dong" || hash.startsWith("#/hop-dong/")) {
     showContracts(user, getContractStatusFromHash(hash));
+  } else if (hash === "#/duyet-don" || hash.startsWith("#/duyet-don/")) {
+    showRequestApprovals(user, getApprovalStatusFromHash(hash));
+  } else if (hash === "#/hr-don-tu" || hash.startsWith("#/hr-don-tu/")) {
+    const approvalHash = hash.replace("#/hr-don-tu", "#/duyet-don");
+    showRequestApprovals(user, getApprovalStatusFromHash(approvalHash));
+  } else if (
+    hash === "#/giam-doc-don-tu" ||
+    hash.startsWith("#/giam-doc-don-tu/")
+  ) {
+    const approvalHash = hash.replace("#/giam-doc-don-tu", "#/duyet-don");
+    showRequestApprovals(user, getApprovalStatusFromHash(approvalHash));
+  } else if (
+    hash === "#/don-tu" ||
+    hash === "#/don-tu/nghi-viec" ||
+    hash === "#/don-tu/tam-nghi"
+  ) {
+    showEmployeeRequests(user, getEmployeeRequestTypeFromHash(hash));
   } else if (hash === "#/nhan-vien" || hash.startsWith("#/nhan-vien/")) {
     showEmployees(user, getEmployeeModeFromHash(hash));
   } else if (hash === "#/thong-tin-noi-bo") {
@@ -340,13 +453,24 @@ document.addEventListener("click", (event) => {
       "Nhân viên đang làm": "#/nhan-vien/dang-lam",
       "Nhân viên đã nghỉ": "#/nhan-vien/da-nghi",
       "Hợp đồng lao động": "#/hop-dong",
+      "Tạo đơn từ trực tuyến": "#/don-tu",
+      "Trung tâm Phê duyệt": "#/duyet-don",
+      "Đơn chờ HR xử lý": "#/hr-don-tu",
+      "Đơn chờ Giám đốc duyệt": "#/giam-doc-don-tu",
+      "Soạn văn bản A4": "#/soan-van-ban",
       "Sơ đồ phòng ban": "#/so-do-phong-ban",
       "Bản tin & Nội quy công ty": "#/thong-tin-noi-bo",
     };
 
-    if (cardRoutes[title]) {
+    const approvalUser = getCurrentUser();
+    const cardRoute =
+      title === "Trung tâm Phê duyệt" && approvalUser?.role_id === "DIRECTOR"
+        ? "#/giam-doc-don-tu"
+        : cardRoutes[title];
+
+    if (cardRoute) {
       event.preventDefault();
-      window.location.hash = cardRoutes[title];
+      window.location.hash = cardRoute;
       return;
     }
   }
