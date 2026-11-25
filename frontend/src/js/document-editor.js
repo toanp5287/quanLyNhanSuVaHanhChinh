@@ -263,6 +263,51 @@ function resolveCapabilities(user) {
   };
 }
 
+function roleInList(roleId, value) {
+  const roles = String(value || "")
+    .split(",")
+    .map((role) => role.trim())
+    .filter(Boolean);
+  if (!roles.length) return true;
+  return Boolean(roleId) && roles.includes(roleId);
+}
+
+function resolveDocumentCapabilities(document = {}) {
+  const user = state.user || {};
+  const base = resolveCapabilities(user);
+  const elevated = user.role_id === "SUPER_ADMIN" || hasPermission("HR.PROFILE_MANAGE", user);
+  const owner = Boolean(user.user_id) && Number(document.owner_user_id) === Number(user.user_id);
+  const viewAll =
+    elevated ||
+    base.manage ||
+    ["DIRECTOR", "OFFICE_ADMIN"].includes(user.role_id) ||
+    user.data_scope === "ALL" ||
+    owner ||
+    document.visibility === "ALL" ||
+    (document.visibility === "DEPARTMENT" &&
+      Boolean(user.department_id) &&
+      Number(document.department_id) === Number(user.department_id)) ||
+    (document.visibility === "ROLE" && roleInList(user.role_id, document.allowed_roles));
+
+  return {
+    view: Boolean(base.view && viewAll),
+    edit: Boolean(base.edit || elevated || owner || roleInList(user.role_id, document.can_edit_roles)),
+    export: Boolean(base.export || elevated || roleInList(user.role_id, document.can_export_roles)),
+    manage: Boolean(base.manage || elevated),
+  };
+}
+
+function applyDocumentCapabilities(capabilities) {
+  if (!capabilities) return;
+  state.can = {
+    view: Boolean(capabilities.view),
+    edit: Boolean(capabilities.view && capabilities.edit),
+    export: Boolean(capabilities.view && capabilities.export),
+    manage: Boolean(capabilities.view && capabilities.manage),
+  };
+  applyPermissionUi();
+}
+
 function normalizeVersion(version = {}, index = 0) {
   const fallbackTime = version.edited_at || version.created_at || new Date().toISOString();
   return {
@@ -398,6 +443,132 @@ function writeSavedDocuments(documents) {
   }
 }
 
+function isBackendId(value) {
+  return /^\d+$/.test(String(value || ""));
+}
+
+function apiErrorMessage(error, fallback) {
+  return error?.response?.data?.message || error?.message || fallback;
+}
+
+function mapServerVersion(version = {}, index = 0) {
+  return normalizeVersion(
+    {
+      id: version.id,
+      version_number: version.version_number || index + 1,
+      title: version.title,
+      number: version.document_number || version.number || "",
+      template_id: version.template_code || version.template_id || null,
+      margins: {
+        top: version.margin_top ?? DEFAULT_MARGINS.top,
+        right: version.margin_right ?? DEFAULT_MARGINS.right,
+        bottom: version.margin_bottom ?? DEFAULT_MARGINS.bottom,
+        left: version.margin_left ?? DEFAULT_MARGINS.left,
+      },
+      content: version.content_json || version.content || null,
+      edited_by: version.editor_name_snapshot || version.edited_by || "Không rõ",
+      edited_at: version.edited_at || version.created_at || new Date().toISOString(),
+      created_by: version.editor_name_snapshot || version.created_by || "Không rõ",
+      created_at: version.created_at || version.edited_at || new Date().toISOString(),
+      note: version.change_note || version.note || "",
+    },
+    index,
+  );
+}
+
+function mapServerDocument(document = {}) {
+  const versions = (document.versions || [])
+    .map(mapServerVersion)
+    .sort((a, b) => b.version_number - a.version_number);
+  if (!versions.length && document.current_version) {
+    versions.push(mapServerVersion(document.current_version, 0));
+  }
+  const currentVersionId = document.current_version_id || versions[0]?.id || null;
+  const current =
+    versions.find((version) => String(version.id) === String(currentVersionId)) || versions[0];
+
+  return normalizeDocumentEntry({
+    id: document.id,
+    title: document.title || current?.title || "Văn bản chưa đặt tên",
+    number: document.document_number || current?.number || "",
+    template_id: document.template_code || current?.template_id || null,
+    content: current?.content || null,
+    margins: current?.margins || DEFAULT_MARGINS,
+    created_at: document.created_at,
+    created_by: document.created_by,
+    updated_at: document.updated_at,
+    updated_by: document.updated_by,
+    current_version_id: currentVersionId,
+    versions,
+    status: document.status,
+    visibility: document.visibility,
+    owner_user_id: document.owner_user_id,
+    can_edit_roles: document.can_edit_roles,
+    can_export_roles: document.can_export_roles,
+    allowed_roles: document.allowed_roles,
+    department_id: document.department_id,
+    capabilities: resolveDocumentCapabilities(document),
+    synced_at: new Date().toISOString(),
+  });
+}
+
+function mergeDocuments(mappedDocuments) {
+  const merged = new Map(
+    readSavedDocuments().map((document) => [String(document.id), document]),
+  );
+  mappedDocuments.forEach((document) => merged.set(String(document.id), document));
+  return Array.from(merged.values());
+}
+
+async function syncDocumentsFromServer(silent = false) {
+  try {
+    const response = await api.get("/documents", { params: { limit: 50 } });
+    const rows = response.data?.data || [];
+    const mapped = await Promise.all(
+      rows.map(async (row) => {
+        try {
+          const detail = await api.get(`/documents/${row.id}`);
+          return mapServerDocument(detail.data?.data || row);
+        } catch (error) {
+          return mapServerDocument(row);
+        }
+      }),
+    );
+    if (!writeSavedDocuments(mergeDocuments(mapped).slice(0, 50))) return false;
+    const active = mapped.find(
+      (document) => String(document.id) === String(state.activeDocumentId),
+    );
+    if (active) applyDocumentCapabilities(active.capabilities);
+    else if (state.activeDocumentId && isBackendId(state.activeDocumentId)) {
+      state.activeDocumentId = null;
+      state.activeVersionId = null;
+      applyDocumentCapabilities(resolveCapabilities(state.user));
+    }
+    renderSavedDocuments();
+    renderDocumentVersions();
+    if (!silent) showNotice(`Đã đồng bộ ${mapped.length} văn bản từ máy chủ.`);
+    return true;
+  } catch (error) {
+    if (!silent) showNotice(apiErrorMessage(error, "Không thể đồng bộ văn bản từ máy chủ."), true);
+    return false;
+  }
+}
+
+async function syncDocumentFromServer(id) {
+  try {
+    const response = await api.get(`/documents/${id}`);
+    const mapped = mapServerDocument(response.data?.data || {});
+    if (!writeSavedDocuments(mergeDocuments([mapped]).slice(0, 50))) return null;
+    applyDocumentCapabilities(mapped.capabilities);
+    renderSavedDocuments();
+    renderDocumentVersions();
+    return mapped;
+  } catch (error) {
+    showNotice(apiErrorMessage(error, "Không thể tải văn bản từ máy chủ."), true);
+    return null;
+  }
+}
+
 let fileDbPromise = null;
 
 function openFileDatabase() {
@@ -447,20 +618,22 @@ async function listOfficialFiles() {
   const transaction = database.transaction(FILE_STORE_NAME, "readonly");
   const records = await requestAsPromise(transaction.objectStore(FILE_STORE_NAME).getAll());
   return records
-    .filter((record) => record.user_id === state.user?.user_id)
+    .filter((record) => String(record.user_id) === String(state.user?.user_id))
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 }
 
 async function getOfficialFile(id) {
   const database = await openFileDatabase();
   const transaction = database.transaction(FILE_STORE_NAME, "readonly");
-  return requestAsPromise(transaction.objectStore(FILE_STORE_NAME).get(id));
+  return requestAsPromise(
+    transaction.objectStore(FILE_STORE_NAME).get(isBackendId(id) ? Number(id) : id),
+  );
 }
 
 async function removeOfficialFile(id) {
   const database = await openFileDatabase();
   const transaction = database.transaction(FILE_STORE_NAME, "readwrite");
-  transaction.objectStore(FILE_STORE_NAME).delete(id);
+  transaction.objectStore(FILE_STORE_NAME).delete(isBackendId(id) ? Number(id) : id);
   await transactionAsPromise(transaction);
 }
 
@@ -491,8 +664,11 @@ function renderSavedDocuments() {
         )
         .join("")
     : '<option value="">Chưa có văn bản đã lưu</option>';
-  if (state.activeDocumentId && documents.some((document) => document.id === state.activeDocumentId)) {
-    select.value = state.activeDocumentId;
+  if (
+    state.activeDocumentId &&
+    documents.some((document) => String(document.id) === String(state.activeDocumentId))
+  ) {
+    select.value = String(state.activeDocumentId);
   }
   setText("#documentEditorSavedCount", `${documents.length} văn bản`);
   const openButton = document.getElementById("btnOpenSavedDocument");
@@ -517,12 +693,14 @@ function renderDocumentVersions() {
         .join("")
     : '<option value="">Chưa có phiên bản</option>';
 
-  const preferredId = state.activeVersionId && versions.some((version) => version.id === state.activeVersionId)
-    ? state.activeVersionId
-    : entry?.current_version_id || versions[0]?.id || "";
-  if (preferredId) select.value = preferredId;
+  const preferredId =
+    state.activeVersionId &&
+    versions.some((version) => String(version.id) === String(state.activeVersionId))
+      ? state.activeVersionId
+      : entry?.current_version_id || versions[0]?.id || "";
+  if (preferredId) select.value = String(preferredId);
 
-  const selectedVersion = versions.find((version) => version.id === select.value) || versions[0];
+  const selectedVersion = versions.find((version) => String(version.id) === String(select.value)) || versions[0];
   if (selectedVersion) {
     state.activeVersionId = selectedVersion.id;
     setText(
@@ -535,8 +713,8 @@ function renderDocumentVersions() {
 
   const restoreButton = document.getElementById("btnRestoreDocumentVersion");
   const deleteButton = document.getElementById("btnDeleteDocumentVersion");
-  if (restoreButton) restoreButton.disabled = !selectedVersion;
-  if (deleteButton) deleteButton.disabled = versions.length <= 1 || !selectedVersion;
+  if (restoreButton) restoreButton.disabled = !selectedVersion || !state.can.edit;
+  if (deleteButton) deleteButton.disabled = versions.length <= 1 || !selectedVersion || !state.can.manage;
   renderAuditInfo();
 }
 
@@ -560,49 +738,109 @@ function buildVersionFromCurrent(documents, note = "") {
   };
 }
 
-function saveDocumentToLibrary() {
+async function saveDocumentToLibrary() {
   if (!editor || editor.isDestroyed) return;
   if (!state.can.edit) {
     showNotice("Bạn không có quyền sửa hoặc lưu văn bản.", true);
     return;
   }
+
   const documents = readSavedDocuments();
   const meta = getDocumentMeta();
-  const id = state.activeDocumentId || `doc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const existingIndex = documents.findIndex((document) => document.id === id);
-  const existing = existingIndex >= 0 ? documents[existingIndex] : {};
-  const version = buildVersionFromCurrent(documents);
-  const entry = {
-    ...existing,
-    ...buildDocumentPayload(),
-    id,
-    title: meta.title || existing.title || "Văn bản chưa đặt tên",
-    template_id: version.template_id,
-    created_at: existing.created_at || version.created_at,
-    created_by: existing.created_by || version.created_by,
-    updated_at: version.edited_at,
-    updated_by: version.edited_by,
-    versions: [version, ...(existing.versions || [])].slice(0, VERSION_LIMIT),
-    current_version_id: version.id,
+  const templateId = document.getElementById("documentEditorTemplate")?.value || "";
+  const employeeValue = document.getElementById("documentEditorEmployeeSelect")?.value;
+  const requestValue = document.getElementById("documentEditorRequestSelect")?.value;
+  const payload = {
+    title: meta.title || "Văn bản chưa đặt tên",
+    document_number: meta.number || "",
+    content_json: editor.getJSON(),
+    margins: { ...pageMargins },
+    template_id: templateId || null,
+    change_note: state.restoredVersionNumber
+      ? `Khôi phục từ phiên bản #${state.restoredVersionNumber}`
+      : "Lưu từ trình soạn thảo",
   };
-  if (existingIndex >= 0) documents[existingIndex] = entry;
-  else documents.unshift(entry);
-  if (!writeSavedDocuments(documents.slice(0, 50))) return;
+  const employeeId = isBackendId(employeeValue) ? Number(employeeValue) : undefined;
+  const requestId = isBackendId(requestValue) ? Number(requestValue) : undefined;
+  const currentId = isBackendId(state.activeDocumentId)
+    ? Number(state.activeDocumentId)
+    : null;
 
-  state.activeDocumentId = id;
-  state.activeVersionId = version.id;
+  let entry = null;
+  let savedToServer = false;
+
+  try {
+    let response;
+    if (currentId) {
+      response = await api.put(`/documents/${currentId}`, payload);
+    } else {
+      response = await api.post("/documents/from-template", {
+        ...payload,
+        template_code: templateId || "handover",
+        employee_id: employeeId,
+        request_id: requestId,
+        status: "DRAFT",
+      });
+      const createdId = response.data?.data?.id;
+      if (!createdId) throw new Error("Máy chủ không trả về mã văn bản");
+      response = await api.patch(`/documents/${createdId}/content`, payload);
+    }
+    entry = mapServerDocument(response.data?.data || {});
+    if (!writeSavedDocuments(mergeDocuments([entry]).slice(0, 50))) return;
+    savedToServer = true;
+  } catch (error) {
+    showNotice(
+      `${apiErrorMessage(error, "Không thể lưu lên máy chủ")}. Đã lưu tạm trên trình duyệt.`,
+      true,
+    );
+  }
+
+  if (!entry) {
+    const id = state.activeDocumentId || `doc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const existingIndex = documents.findIndex((document) => document.id === id);
+    const existing = existingIndex >= 0 ? documents[existingIndex] : {};
+    const version = buildVersionFromCurrent(documents);
+    entry = {
+      ...existing,
+      ...buildDocumentPayload(),
+      id,
+      title: meta.title || existing.title || "Văn bản chưa đặt tên",
+      template_id: version.template_id,
+      created_at: existing.created_at || version.created_at,
+      created_by: existing.created_by || version.created_by,
+      updated_at: version.edited_at,
+      updated_by: version.edited_by,
+      versions: [version, ...(existing.versions || [])].slice(0, VERSION_LIMIT),
+      current_version_id: version.id,
+    };
+    if (existingIndex >= 0) documents[existingIndex] = entry;
+    else documents.unshift(entry);
+    if (!writeSavedDocuments(documents.slice(0, 50))) return;
+  }
+
+  const currentVersion = entry.versions.find(
+    (version) => String(version.id) === String(entry.current_version_id),
+  ) || entry.versions[0];
+  applyDocumentCapabilities(entry.capabilities || resolveCapabilities(state.user));
+  state.activeDocumentId = entry.id;
+  state.activeVersionId = entry.current_version_id;
   state.restoredVersionNumber = null;
-  state.lastEditedBy = version.edited_by;
-  state.lastEditedAt = version.edited_at;
+  state.lastEditedBy = entry.updated_by || currentVersion?.edited_by || currentEditorIdentity().edited_by;
+  state.lastEditedAt = entry.updated_at || currentVersion?.edited_at;
   state.dirty = false;
   saveDraft(false);
   renderSavedDocuments();
   renderDocumentVersions();
   setText(
     "#documentEditorStatus",
-    `Đã lưu “${entry.title}” — phiên bản #${version.version_number} bởi ${version.edited_by} lúc ${formatTime(version.edited_at)}.`,
+    `Đã lưu “${entry.title}” — phiên bản #${currentVersion?.version_number || 1} lúc ${formatTime(state.lastEditedAt || new Date().toISOString())}.`,
   );
-  showNotice(`Đã lưu văn bản “${entry.title}” và ghi nhận phiên bản #${version.version_number}.`);
+  showNotice(
+    savedToServer
+      ? `Đã lưu “${entry.title}” và ghi nhận phiên bản #${currentVersion?.version_number || 1} trên máy chủ.`
+      : `Đã lưu văn bản “${entry.title}” trong trình duyệt.`,
+    !savedToServer,
+  );
 }
 
 function applyVersionToEditor(version, options = {}) {
@@ -634,12 +872,9 @@ function applyVersionToEditor(version, options = {}) {
   if (notify) showNotice(`Đã khôi phục phiên bản #${version.version_number}. Nhấn “Lưu văn bản” để giữ lại thay đổi.`);
 }
 
-function openSavedDocument(id) {
-  if (!state.can.edit) {
-    showNotice("Bạn có quyền xem, nhưng không có quyền mở văn bản để sửa.", true);
-    return;
-  }
-  const entry = readSavedDocuments().find((document) => document.id === id);
+async function openSavedDocument(id) {
+  const readOnly = !state.can.edit;
+  let entry = readSavedDocuments().find((document) => String(document.id) === String(id));
   if (!entry) {
     showNotice("Không tìm thấy văn bản đã lưu.", true);
     return;
@@ -648,34 +883,45 @@ function openSavedDocument(id) {
     return;
   }
 
+  if (isBackendId(id)) {
+    const synced = await syncDocumentFromServer(id);
+    if (synced) entry = synced;
+  }
+  applyDocumentCapabilities(entry.capabilities || resolveCapabilities(state.user));
+
   state.activeDocumentId = entry.id;
-  const latest = entry.versions[0];
+  const current =
+    entry.versions.find((version) => String(version.id) === String(entry.current_version_id)) || entry.versions[0];
   applyVersionToEditor(
     {
       ...entry,
-      id: entry.current_version_id || latest?.id || entry.id,
-      version_number: latest?.version_number || 1,
-      title: entry.title || latest?.title,
-      number: entry.number || latest?.number,
-      template_id: entry.template_id || latest?.template_id,
-      margins: entry.margins || latest?.margins,
-      content: entry.content || latest?.content,
-      edited_by: entry.updated_by || latest?.edited_by || "Không rõ",
-      edited_at: entry.updated_at || latest?.edited_at,
-      note: latest?.note || "",
+      id: entry.current_version_id || current?.id || entry.id,
+      version_number: current?.version_number || 1,
+      title: entry.title || current?.title,
+      number: entry.number || current?.number,
+      template_id: entry.template_id || current?.template_id,
+      margins: current?.margins || entry.margins,
+      content: current?.content || entry.content,
+      edited_by: current?.edited_by || entry.updated_by || "Không rõ",
+      edited_at: current?.edited_at || entry.updated_at,
+      note: current?.note || "",
     },
-    { dirty: false, save: true },
+    { dirty: false, save: !readOnly },
   );
-  showNotice("Đã mở văn bản. Bạn có thể tiếp tục chỉnh sửa trực tiếp.");
+  showNotice(
+    readOnly
+      ? "Đã mở văn bản ở chế độ chỉ xem."
+      : "Đã mở văn bản. Bạn có thể tiếp tục chỉnh sửa trực tiếp.",
+  );
 }
 
-function restoreDocumentVersion(id) {
+async function restoreDocumentVersion(id) {
   if (!state.can.edit) {
     showNotice("Bạn không có quyền khôi phục phiên bản.", true);
     return;
   }
   const entry = readSavedDocuments().find((document) => document.id === state.activeDocumentId);
-  const version = entry?.versions.find((item) => item.id === id);
+  const version = entry?.versions.find((item) => String(item.id) === String(id));
   if (!version) {
     showNotice("Không tìm thấy phiên bản cần khôi phục.", true);
     return;
@@ -683,10 +929,39 @@ function restoreDocumentVersion(id) {
   if (state.dirty && !window.confirm("Có thay đổi chưa lưu. Khôi phục phiên bản sẽ bỏ các thay đổi đó. Tiếp tục?")) {
     return;
   }
+
+  if (isBackendId(state.activeDocumentId) && isBackendId(id)) {
+    try {
+      const response = await api.post(
+        `/documents/${state.activeDocumentId}/versions/${id}/restore`,
+      );
+      const synced = mapServerDocument(response.data?.data || {});
+      if (!writeSavedDocuments(mergeDocuments([synced]).slice(0, 50))) return;
+      const latest = synced.versions.find(
+        (item) => String(item.id) === String(synced.current_version_id),
+      ) || synced.versions[0];
+      state.activeDocumentId = synced.id;
+      applyVersionToEditor(
+        {
+          ...latest,
+          title: synced.title,
+          number: synced.number,
+          margins: latest?.margins || synced.margins,
+          content: latest?.content || synced.content,
+        },
+        { dirty: true, save: false, notify: true },
+      );
+      return;
+    } catch (error) {
+      showNotice(apiErrorMessage(error, "Không thể khôi phục phiên bản trên máy chủ."), true);
+      return;
+    }
+  }
+
   applyVersionToEditor(version, { dirty: true, save: false, notify: true });
 }
 
-function deleteDocumentVersion(id) {
+async function deleteDocumentVersion(id) {
   if (!state.can.manage) {
     showNotice("Bạn không có quyền xóa phiên bản.", true);
     return;
@@ -699,11 +974,38 @@ function deleteDocumentVersion(id) {
     showNotice("Không thể xóa phiên bản cuối cùng của văn bản.", true);
     return;
   }
-  const version = entry.versions.find((item) => item.id === id);
+  const version = entry.versions.find((item) => String(item.id) === String(id));
   if (!version) return;
   if (!window.confirm(`Xóa phiên bản #${version.version_number} của văn bản “${entry.title}”?`)) return;
 
-  const versions = entry.versions.filter((item) => item.id !== id);
+  if (isBackendId(state.activeDocumentId) && isBackendId(id)) {
+    try {
+      const response = await api.delete(`/documents/${state.activeDocumentId}/versions/${id}`);
+      const updated = mapServerDocument(response.data?.data || {});
+      if (!writeSavedDocuments(mergeDocuments([updated]).slice(0, 50))) return;
+      const latest = updated.versions.find(
+        (item) => String(item.id) === String(updated.current_version_id),
+      ) || updated.versions[0];
+      state.activeDocumentId = updated.id;
+      applyVersionToEditor(
+        {
+          ...latest,
+          title: updated.title,
+          number: updated.number,
+          margins: latest?.margins || updated.margins,
+          content: latest?.content || updated.content,
+        },
+        { dirty: false, save: true },
+      );
+      showNotice(`Đã xóa phiên bản #${version.version_number} trên máy chủ.`);
+      return;
+    } catch (error) {
+      showNotice(apiErrorMessage(error, "Không thể xóa phiên bản trên máy chủ."), true);
+      return;
+    }
+  }
+
+  const versions = entry.versions.filter((item) => String(item.id) !== String(id));
   const latest = versions[0];
   const updatedEntry = {
     ...entry,
@@ -716,7 +1018,7 @@ function deleteDocumentVersion(id) {
   documents[entryIndex] = updatedEntry;
   if (!writeSavedDocuments(documents)) return;
 
-  if (state.activeVersionId === id || state.restoredVersionNumber === version.version_number) {
+  if (String(state.activeVersionId) === String(id) || state.restoredVersionNumber === version.version_number) {
     applyVersionToEditor(latest, { dirty: false, save: true });
   } else {
     renderSavedDocuments();
@@ -734,7 +1036,7 @@ function buildDocumentPayloadFromVersion(version) {
   };
 }
 
-function deleteSavedDocument(id) {
+async function deleteSavedDocument(id) {
   if (!state.can.manage) {
     showNotice("Bạn không có quyền xóa văn bản.", true);
     return;
@@ -742,8 +1044,18 @@ function deleteSavedDocument(id) {
   const entry = readSavedDocuments().find((document) => document.id === id);
   if (!entry) return;
   if (!window.confirm(`Xóa văn bản “${entry.title || "Chưa đặt tên"}” khỏi thư viện?`)) return;
-  if (!writeSavedDocuments(readSavedDocuments().filter((document) => document.id !== id))) return;
-  if (state.activeDocumentId === id) {
+
+  if (isBackendId(id)) {
+    try {
+      await api.delete(`/documents/${id}`);
+    } catch (error) {
+      showNotice(apiErrorMessage(error, "Không thể lưu trữ văn bản trên máy chủ."), true);
+      return;
+    }
+  }
+
+  if (!writeSavedDocuments(readSavedDocuments().filter((document) => String(document.id) !== String(id)))) return;
+  if (String(state.activeDocumentId) === String(id)) {
     state.activeDocumentId = null;
     state.activeVersionId = null;
     state.restoredVersionNumber = null;
@@ -1324,12 +1636,19 @@ function loadDraft(silent = false) {
   try {
     const payload = JSON.parse(raw);
     state.activeDocumentId = payload.document_id || null;
-    if (state.activeDocumentId && !readSavedDocuments().some((document) => document.id === state.activeDocumentId)) {
+    if (
+      state.activeDocumentId &&
+      !readSavedDocuments().some((document) => String(document.id) === String(state.activeDocumentId))
+    ) {
       state.activeDocumentId = null;
     }
-    const savedEntry = readSavedDocuments().find((document) => document.id === state.activeDocumentId);
+    const savedEntry = readSavedDocuments().find(
+      (document) => String(document.id) === String(state.activeDocumentId),
+    );
     state.activeVersionId = payload.version_id || savedEntry?.current_version_id || null;
-    state.restoredVersionNumber = savedEntry?.versions.find((version) => version.id === state.activeVersionId)?.version_number || null;
+    state.restoredVersionNumber = savedEntry?.versions.find(
+      (version) => String(version.id) === String(state.activeVersionId),
+    )?.version_number || null;
     state.lastEditedBy = payload.edited_by || savedEntry?.updated_by || currentEditorIdentity().edited_by;
     state.lastEditedAt = payload.edited_at || payload.saved_at || savedEntry?.updated_at || null;
     state.dirty = false;
@@ -1641,7 +1960,7 @@ function buildDocxNumberingConfig() {
 
 function getActiveVersionNumber() {
   const entry = readSavedDocuments().find((document) => document.id === state.activeDocumentId);
-  return entry?.versions.find((version) => version.id === state.activeVersionId)?.version_number || entry?.versions[0]?.version_number || null;
+  return entry?.versions.find((version) => String(version.id) === String(state.activeVersionId))?.version_number || entry?.versions[0]?.version_number || null;
 }
 
 function validateDocumentFormat(format) {
@@ -1841,6 +2160,71 @@ async function generatePdfBlob() {
     .output("blob");
 }
 
+async function fetchOfficialFileBlob(fileId, disposition = "download") {
+  const response = await api.get(
+    `/documents/${state.activeDocumentId}/files/${fileId}/${disposition}`,
+    { responseType: "blob" },
+  );
+  return response.data;
+}
+
+function mapServerFile(file = {}, blob = null) {
+  return {
+    id: file.id,
+    user_id: state.user?.user_id,
+    document_id: file.document_id || state.activeDocumentId,
+    title: getDocumentMeta().title || "Văn bản",
+    number: getDocumentMeta().number || "",
+    version_id: file.version_id || state.activeVersionId,
+    version_number: getActiveVersionNumber(),
+    format: file.file_format,
+    file_name: file.file_name || `van-ban.${String(file.file_format || "docx").toLowerCase()}`,
+    mime_type: file.mime_type,
+    size: Number(file.file_size || 0),
+    blob,
+    created_by: file.uploaded_by_name || "Máy chủ",
+    created_at: file.created_at || new Date().toISOString(),
+    format_check_status: file.format_check_status || "NOT_CHECKED",
+    server: true,
+  };
+}
+
+async function syncOfficialFilesFromServer(silent = false) {
+  if (!isBackendId(state.activeDocumentId)) return false;
+  try {
+    const response = await api.get(`/documents/${state.activeDocumentId}/files`);
+    const files = response.data?.data || [];
+    for (const file of files) {
+      const existing = await getOfficialFile(file.id);
+      await putOfficialFile(mapServerFile(file, existing?.blob || null));
+    }
+    await renderOfficialFiles();
+    if (!silent && files.length) showNotice(`Đã đồng bộ ${files.length} file từ máy chủ.`);
+    return true;
+  } catch (error) {
+    if (!silent) showNotice(apiErrorMessage(error, "Không thể đồng bộ file từ máy chủ."), true);
+    return false;
+  }
+}
+
+async function archiveOfficialFileFromServer(format) {
+  const response = await api.post(`/documents/${state.activeDocumentId}/export`, {
+    format,
+    version_id: isBackendId(state.activeVersionId) ? Number(state.activeVersionId) : undefined,
+  });
+  const file = response.data?.data || {};
+  if (!file.id) throw new Error("Máy chủ không trả về mã file");
+  const blob = await fetchOfficialFileBlob(file.id, "download");
+  const check = await validateGeneratedFile(blob, format);
+  renderValidationResult(check, `Kiểm tra file ${format} từ máy chủ`);
+  if (!check.valid) throw new Error(check.errors[0]);
+  const record = mapServerFile(file, blob);
+  await putOfficialFile(record);
+  state.selectedOfficialFileId = record.id;
+  await renderOfficialFiles();
+  return record;
+}
+
 async function archiveOfficialFile(blob, format) {
   const meta = getDocumentMeta();
   const createdAt = new Date().toISOString();
@@ -1869,15 +2253,29 @@ async function archiveOfficialFile(blob, format) {
 }
 
 async function finishExport(blob, format, meta) {
-  const check = await validateGeneratedFile(blob, format);
+  if (isBackendId(state.activeDocumentId)) {
+    try {
+      if (state.dirty && state.can.edit) await saveDocumentToLibrary();
+      const record = await archiveOfficialFileFromServer(format);
+      downloadBlob(record.blob, record.file_name);
+      setText("#documentEditorStatus", `Đã xuất ${format} lúc ${formatTime(record.created_at)}.`);
+      showNotice(`Đã xuất ${format} và lưu lên máy chủ.`);
+      return true;
+    } catch (error) {
+      showNotice(`${apiErrorMessage(error, "Không thể lưu file trên máy chủ")}. Đang dùng bản địa.`, true);
+    }
+  }
+
+  const finalBlob = blob || (format === "PDF" ? await generatePdfBlob() : await generateDocxBlob());
+  const check = await validateGeneratedFile(finalBlob, format);
   renderValidationResult(check, `Kiểm tra file ${format}`);
   if (!check.valid) {
     showNotice(check.errors[0], true);
     return false;
   }
-  downloadBlob(blob, `${safeFileName(meta.title || "van-ban")}.${format.toLowerCase()}`);
+  downloadBlob(finalBlob, `${safeFileName(meta.title || "van-ban")}.${format.toLowerCase()}`);
   try {
-    await archiveOfficialFile(blob, format);
+    await archiveOfficialFile(finalBlob, format);
   } catch (error) {
     showNotice(`Đã xuất ${format} nhưng không lưu được vào kho file.`, true);
   }
@@ -1898,7 +2296,7 @@ async function exportDocx() {
   setText("#documentEditorStatus", "Đang tạo file DOCX...");
   try {
     const meta = getDocumentMeta();
-    const blob = await generateDocxBlob();
+    const blob = isBackendId(state.activeDocumentId) ? null : await generateDocxBlob();
     await finishExport(blob, "DOCX", meta);
   } catch (error) {
     showNotice("Không thể xuất DOCX. Vui lòng thử lại.", true);
@@ -1920,7 +2318,7 @@ async function exportPdf() {
   setText("#documentEditorStatus", "Đang tạo file PDF...");
   try {
     const meta = getDocumentMeta();
-    const blob = await generatePdfBlob();
+    const blob = isBackendId(state.activeDocumentId) ? null : await generatePdfBlob();
     await finishExport(blob, "PDF", meta);
   } catch (error) {
     showNotice("Không thể xuất PDF. Vui lòng thử lại.", true);
@@ -1940,16 +2338,26 @@ async function archiveCurrentAs(format) {
   if (button) button.disabled = true;
   setText("#documentEditorStatus", `Đang lưu file ${format} chính thức...`);
   try {
-    const blob = format === "PDF" ? await generatePdfBlob() : await generateDocxBlob();
-    const check = await validateGeneratedFile(blob, format);
-    renderValidationResult(check, `Kiểm tra file ${format}`);
-    if (!check.valid) {
-      showNotice(check.errors[0], true);
-      return;
+    let record;
+    if (isBackendId(state.activeDocumentId)) {
+      if (state.dirty && state.can.edit) await saveDocumentToLibrary();
+      record = await archiveOfficialFileFromServer(format);
+    } else {
+      const blob = format === "PDF" ? await generatePdfBlob() : await generateDocxBlob();
+      const check = await validateGeneratedFile(blob, format);
+      renderValidationResult(check, `Kiểm tra file ${format}`);
+      if (!check.valid) {
+        showNotice(check.errors[0], true);
+        return;
+      }
+      record = await archiveOfficialFile(blob, format);
     }
-    const record = await archiveOfficialFile(blob, format);
     setText("#documentEditorStatus", `Đã lưu file ${format} lúc ${formatTime(record.created_at)}.`);
-    showNotice(`Đã lưu file ${format} vào kho văn bản chính thức.`);
+    showNotice(
+      record.server
+        ? `Đã lưu file ${format} lên máy chủ.`
+        : `Đã lưu file ${format} vào kho văn bản chính thức.`,
+    );
   } catch (error) {
     showNotice(`Không thể lưu file ${format} chính thức.`, true);
   } finally {
@@ -1971,11 +2379,14 @@ async function renderOfficialFiles() {
           )
           .join("")
       : '<option value="">Chưa có file chính thức</option>';
-    if (state.selectedOfficialFileId && files.some((file) => file.id === state.selectedOfficialFileId)) {
-      select.value = state.selectedOfficialFileId;
+    if (
+      state.selectedOfficialFileId &&
+      files.some((file) => String(file.id) === String(state.selectedOfficialFileId))
+    ) {
+      select.value = String(state.selectedOfficialFileId);
     }
     setText("#documentEditorOfficialCount", `${files.length} file`);
-    const selected = files.find((file) => file.id === select.value);
+    const selected = files.find((file) => String(file.id) === String(select.value));
     if (selected) {
       state.selectedOfficialFileId = selected.id;
       setText(
@@ -2005,14 +2416,21 @@ async function downloadOfficialFile(id) {
     return;
   }
   try {
-    const record = await getOfficialFile(id);
+    let record = await getOfficialFile(id);
+    if (!record && isBackendId(id)) {
+      await syncOfficialFilesFromServer(true);
+      record = await getOfficialFile(id);
+    }
     if (!record) {
       showNotice("Không tìm thấy file cần tải.", true);
       return;
     }
-    downloadBlob(record.blob, record.file_name || `van-ban.${record.format.toLowerCase()}`);
+    const blob = isBackendId(id)
+      ? await fetchOfficialFileBlob(id, "download")
+      : record.blob;
+    downloadBlob(blob, record.file_name || `van-ban.${String(record.format || "docx").toLowerCase()}`);
   } catch (error) {
-    showNotice("Không thể tải file từ kho.", true);
+    showNotice(apiErrorMessage(error, "Không thể tải file từ kho."), true);
   }
 }
 
@@ -2035,11 +2453,16 @@ async function viewOfficialFile(id) {
     return;
   }
   try {
-    const record = await getOfficialFile(id);
+    let record = await getOfficialFile(id);
+    if (!record && isBackendId(id)) {
+      await syncOfficialFilesFromServer(true);
+      record = await getOfficialFile(id);
+    }
     if (!record) {
       showNotice("Không tìm thấy file cần xem.", true);
       return;
     }
+    const blob = isBackendId(id) ? await fetchOfficialFileBlob(id, "view") : record.blob;
     closeFileViewer();
     state.viewingFileId = record.id;
     const viewer = document.getElementById("documentEditorFileViewer");
@@ -2054,7 +2477,7 @@ async function viewOfficialFile(id) {
     viewer.classList.add("flex");
 
     if (record.format === "PDF") {
-      const url = URL.createObjectURL(record.blob);
+      const url = URL.createObjectURL(blob);
       state.viewerObjectUrl = url;
       body.innerHTML = `<iframe class="h-full w-full bg-white" src="${escapeHtml(url)}" title="${escapeHtml(record.title || "Văn bản")}"></iframe>`;
       return;
@@ -2063,7 +2486,7 @@ async function viewOfficialFile(id) {
     body.innerHTML = '<div class="docx-viewer-paper"></div>';
     const container = body.firstElementChild;
     const { renderAsync } = await import("docx-preview");
-    await renderAsync(record.blob, container, container, { className: "docx-preview" });
+    await renderAsync(blob, container, container, { className: "docx-preview" });
   } catch (error) {
     const body = document.getElementById("documentEditorFileViewerBody");
     if (body) body.innerHTML = '<p class="rounded bg-error-container p-4 text-error">Không thể hiển thị file này trong trình duyệt.</p>';
@@ -2176,12 +2599,15 @@ function bindEvents() {
     if (!id || !state.can.manage) return;
     if (!window.confirm("Xóa file văn bản chính thức này khỏi kho?")) return;
     try {
+      if (isBackendId(id)) {
+        await api.delete(`/documents/${state.activeDocumentId}/files/${id}`);
+      }
       await removeOfficialFile(id);
       state.selectedOfficialFileId = null;
       await renderOfficialFiles();
       showNotice("Đã xóa file khỏi kho văn bản chính thức.");
     } catch (error) {
-      showNotice("Không thể xóa file khỏi kho.", true);
+      showNotice(apiErrorMessage(error, "Không thể xóa file khỏi kho."), true);
     }
   });
   bindOnce(document.getElementById("btnCloseFileViewer"), "click", closeFileViewer);
@@ -2238,4 +2664,8 @@ export function initDocumentEditor(user = getCurrentUser()) {
   updateToolbar();
   applyPermissionUi();
   renderOfficialFiles();
+  void (async () => {
+    await syncDocumentsFromServer(true);
+    if (isBackendId(state.activeDocumentId)) await syncOfficialFilesFromServer(true);
+  })();
 }
