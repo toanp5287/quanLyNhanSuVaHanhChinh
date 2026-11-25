@@ -293,7 +293,7 @@
             <span class="material-symbols-outlined text-[20px]">notifications</span>
             <span
               id="notificationBadge"
-              class="hidden absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-error text-on-error text-[10px] leading-4 text-center font-bold"
+              class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-error text-on-error font-label-sm text-[10px] font-bold items-center justify-center"
               >0</span
             >
           </button>
@@ -305,29 +305,7 @@
             <span class="material-symbols-outlined text-[20px]"
               >sync</span
             ></button
-          ><button
-            id="notificationBellBtn"
-            class="relative p-space-xs text-on-primary hover:bg-white/10 rounded flex items-center justify-center transition-colors"
-            title="Thông báo"
-            type="button"
           >
-            <span class="material-symbols-outlined text-[20px]">notifications</span>
-            <span
-              id="notificationBadge"
-              class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-error text-on-error font-label-sm text-[10px] font-bold items-center justify-center"
-              >0</span
-            >
-          </button>
-          <div
-            id="notificationDropdown"
-            class="hidden fixed right-4 top-14 z-[80] w-[360px] max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-hidden rounded-lg bg-surface-container-lowest text-on-surface shadow-xl border border-surface-variant flex flex-col"
-          >
-            <div class="px-space-md py-space-sm border-b border-surface-variant flex items-center justify-between">
-              <span class="font-label-md text-label-md font-bold">Thông báo</span>
-              <button id="btnMarkAllNotificationsRead" class="font-body-sm text-body-sm text-primary hover:underline" type="button">Đánh dấu đã đọc</button>
-            </div>
-            <div id="notificationList" class="overflow-y-auto"></div>
-          </div>
           <button
             id="userMenuBtn"
             class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs hover:ring-2 hover:ring-white/40 transition-all"
