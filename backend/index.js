@@ -14,11 +14,8 @@ import routerQuanLyLamThemGio from "./src/routes/quanLyLamThemGio.router.js";
 import routerQuanLyNghiPhepVaQuyPhepNam from "./src/routes/quan-ly-nghi-phep-va-quy-phep-nam.service.js";
 import routerMyProfile from "./src/routes/myProfile.router.js";
 import routerNotifications from "./src/routes/notifications.router.js";
-<<<<<<< HEAD
-=======
 import routerDevices from "./src/routes/deviceSecurity.router.js";
 import routerAdminDevices from "./src/routes/adminDevices.router.js";
->>>>>>> origin/main
 import connectMysql from "./src/config/database.js";
 
 dotenv.config();

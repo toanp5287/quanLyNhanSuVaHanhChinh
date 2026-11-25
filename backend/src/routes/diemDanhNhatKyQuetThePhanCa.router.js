@@ -21,11 +21,8 @@ import {
   attendanceCheckIn,
   attendanceCheckOut,
   attendanceList,
-<<<<<<< HEAD
-=======
   attendanceManualUpdate,
   attendanceMyHistory,
->>>>>>> origin/main
   attendanceQuickMark,
   attendanceQuickMarkAll,
   attendanceToday,
@@ -44,11 +41,8 @@ import {
   putWorkShift,
   rejectExplanationHandler,
   removeShiftAssignment,
-<<<<<<< HEAD
-=======
   removeWorkShift,
   updateKioskConfigHandler,
->>>>>>> origin/main
 } from "../controllers/diem-danh-nhat-ky-quet-the-phan-ca/diemDanhNhatKyQuetThePhanCa.controller.js";
 
 const router = express.Router();
@@ -115,25 +109,18 @@ router.post(
         req.body?.embeddings,
         req.clientIp || req.ip,
         req.headers["x-device-id"] || null,
-<<<<<<< HEAD
-=======
         req.body?.capture,
         req.body || {},
         req.authorizedDevice?.id || null,
         req.clientIp || null,
->>>>>>> origin/main
       );
       res.json({
         success: true,
         message:
-<<<<<<< HEAD
-          req.params.action === "check-in"
-=======
           data.message ||
           (data.action === "check-in"
->>>>>>> origin/main
             ? "Điểm danh vào ca thành công"
-            : "Điểm danh tan ca thành công",
+            : "Điểm danh tan ca thành công"),
         data,
       });
     } catch (error) {
