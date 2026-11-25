@@ -728,10 +728,10 @@ export const initFaceKiosk = () => {
 
 const tbody = document.getElementById("attendanceLogsBody");
 
-const loadLogs = async () => {
-  if (!tbody) return;
-  try {
-    const date = new Date().toISOString().slice(0, 10);
+  const loadLogs = async () => {
+    if (!tbody) return;
+    try {
+      const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date());
     const res = await api.get("/attendance/logs", { params: { date } });
     const rows = res.data?.data?.rows || [];
     if (!rows.length) {
