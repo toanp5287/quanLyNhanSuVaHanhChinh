@@ -6,6 +6,13 @@ import {
   logout,
 } from "../services/auth.service.js";
 import { setupShell } from "./home.js";
+import {
+  hideContractRenewalSection,
+  initContractRenewalSection,
+  renderContractRenewalSection,
+  resetContractRenewalSectionState,
+  showContractRenewalSection,
+} from "./contract-renewals-ui.js";
 
 const STATUS_META = {
   ALL: {
@@ -348,12 +355,9 @@ const ensureViewMounted = () => {
   if (detailModal) {
     document.body.appendChild(document.importNode(detailModal, true));
   }
-  if (signModal) {
-    document.body.appendChild(document.importNode(signModal, true));
-  }
-  if (signingRevisionModal) {
-    document.body.appendChild(document.importNode(signingRevisionModal, true));
-  }
+
+  const renewalMount = document.getElementById("contractRenewalMount");
+  if (renewalMount) renewalMount.innerHTML = renderContractRenewalSection();
 };
 
 const applyStatusHeader = () => {
@@ -3140,6 +3144,45 @@ const downloadContractOfficialFile = async () => {
   }
 };
 
+const openRenewalCandidateDetail = (item) => {
+  const source = item?.contract || {};
+  const employee = item?.employee || {};
+  const contract = {
+    ...source,
+    employee_id: employee.id,
+    employee_code: employee.employee_code,
+    full_name: employee.full_name,
+    department_name: employee.department?.name,
+    position_title: employee.position?.title,
+  };
+
+  state.detailContract = contract;
+  renderContractDetail(contract);
+
+  for (const id of ["contractDetailRenew", "contractDetailTerminate"]) {
+    const button = document.getElementById(id);
+    if (!button) continue;
+    button.hidden = true;
+    button.classList.add("hidden");
+    button.classList.remove("flex");
+  }
+
+  openModal("modal-contract-detail");
+};
+
+const showRenewalCandidateEmployee = (item) => {
+  const employee = item?.employee || {};
+  window.alert(
+    [
+      `Họ tên: ${employee.full_name || "-"}`,
+      `Mã NV: ${employee.employee_code || "-"}`,
+      `Phòng ban: ${employee.department?.name || "-"}`,
+      `Chức danh: ${employee.position?.title || "-"}`,
+      `Trạng thái làm việc: ${employee.work_status || "-"}`,
+    ].join("\n"),
+  );
+};
+
 const loadContracts = async (user) => {
   const sequence = ++state.requestSeq;
   hideNotice();
@@ -3210,6 +3253,7 @@ const loadContracts = async (user) => {
 const setStatus = (user, status) => {
   if (!STATUS_META[status]) return;
 
+  hideContractRenewalSection();
   state.status = status;
 
   const route = STATUS_META[status].route;
@@ -3565,7 +3609,7 @@ const bindEvents = (user) => {
 
   document
     .getElementById("btnRenewContract")
-    ?.addEventListener("click", openRenewPicker);
+    ?.addEventListener("click", showContractRenewalSection);
 
   document
     .getElementById("btnTerminateContract")
@@ -3939,6 +3983,8 @@ export const initContracts = (user = getCurrentUser(), status = "ALL") => {
   }
 
   ensureViewMounted();
+  resetContractRenewalSectionState();
+  hideContractRenewalSection();
 
   if (!window.__HRM_SPA__) setupShell(user);
 
