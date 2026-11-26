@@ -55,6 +55,10 @@ const DEFAULT_MARGINS = { top: 20, right: 18, bottom: 20, left: 18 };
 const VERSION_LIMIT = 30;
 const FILE_DB_NAME = "hrm-document-editor-files";
 const FILE_STORE_NAME = "official-files";
+const REQUEST_CONTEXT_KEY = "hrm.documentEditor.requestContext";
+const REQUEST_DOCUMENT_DRAFT_KEY = "hrm.employeeRequest.documentDraft";
+const REQUEST_FORM_DRAFT_KEY = "hrm.employeeRequest.formDraft";
+const REQUEST_RETURN_KEY = "hrm.employeeRequest.reopenForm";
 const ROLE_CAPABILITIES = {
   SUPER_ADMIN: { view: true, edit: true, export: true, manage: true },
   HR_ADMIN: { view: true, edit: true, export: true, manage: true },
@@ -236,6 +240,8 @@ let state = {
   viewingFileId: null,
   viewerObjectUrl: null,
   dirty: false,
+  requestContext: null,
+  requestDraft: null,
 };
 let pageMargins = { ...DEFAULT_MARGINS };
 
@@ -449,6 +455,25 @@ function isBackendId(value) {
 
 function apiErrorMessage(error, fallback) {
   return error?.response?.data?.message || error?.message || fallback;
+}
+
+function readSessionJson(key) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function writeSessionJson(key, value) {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    showNotice("Không thể lưu dữ liệu tạm trên trình duyệt.", true);
+    return false;
+  }
 }
 
 function mapServerVersion(version = {}, index = 0) {
@@ -1161,6 +1186,24 @@ function buildPlaceholderValues() {
     "request.employee_code": request?.employee_code || employee.employee_code || "..........",
     "request.department_name": request?.department_name || employee.department_name || "..........",
   };
+
+  if (state.requestContext && state.requestDraft) {
+    const draft = state.requestDraft;
+    values["request.title"] = draft.title || values["request.title"];
+    values["request.reason"] = draft.reason || values["request.reason"];
+    values["request.start_date"] = draft.startDate
+      ? formatDate(draft.startDate)
+      : values["request.start_date"];
+    values["request.end_date"] = draft.endDate
+      ? formatDate(draft.endDate)
+      : values["request.end_date"];
+    values["request.last_working_date"] = draft.lastWorkingDate
+      ? formatDate(draft.lastWorkingDate)
+      : values["request.last_working_date"];
+    values["request.submitted_date"] = formatDate(new Date().toISOString().slice(0, 10));
+  }
+
+  return values;
 }
 
 function fillDocumentPlaceholders(notify = false) {
@@ -1272,6 +1315,98 @@ function populateTemplates() {
   ).join("");
   select.value = DOCUMENT_TEMPLATES[0]?.id || "";
   setText("#documentEditorTemplateHint", "Chọn mẫu rồi nhấn “Áp dụng mẫu” để thay thế nội dung hiện tại.");
+}
+
+function templateIdForRequestType(type) {
+  return type === "TEMPORARY_LEAVE" ? "temporary-leave" : "resignation";
+}
+
+function setupRequestFlow(context) {
+  if (!context) return false;
+
+  const templateId = context.template_id || templateIdForRequestType(context.type);
+  const savedDraft = readSessionJson(REQUEST_DOCUMENT_DRAFT_KEY);
+  const formDraft = readSessionJson(REQUEST_FORM_DRAFT_KEY);
+
+  state.requestContext = context;
+  state.requestDraft =
+    savedDraft && String(savedDraft.type) === String(context.type)
+      ? savedDraft
+      : formDraft && String(formDraft.type) === String(context.type)
+        ? formDraft
+        : null;
+  state.can = { view: true, edit: true, export: true, manage: false };
+
+  setText("#documentEditorTitle", "Soạn văn bản cho đơn từ");
+  setText(
+    "#documentEditorDescription",
+    "Mẫu đã được chọn theo loại đơn. Chỉnh sửa nội dung rồi nhấn “Lưu và quay lại đơn”.",
+  );
+  setText("#documentEditorPermissionInfo", "Quyền: soạn văn bản đính kèm");
+
+  const templateSelect = document.getElementById("documentEditorTemplate");
+  if (templateSelect) templateSelect.value = templateId;
+  const returnButton = document.getElementById("btnReturnFromRequestDocument");
+  returnButton?.classList.remove("hidden");
+
+  let initialContent = DEFAULT_CONTENT;
+  if (savedDraft?.content) {
+    initialContent = savedDraft.content;
+    setDocumentMeta(savedDraft.meta || {});
+    setText("#documentEditorStatus", "Đã tải lại văn bản bạn soạn trước đó.");
+  } else {
+    const template = DOCUMENT_TEMPLATES.find((item) => item.id === templateId);
+    if (template) {
+      initialContent = template.content;
+      setDocumentMeta({
+        title: template.title,
+        number: `01/${new Date().getFullYear()}/${template.number}`,
+      });
+      setText("#documentEditorTemplateHint", template.description);
+      const values = buildPlaceholderValues();
+      initialContent = initialContent.replace(
+        /\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g,
+        (match, key) => {
+          const value = values[key];
+          return value === undefined ? match : escapeHtml(value);
+        },
+      );
+      setText("#documentEditorStatus", `Đã nạp mẫu: ${template.name}.`);
+    }
+  }
+
+  if (editor && !editor.isDestroyed) editor.destroy();
+  createEditor(initialContent);
+  return true;
+}
+
+function saveRequestDocumentAndReturn() {
+  const context = state.requestContext;
+  if (!context || !editor || editor.isDestroyed) return;
+
+  const meta = getDocumentMeta();
+  const saved = writeSessionJson(REQUEST_DOCUMENT_DRAFT_KEY, {
+    type: context.type,
+    template_id: context.template_id || templateIdForRequestType(context.type),
+    title: meta.title || DOCUMENT_TEMPLATES.find((item) => item.id === context.template_id)?.title || "Văn bản đơn từ",
+    number: meta.number || "",
+    meta,
+    content: editor.getJSON(),
+    html: editor.getHTML(),
+    saved_at: new Date().toISOString(),
+  });
+  if (!saved) return;
+
+  try {
+    sessionStorage.setItem(REQUEST_RETURN_KEY, "1");
+    sessionStorage.removeItem(REQUEST_CONTEXT_KEY);
+  } catch (error) {
+    showNotice("Không thể lưu trạng thái quay lại đơn.", true);
+    return;
+  }
+
+  showNotice("Đã lưu văn bản. Đang quay lại form tạo đơn...");
+  window.location.hash = context.return_hash || "#/don-tu";
 }
 
 function showNotice(message, isError = false) {
@@ -1452,7 +1587,7 @@ function applyPermissionUi() {
   setText("#documentEditorPermissionInfo", `Quyền: ${labels.join(" / ") || "Không"}`);
 }
 
-function createEditor() {
+function createEditor(initialContent = DEFAULT_CONTENT) {
   const element = document.getElementById("tiptapEditor");
   if (!element) return;
 
@@ -1480,7 +1615,7 @@ function createEditor() {
       Image.configure({ allowBase64: false }),
       CharacterCount.configure({ limit: null }),
     ],
-    content: DEFAULT_CONTENT,
+    content: initialContent,
     editorProps: {
       attributes: { class: "tiptap" },
     },
@@ -2501,6 +2636,12 @@ function bindOnce(element, eventName, handler) {
 function bindEvents() {
   if (state.bound) return;
 
+  bindOnce(
+    document.getElementById("btnReturnFromRequestDocument"),
+    "click",
+    saveRequestDocumentAndReturn,
+  );
+
   document.querySelectorAll("[data-editor-action]").forEach((button) => {
     bindOnce(button, "click", () => runAction(button.getAttribute("data-editor-action")));
   });
@@ -2621,15 +2762,18 @@ function bindEvents() {
   state.bound = true;
 }
 
-export function initDocumentEditor(user = getCurrentUser()) {
+export function initDocumentEditor(user = getCurrentUser(), options = {}) {
   if (!user) {
     logout();
     return;
   }
 
+  const requestContext = options.requestFlow ? readSessionJson(REQUEST_CONTEXT_KEY) : null;
   state = {
     user,
-    can: resolveCapabilities(user),
+    can: requestContext
+      ? { view: true, edit: true, export: true, manage: false }
+      : resolveCapabilities(user),
     bound: false,
     employees: [],
     requests: [],
@@ -2642,6 +2786,8 @@ export function initDocumentEditor(user = getCurrentUser()) {
     viewingFileId: null,
     viewerObjectUrl: null,
     dirty: false,
+    requestContext: null,
+    requestDraft: null,
   };
   state.lastEditedBy = currentEditorIdentity().edited_by;
   ensureViewMounted();
@@ -2655,17 +2801,25 @@ export function initDocumentEditor(user = getCurrentUser()) {
 
   createEditor();
   populateTemplates();
+  const inRequestFlow = setupRequestFlow(requestContext);
+  if (!inRequestFlow) {
+    document.getElementById("btnReturnFromRequestDocument")?.classList.add("hidden");
+  }
   bindEvents();
-  loadDraft(true);
-  renderSavedDocuments();
-  renderDocumentVersions();
-  fetchEmployees(true);
-  fetchRequests(true);
+  if (!inRequestFlow) {
+    loadDraft(true);
+    renderSavedDocuments();
+    renderDocumentVersions();
+    fetchEmployees(true);
+    fetchRequests(true);
+    renderOfficialFiles();
+  }
   updateToolbar();
   applyPermissionUi();
-  renderOfficialFiles();
-  void (async () => {
-    await syncDocumentsFromServer(true);
-    if (isBackendId(state.activeDocumentId)) await syncOfficialFilesFromServer(true);
-  })();
+  if (!inRequestFlow) {
+    void (async () => {
+      await syncDocumentsFromServer(true);
+      if (isBackendId(state.activeDocumentId)) await syncOfficialFilesFromServer(true);
+    })();
+  }
 }

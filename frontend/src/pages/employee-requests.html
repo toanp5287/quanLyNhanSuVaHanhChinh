@@ -17,19 +17,11 @@
       <div class="flex items-center flex-wrap gap-space-xs">
         <button
           class="h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container transition-colors font-label-lg text-label-lg flex items-center gap-1.5 shadow-sm"
-          id="btnCreateResignation"
+          id="btnCreateEmployeeRequest"
           type="button"
         >
-          <span class="material-symbols-outlined text-[18px]">logout</span>
-          <span>Gửi đơn nghỉ việc</span>
-        </button>
-        <button
-          class="h-9 px-space-md rounded bg-secondary text-on-secondary hover:bg-secondary-container transition-colors font-label-lg text-label-lg flex items-center gap-1.5 shadow-sm"
-          id="btnCreateTemporaryLeave"
-          type="button"
-        >
-          <span class="material-symbols-outlined text-[18px]">event_busy</span>
-          <span>Gửi đơn tạm nghỉ</span>
+          <span class="material-symbols-outlined text-[18px]">add</span>
+          <span>Tạo đơn</span>
         </button>
         <button
           class="h-9 px-space-md rounded bg-surface-container-lowest text-on-surface hover:bg-surface-container transition-colors font-label-lg text-label-lg flex items-center gap-1.5 shadow-sm border border-surface-variant"
@@ -239,6 +231,20 @@
         id="employeeRequestFormError"
       ></div>
 
+      <div class="flex flex-col gap-1">
+        <label class="font-label-md text-label-md font-semibold text-on-surface" for="employeeRequestType">
+          Loại đơn <span class="text-error">*</span>
+        </label>
+        <select
+          class="h-10 px-3 rounded border border-surface-variant bg-surface-container-low text-on-surface focus:ring-1 focus:ring-primary outline-none"
+          id="employeeRequestType"
+          required
+        >
+          <option value="RESIGNATION">Đơn xin nghỉ việc</option>
+          <option value="TEMPORARY_LEAVE">Đơn xin tạm nghỉ</option>
+        </select>
+      </div>
+
       <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
         <div class="flex flex-col gap-1" id="employeeRequestStartGroup">
           <label class="font-label-md text-label-md font-semibold text-on-surface" for="employeeRequestStartDate">
@@ -304,6 +310,29 @@
         <p class="font-label-sm text-label-sm text-on-surface-variant">
           Hiện hệ thống chưa có API lưu file; bạn có thể nhập nội dung bổ sung ở phần lý do.
         </p>
+      </div>
+
+      <div class="flex flex-col gap-2 rounded-lg border border-primary/30 bg-primary-fixed/40 px-space-md py-space-sm">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-space-xs">
+          <div>
+            <p class="font-label-md text-label-md font-semibold text-on-surface">Văn bản đính kèm</p>
+            <p class="font-body-sm text-body-sm text-on-surface-variant" id="employeeRequestDocumentHint">
+              Chọn loại đơn rồi mở mẫu Word tương ứng để soạn thảo.
+            </p>
+          </div>
+          <button
+            class="h-9 px-space-md rounded border border-primary text-primary hover:bg-primary-fixed font-label-lg text-label-lg flex items-center gap-1.5"
+            id="btnOpenRequestDocument"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[18px]">description</span>
+            <span>Mở mẫu Word</span>
+          </button>
+        </div>
+        <div
+          class="hidden rounded border border-primary/30 bg-surface-container-lowest px-space-sm py-space-xs font-body-sm text-body-sm text-on-surface"
+          id="employeeRequestDocumentSummary"
+        ></div>
       </div>
 
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-space-xs pt-space-sm border-t border-surface-variant">
