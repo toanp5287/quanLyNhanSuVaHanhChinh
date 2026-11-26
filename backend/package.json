@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon index.js",
-    "migrate:device-security": "node scripts/migrate-device-security.js"
+    "migrate:device-security": "node scripts/migrate-device-security.js",
+    "migrate:employee-request-document": "node scripts/migrate-employee-request-document.js"
   },
   "keywords": [],
   "author": "",
@@ -20,12 +21,14 @@
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
+    "docx": "^9.16.0",
     "docxtemplater": "^3.71.1",
     "dotenv": "^18.0.10",
     "express": "^5.3.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.5.0",
     "mysql2": "^3.24.6",
-    "pizzip": "^3.3.0"
+    "pizzip": "^3.3.0",
+    "puppeteer-core": "^25.19.0"
   }
 }

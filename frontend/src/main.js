@@ -350,7 +350,7 @@ function showRequestApprovals(user, status = "ALL") {
   initRequestApprovals(user, status);
 }
 
-function showDocumentEditor(user) {
+function showDocumentEditor(user, inRequestFlow = false) {
   if (!user) {
     clearHash();
     showHome(user);
@@ -359,7 +359,7 @@ function showDocumentEditor(user) {
 
   mountPage(homeHtml);
   setupShell(user);
-  initDocumentEditor(user);
+  initDocumentEditor(user, { requestFlow: inRequestFlow });
 }
 
 function renderRouteView(user) {
@@ -372,7 +372,24 @@ function renderRouteView(user) {
   }
 
   if (hash === "#/soan-van-ban") {
-    showDocumentEditor(user);
+    try {
+      const raw = sessionStorage.getItem("hrm.documentEditor.requestContext");
+      if (raw) {
+        const context = JSON.parse(raw);
+        if (context?.return_hash && context.return_hash !== hash) {
+          sessionStorage.setItem("hrm.employeeRequest.reopenForm", "1");
+          sessionStorage.removeItem("hrm.documentEditor.requestContext");
+          window.location.hash = context.return_hash;
+          return;
+        }
+      }
+    } catch (error) {
+      sessionStorage.removeItem("hrm.documentEditor.requestContext");
+    }
+  }
+
+  if (hash === "#/soan-van-ban" || hash === "#/soan-van-ban/don-tu") {
+    showDocumentEditor(user, hash === "#/soan-van-ban/don-tu");
   } else if (hash === "#/face-id") {
     initFaceKiosk();
   } else if (hash === "#/phan-quyen") {

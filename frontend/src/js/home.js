@@ -66,7 +66,11 @@ const CARD_PERMISSIONS = {
   "Cổng thông tin cá nhân": [],
   "Lịch sử chấm công": ["ESS.SELF_PROFILE"],
   "Tạo đơn từ trực tuyến": ["LEAVE.VIEW_REQUEST"],
-  "Trung tâm Phê duyệt": ["LEAVE.APPROVE", "ATT.SHIFT_OT_MANAGE"],
+  "Trung tâm Phê duyệt": [
+    "HR.PROFILE_MANAGE",
+    "LEAVE.APPROVE",
+    "ATT.SHIFT_OT_MANAGE",
+  ],
   "Bản tin & Nội quy công ty": [],
   "Dashboard Biến động nhân sự": ["BI.DASHBOARD_VIEW"],
   "Báo cáo Chi phí quỹ lương": ["BI.DASHBOARD_VIEW"],
