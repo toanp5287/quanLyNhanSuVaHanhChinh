@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { findUserById } from "../services/auth/auth.service.js";
 import { hasAnyPermission, hasPermission } from "../utils/helper.js";
 import { loginIpGuard } from "./deviceSecurity.middleware.js";
 
@@ -11,14 +12,42 @@ const extractToken = (req) => {
   return null;
 };
 
-const authorizeRequest = (req, res, next) => {
+const refreshAuthClaims = async (req, res) => {
+  const user = await findUserById(req.user?.user_id);
+
+  if (!user) {
+    res.status(401).json({
+      success: false,
+      message: "Tài khoản không còn tồn tại",
+    });
+    return false;
+  }
+
+  if (Number(user.is_active) !== 1) {
+    res.status(403).json({
+      success: false,
+      message: "Tài khoản đã bị khóa",
+    });
+    return false;
+  }
+
+  req.user = {
+    ...req.user,
+    role_id: user.role_id,
+    data_scope: user.data_scope,
+    permissions: user.permissions || [],
+  };
+  return true;
+};
+
+const authorizeRequest = async (req, res, next) => {
   try {
     const token = extractToken(req);
 
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: "B?n chua dang nh?p",
+        message: "Bạn chưa đăng nhập",
       });
     }
 
@@ -26,14 +55,22 @@ const authorizeRequest = (req, res, next) => {
     if (req.path === "/logout" || req.originalUrl?.includes("/auth/logout")) {
       return next();
     }
+
+    try {
+      const stillValid = await refreshAuthClaims(req, res);
+      if (!stillValid) return;
+    } catch (error) {
+      console.error("Không thể làm mới quyền từ bảng phân quyền:", error);
+    }
+
     return loginIpGuard(req, res, next);
   } catch (error) {
     return res.status(401).json({
       success: false,
       message:
         error.name === "TokenExpiredError"
-          ? "Token d� h?t h?n, vui l�ng dang nh?p l?i"
-          : "Token kh�ng h?p l?",
+          ? "Token đã hết hạn, vui lòng đăng nhập lại"
+          : "Token không hợp lệ",
     });
   }
 };

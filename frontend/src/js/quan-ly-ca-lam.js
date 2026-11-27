@@ -369,15 +369,119 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
       .map((policy) => {
         const rules = policy.rules || policy.rules_json || {};
         const mode = rules.work_day_mode === "CUSTOM_TIERS" ? "CUSTOM_TIERS" : "PRO_RATA";
-        const summary = mode === "PRO_RATA"
-          ? `Bước ${rules.pro_rata?.round_step ?? 0.25} công`
-          : `${(rules.tiers || []).length} bậc công`;
+        const summary = `${mode === "PRO_RATA" ? `Bước ${rules.pro_rata?.round_step ?? 0.25} công` : `${(rules.tiers || []).length} bậc công`}${rules.late_penalty?.enabled ? ` • Phạt muộn: ${(rules.late_penalty.tiers || []).length} bậc` : " • Không phạt muộn"}`;
         const actions = canManage
           ? `<button data-edit-policy="${policy.id}" class="text-primary hover:underline mr-3">Sửa</button><button data-del-policy="${policy.id}" class="text-error hover:underline">Xóa</button>`
           : `<span class="text-on-surface-variant">Chỉ xem</span>`;
         return `<tr><td class="px-4 py-3"><div class="font-semibold">${escapeHtml(policy.code)}</div><div class="text-xs text-on-surface-variant">${escapeHtml(policy.name)}</div></td><td class="px-4 py-3">${mode}${Number(policy.is_default) ? ' <span class="rounded bg-sky-50 px-2 py-1 text-xs text-sky-800">Mặc định</span>' : ""}</td><td class="px-4 py-3 text-xs">${escapeHtml(summary)}</td><td class="px-4 py-3 text-right">${actions}</td></tr>`;
       })
       .join("");
+  };
+
+  const DEFAULT_PENALTY_TIERS = [
+    { from_minute: 16, to_minute: 30, amount: 100000, max_workday: null, label: "Muộn 16–30 phút" },
+    { from_minute: 31, to_minute: 60, amount: 200000, max_workday: 0.75, label: "Muộn 31–60 phút" },
+    { from_minute: 61, to_minute: null, amount: 300000, max_workday: 0.5, label: "Muộn trên 60 phút" },
+  ];
+
+  const penaltyTierRow = (tier = {}) => `
+    <tr data-penalty-tier>
+      <td class="px-2 py-2"><input data-field="from" type="number" min="0" step="1" value="${escapeHtml(tier.from_minute ?? 0)}" class="w-20 rounded border px-2 py-1" /></td>
+      <td class="px-2 py-2"><input data-field="to" type="number" min="0" step="1" placeholder="Trở lên" value="${escapeHtml(tier.to_minute ?? "")}" class="w-28 rounded border px-2 py-1" /></td>
+      <td class="px-2 py-2"><input data-field="amount" type="number" min="0" step="1000" value="${escapeHtml(tier.amount ?? 0)}" class="w-32 rounded border px-2 py-1" /></td>
+      <td class="px-2 py-2"><input data-field="max" type="number" min="0" max="1" step="0.05" placeholder="Không giới hạn" value="${escapeHtml(tier.max_workday ?? "")}" class="w-28 rounded border px-2 py-1" /></td>
+      <td class="px-2 py-2"><input data-field="label" maxlength="255" value="${escapeHtml(tier.label || "")}" class="w-40 rounded border px-2 py-1" /></td>
+      <td class="px-2 py-2"><button type="button" data-remove-penalty class="text-error hover:underline">Xóa</button></td>
+    </tr>`;
+
+  const renderPenaltyTiers = (tiers = []) => {
+    const body = q("#penaltyTiersBody");
+    if (!body) return;
+    body.innerHTML = (tiers.length ? tiers : DEFAULT_PENALTY_TIERS).map(penaltyTierRow).join("");
+  };
+
+  const readPenaltyTiers = () =>
+    qa("[data-penalty-tier]").map((row) => {
+      const field = (name) => row.querySelector(`[data-field="${name}"]`)?.value ?? "";
+      const to = String(field("to")).trim();
+      const max = String(field("max")).trim();
+      return {
+        from_minute: Math.max(0, Number(field("from")) || 0),
+        to_minute: to === "" ? null : Math.max(0, Number(to) || 0),
+        amount: Math.max(0, Number(field("amount")) || 0),
+        max_workday: max === "" ? null : Math.max(0, Math.min(1, Number(max) || 0)),
+        label: String(field("label")).trim(),
+      };
+    });
+
+  const validatePenaltyTiers = (tiers) => {
+    for (let index = 0; index < tiers.length; index += 1) {
+      const tier = tiers[index];
+      if (tier.to_minute !== null && tier.to_minute <= tier.from_minute)
+        return `Bậc phạt thứ ${index + 1}: phút kết thúc phải lớn hơn phút bắt đầu.`;
+      if (index > 0) {
+        const previous = tiers[index - 1];
+        if (previous.to_minute === null || tier.from_minute <= previous.to_minute)
+          return "Các bậc phạt đi muộn bị chồng lấn khoảng phút.";
+      }
+    }
+    return null;
+  };
+
+  const buildPolicyRules = () => ({
+    work_day_mode: q("#policyMode").value,
+    pro_rata: {
+      round_step: Number(q("#policyRoundStep").value || 0.25),
+      round_method: q("#policyRoundMethod").value,
+    },
+    tiers: (() => {
+      try {
+        const parsed = JSON.parse(q("#policyTiers").value || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    })(),
+    grace_late_minutes: Number(q("#policyGrace").value || 0),
+    late_penalty: {
+      enabled: q("#policyPenaltyEnabled").checked,
+      tiers: readPenaltyTiers(),
+    },
+  });
+
+  let previewTimer = null;
+  const previewPenalty = () => {
+    const resultEl = q("#penaltyTestResult");
+    if (!resultEl) return;
+    const minutes = Number(q("#penaltyTestMinutes")?.value ?? 0);
+    if (!q("#policyPenaltyEnabled")?.checked) {
+      resultEl.textContent = "Quy chế phạt đang tắt.";
+      resultEl.className = "text-sm font-semibold text-on-surface-variant";
+      return;
+    }
+    const validation = validatePenaltyTiers(readPenaltyTiers());
+    if (validation) {
+      resultEl.textContent = validation;
+      resultEl.className = "text-sm font-semibold text-error";
+      return;
+    }
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(async () => {
+      try {
+        const res = await api.post("/attendance/policies/preview-penalty", {
+          rules: buildPolicyRules(),
+          minutes,
+        });
+        const data = res.data?.data || {};
+        resultEl.textContent = data.note
+          ? `${data.amount ? `${Number(data.amount).toLocaleString("vi-VN")}đ • ` : ""}${data.note}`
+          : "Không có bậc phạt phù hợp.";
+        resultEl.className = `text-sm font-semibold ${data.matched ? "text-primary" : "text-on-surface-variant"}`;
+      } catch (err) {
+        resultEl.textContent = apiErrorMessage(err);
+        resultEl.className = "text-sm font-semibold text-error";
+      }
+    }, 250);
   };
 
   const fillPolicyForm = (policy = null) => {
@@ -394,6 +498,9 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
       null,
       2,
     );
+    q("#policyPenaltyEnabled").checked = Boolean(rules.late_penalty?.enabled);
+    renderPenaltyTiers(rules.late_penalty?.tiers || []);
+    q("#penaltyTestResult").textContent = "Nhập số phút đi muộn để xem kết quả.";
     q("#policyIsDefault").checked = Boolean(Number(policy?.is_default));
     q("#policyFormTitle").textContent = policy ? `Sửa quy chế: ${policy.code}` : "Thêm quy chế";
   };
@@ -596,6 +703,18 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
   });
   q("#btnCancelPolicy")?.addEventListener("click", () => q("#policyFormWrap")?.classList.add("hidden"));
   q("#btnCancelPolicyEdit")?.addEventListener("click", () => q("#policyFormWrap")?.classList.add("hidden"));
+  q("#btnAddPenaltyTier")?.addEventListener("click", () => {
+    q("#penaltyTiersBody")?.insertAdjacentHTML("beforeend", penaltyTierRow({ from_minute: "", to_minute: "", amount: 0, max_workday: null, label: "" }));
+    previewPenalty();
+  });
+  q("#penaltyTiersBody")?.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-remove-penalty]")) return;
+    e.target.closest("[data-penalty-tier]")?.remove();
+    previewPenalty();
+  });
+  q("#penaltyTiersBody")?.addEventListener("input", previewPenalty);
+  q("#policyPenaltyEnabled")?.addEventListener("change", previewPenalty);
+  q("#penaltyTestMinutes")?.addEventListener("input", previewPenalty);
   q("#policyTableBody")?.addEventListener("click", async (e) => {
     if (!canManage) return;
     const edit = e.target.closest("[data-edit-policy]");
@@ -636,19 +755,17 @@ export function initQuanLyCaLam(user = getCurrentUser()) {
       setNotice("Các bậc công phải là JSON mảng hợp lệ.", "error");
       return;
     }
+    const rules = buildPolicyRules();
+    const penaltyError = validatePenaltyTiers(rules.late_penalty.tiers);
+    if (penaltyError) {
+      setNotice(penaltyError, "error");
+      return;
+    }
     const payload = {
       code: q("#policyCode").value.trim().toUpperCase(),
       name: q("#policyName").value.trim(),
       is_default: q("#policyIsDefault").checked ? 1 : 0,
-      rules: {
-        work_day_mode: q("#policyMode").value,
-        pro_rata: {
-          round_step: Number(q("#policyRoundStep").value || 0.25),
-          round_method: q("#policyRoundMethod").value,
-        },
-        tiers,
-        grace_late_minutes: Number(q("#policyGrace").value || 0),
-      },
+      rules,
     };
     const id = q("#policyId").value;
     try {

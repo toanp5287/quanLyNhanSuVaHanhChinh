@@ -73,7 +73,7 @@ export const showDeviceBlocked = (permission, onRetry) => {
   const overlay = document.createElement("div");
   overlay.id = "hrmDeviceBlocked";
   overlay.className =
-    "fixed inset-0 z-[190] flex items-center justify-center bg-slate-900/45 px-4 backdrop-blur-[2px]";
+    "fixed inset-0 z-[210] flex items-center justify-center bg-slate-900/45 px-4 backdrop-blur-[2px]";
 
   const detailRows = [
     permission.deviceName ? ["Thiết bị", permission.deviceName] : null,

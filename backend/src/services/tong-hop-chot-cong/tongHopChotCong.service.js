@@ -1,5 +1,6 @@
 import { db } from "../../config/database.js";
 import { buildEmployeeScope } from "../../utils/helper.js";
+import { ensureAttendancePolicySchema } from "../attendance-policy/attendancePolicy.service.js";
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const round2 = (value) => Math.round(Number(value || 0) * 100) / 100;
@@ -18,10 +19,11 @@ const standardDays = (month) => {
 
 export const recalculateEmployeeMonth = async (connection, employeeId, month) => {
   validateMonth(month);
+  await ensureAttendancePolicySchema();
   const [existing] = await connection.query("SELECT status FROM monthly_timesheets WHERE employee_id = ? AND month_year = ? FOR UPDATE", [employeeId, month]);
   if (existing[0]?.status === "LOCKED") throw fail("Bảng công tháng này đã khóa", 409);
   const [logs] = await connection.query(`SELECT DATE_FORMAT(work_date, '%Y-%m-%d') AS work_date,
-    base_workday, total_workday, paid_leave_workday, late_minutes
+    base_workday, final_workday, penalty_amount, total_workday, paid_leave_workday, late_minutes
     FROM attendances WHERE employee_id = ? AND work_date >= CONCAT(?, '-01') AND work_date <= LAST_DAY(CONCAT(?, '-01'))`, [employeeId, month, month]);
   const [leaves] = await connection.query(`SELECT DATE_FORMAT(work_date, '%Y-%m-%d') AS work_date, leave_type, paid_workday, paid_workday > 0 AS is_paid
     FROM leave_requests
@@ -38,9 +40,10 @@ export const recalculateEmployeeMonth = async (connection, employeeId, month) =>
     else entry.unpaid = Math.min(1, entry.unpaid + unit);
     leaveDays.set(leave.work_date, entry);
   }
-  let actual = 0, paid = 0, unpaid = 0, lateCount = 0, lateMinutes = 0;
+  let actual = 0, paid = 0, unpaid = 0, lateCount = 0, lateMinutes = 0, latePenalty = 0;
   for (const log of logs) {
-    actual += Number(log.base_workday || 0);
+    actual += Number(log.final_workday ?? log.base_workday ?? 0);
+    latePenalty += Number(log.penalty_amount || 0);
     paid += Number(log.paid_leave_workday || 0);
     if (Number(log.late_minutes) > 0) lateCount++;
     lateMinutes += Number(log.late_minutes || 0);
@@ -65,23 +68,25 @@ export const recalculateEmployeeMonth = async (connection, employeeId, month) =>
   }
   await connection.query(`INSERT INTO monthly_timesheets
     (employee_id, month_year, standard_days, actual_work_days, paid_leave_days, unpaid_leave_days, total_payable_days,
-     late_count, total_late_minutes, ot_hours_150, ot_hours_200, ot_hours_300, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN')
+     late_count, total_late_minutes, total_late_penalty, ot_hours_150, ot_hours_200, ot_hours_300, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN')
     ON DUPLICATE KEY UPDATE standard_days = VALUES(standard_days), actual_work_days = VALUES(actual_work_days),
       paid_leave_days = VALUES(paid_leave_days), unpaid_leave_days = VALUES(unpaid_leave_days), total_payable_days = VALUES(total_payable_days),
-      late_count = VALUES(late_count), total_late_minutes = VALUES(total_late_minutes), ot_hours_150 = VALUES(ot_hours_150),
-      ot_hours_200 = VALUES(ot_hours_200), ot_hours_300 = VALUES(ot_hours_300)`,
-  [employeeId, month, standardDays(month), actual, paid, unpaid, actual + paid, lateCount, lateMinutes,
-    ot.WEEKDAY, ot.WEEKEND, ot.HOLIDAY]);
+      late_count = VALUES(late_count), total_late_minutes = VALUES(total_late_minutes), total_late_penalty = VALUES(total_late_penalty),
+      ot_hours_150 = VALUES(ot_hours_150), ot_hours_200 = VALUES(ot_hours_200), ot_hours_300 = VALUES(ot_hours_300)`,
+  [employeeId, month, standardDays(month), round2(actual), round2(paid), round2(unpaid), round2(actual + paid), lateCount, lateMinutes,
+    round2(latePenalty), ot.WEEKDAY, ot.WEEKEND, ot.HOLIDAY]);
 };
 
 export const listMonthlyTimesheets = async (month, user) => {
   validateMonth(month);
+  await ensureAttendancePolicySchema();
   const scope = buildEmployeeScope(user);
   const [rows] = await db.query(`SELECT e.id AS employee_id, e.employee_code, e.full_name, e.department_id,
     COALESCE(d.department_name, d.name) AS department_name,
     mt.id, mt.standard_days, mt.actual_work_days, mt.paid_leave_days, mt.unpaid_leave_days, mt.total_payable_days,
-    mt.late_count, mt.total_late_minutes, mt.ot_hours_150, mt.ot_hours_200, mt.ot_hours_300,
+    mt.late_count, mt.total_late_minutes, COALESCE(mt.total_late_penalty, 0) AS total_late_penalty,
+    mt.ot_hours_150, mt.ot_hours_200, mt.ot_hours_300,
     COALESCE(mt.status, 'OPEN') AS status, mt.locked_at
     FROM employees e LEFT JOIN departments d ON d.id = e.department_id
     LEFT JOIN monthly_timesheets mt ON mt.employee_id = e.id AND mt.month_year = ?

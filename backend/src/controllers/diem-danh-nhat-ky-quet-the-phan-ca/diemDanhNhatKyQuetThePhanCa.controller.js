@@ -27,6 +27,7 @@ import {
   deletePolicy,
   getKioskConfig,
   listPolicies,
+  previewLatePenalty,
   savePolicy,
   updateKioskConfig,
 } from "../../services/attendance-policy/attendancePolicy.service.js";
@@ -433,6 +434,15 @@ export const saveAttendancePolicyHandler = async (req, res) => {
     });
   } catch (error) {
     return respondError(res, error, "Không thể lưu quy chế tính công");
+  }
+};
+
+export const previewAttendancePenaltyHandler = async (req, res) => {
+  try {
+    const data = await previewLatePenalty(req.body || {});
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return respondError(res, error, "Không thể thử tính tiền phạt đi muộn");
   }
 };
 

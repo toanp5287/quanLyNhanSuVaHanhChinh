@@ -172,6 +172,9 @@ export function initLichSuChamCong() {
       ["Muộn / về sớm", `${number(attendance?.late_minutes)} / ${number(attendance?.early_leave_minutes)} phút`],
       ["Giờ công", number(attendance?.actual_work_hours, " giờ")],
       ["Công tính lương", number(attendance?.total_workday)],
+      ["Công thực nhận", number(attendance?.final_workday ?? attendance?.base_workday ?? attendance?.total_workday)],
+      ["Tiền phạt tạm", `${number(attendance?.penalty_amount)}đ`],
+      ["Ghi chú phạt", attendance?.penalty_note || "—"],
       ["OT duyệt", number(attendance?.approved_ot_hours, " giờ")],
       ["Nghỉ phép", leave ? `${leave.leave_type || "Nghỉ phép"}${leave.reason ? ` • ${leave.reason}` : ""}` : "—"],
       ["Ghi chú", attendance?.note || "—"],
@@ -225,7 +228,7 @@ export function initLichSuChamCong() {
   };
 
   const renderTable = () => {
-    const columns = ["Ngày", "Thứ", "Giờ vào", "Giờ ra", "Ca", "Trạng thái", "Muộn / Sớm", "Công", "OT", "Ghi chú"];
+    const columns = ["Ngày", "Thứ", "Giờ vào", "Giờ ra", "Ca", "Trạng thái", "Muộn / Sớm", "Công thực nhận", "Tiền phạt", "OT", "Ghi chú"];
     el("TableHead").innerHTML = `<tr>${columns.map((label) => `<th class="px-4 py-3 font-semibold">${label}</th>`).join("")}</tr>`;
     const days = daysInMonth(state.month).map((date) => buildDay(date, state.data));
     el("Count").textContent = `${days.length} ngày trong tháng`;
@@ -240,7 +243,8 @@ export function initLichSuChamCong() {
           <td class="px-4 py-3">${escapeHtml(attendance?.shift_code || "—")}</td>
           <td class="px-4 py-3"><span class="rounded px-2 py-1 text-xs font-semibold ${STATUS_STYLES[day.status]}">${escapeHtml(STATUS_LABELS[day.status])}</span></td>
           <td class="px-4 py-3">${number(attendance?.late_minutes)} / ${number(attendance?.early_leave_minutes)}</td>
-          <td class="px-4 py-3">${number(attendance?.total_workday)}</td>
+          <td class="px-4 py-3">${number(attendance?.final_workday ?? attendance?.base_workday ?? attendance?.total_workday)}</td>
+          <td class="px-4 py-3">${number(attendance?.penalty_amount)}đ</td>
           <td class="px-4 py-3">${number(attendance?.approved_ot_hours)}</td>
           <td class="px-4 py-3">${escapeHtml(day.leave?.reason || attendance?.note || "—")}</td>
         </tr>`;

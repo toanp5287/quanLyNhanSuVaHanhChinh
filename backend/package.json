@@ -28,7 +28,8 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.5.0",
     "mysql2": "^3.24.6",
+    "node-cron": "^4.6.0",
     "pizzip": "^3.3.0",
-    "puppeteer-core": "^25.19.0"
+    "zod": "^4.6.7"
   }
 }

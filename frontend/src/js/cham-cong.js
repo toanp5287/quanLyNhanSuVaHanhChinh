@@ -5,6 +5,7 @@ import { getCurrentUser, hasPermission } from "../services/auth.service.js";
 const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
 const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const number = value => Number(value || 0).toLocaleString("vi-VN", { maximumFractionDigits: 2 });
+const money = value => Number(value || 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 });
 const time = value => value ? String(value).slice(0, 5) : "—";
 const apiErrorMessage = error => {
   if (error.response?.data?.message) return error.response.data.message;
@@ -59,12 +60,12 @@ export function initChamCong(user = getCurrentUser(), initialTab = "daily") {
     el("TableTitle").textContent = daily ? `Bảng điểm danh ngày ${el("Date").value}` : `Tổng hợp công tháng ${el("Month").value}`;
     const metrics = daily ? [
       ["Nhân sự", rows.length], ["Có mặt", rows.filter(row => row.log_id && Number(row.work_unit) > 0 && row.source !== "LEAVE_SYNC").length],
-      ["Đi muộn", rows.filter(row => Number(row.late_minutes) > 0).length], ["Chưa điểm danh", rows.filter(row => dailyStatus(row) === "UNMARKED").length],
+      ["Đi muộn", rows.filter(row => Number(row.late_minutes) > 0).length], ["Tiền phạt tạm", `${money(rows.reduce((sum, row) => sum + Number(row.penalty_amount || 0), 0))}đ`], ["Chưa điểm danh", rows.filter(row => dailyStatus(row) === "UNMARKED").length],
     ] : [["Nhân sự", rows.length], ["Công thực tế", rows.reduce((sum, row) => sum + Number(row.actual_work_days || 0), 0)],
-      ["Công tính lương", rows.reduce((sum, row) => sum + Number(row.total_payable_days || 0), 0)], ["Đã khóa", rows.filter(row => row.status === "LOCKED").length]];
+      ["Công tính lương", rows.reduce((sum, row) => sum + Number(row.total_payable_days || 0), 0)], ["Tổng phạt muộn", `${money(rows.reduce((sum, row) => sum + Number(row.total_late_penalty || 0), 0))}đ`], ["Đã khóa", rows.filter(row => row.status === "LOCKED").length]];
     el("Metrics").innerHTML = metrics.map(([label, value]) => `<div class="bg-white rounded-xl p-4 shadow-sm"><p class="text-sm text-on-surface-variant">${label}</p><p class="text-2xl font-bold text-primary mt-2">${state.loading || state.failed ? "—" : number(value)}</p></div>`).join("");
-    const columns = daily ? ["Mã NV", "Họ tên", "Phòng ban", "Ca / Giờ vào – ra", "Muộn / Sớm (phút)", "Công", "Trạng thái", "Nguồn", "Thao tác"]
-      : ["Mã NV", "Họ tên", "Phòng ban", "Công chuẩn", "Thực tế", "Nghỉ có lương", "Nghỉ không lương", "Công tính lương", "Muộn (lần / phút)", "OT 150% / 200% / 300%", "Trạng thái"];
+    const columns = daily ? ["Mã NV", "Họ tên", "Phòng ban", "Ca / Giờ vào – ra", "Muộn / Sớm (phút)", "Công thực nhận", "Tiền phạt tạm", "Ghi chú phạt", "Trạng thái", "Nguồn", "Thao tác"]
+      : ["Mã NV", "Họ tên", "Phòng ban", "Công chuẩn", "Thực tế", "Nghỉ có lương", "Nghỉ không lương", "Công tính lương", "Muộn (lần / phút)", "Tổng phạt muộn", "OT 150% / 200% / 300%", "Trạng thái"];
     el("Head").innerHTML = `<tr>${columns.map(label => `<th class="px-4 py-3 font-semibold">${label}</th>`).join("")}</tr>`;
     el("Body").innerHTML = state.loading || state.failed || !rows.length ? `<tr><td colspan="${columns.length}" class="p-10 text-center text-on-surface-variant">${state.loading ? "Đang tải dữ liệu…" : state.failed ? "Không thể tải dữ liệu. Bấm Làm mới để thử lại." : "Không có dữ liệu phù hợp với bộ lọc."}</td></tr>` : rows.slice((state.page - 1) * size, state.page * size).map(row => {
       let cells = [escapeHtml(row.employee_code), `<span class="font-semibold">${escapeHtml(row.full_name)}</span>`, escapeHtml(row.department_name || "—")];
@@ -73,10 +74,17 @@ export function initChamCong(user = getCurrentUser(), initialTab = "daily") {
         const actions = canMark && status === "UNMARKED" && row.month_status !== "LOCKED" && el("Date").value <= today()
           ? [ ["PRESENT", "Đủ công"], ["HALF", "Nửa ngày"], ["ABSENT", "Vắng"] ].map(([type, label]) => `<button data-mark="${type}" data-employee="${Number(row.employee_id)}" class="border rounded px-2 py-1 mr-1 hover:bg-surface-container-low">${label}</button>`).join("")
           : row.month_status === "LOCKED" ? badge("LOCKED") : "—";
-        cells.push(`${escapeHtml(row.shift_code || "—")}<div class="text-xs text-on-surface-variant mt-1">${time(row.check_in)} – ${time(row.check_out)}</div>`, `${number(row.late_minutes)} / ${number(row.early_leave_minutes)}`, row.log_id ? number(row.work_unit) : "—",
+        const finalWorkday = row.final_workday ?? row.work_unit ?? row.work_day;
+        const baseWorkday = row.base_workday ?? row.total_workday ?? finalWorkday;
+        const workdayCell = row.log_id
+          ? `<span title="${escapeHtml(`Công gốc ${number(baseWorkday)} → công thực nhận ${number(finalWorkday)}`)}" class="${Number(finalWorkday) < Number(baseWorkday) ? "text-error font-semibold" : ""}">${number(finalWorkday)}</span>`
+          : "—";
+        const penaltyCell = Number(row.penalty_amount) > 0 ? `<span class="text-error font-semibold">${money(row.penalty_amount)}đ</span>` : number(row.penalty_amount);
+        cells.push(`${escapeHtml(row.shift_code || "—")}<div class="text-xs text-on-surface-variant mt-1">${time(row.check_in)} – ${time(row.check_out)}</div>`, `${number(row.late_minutes)} / ${number(row.early_leave_minutes)}`, workdayCell, penaltyCell,
+          row.penalty_note ? `<span title="${escapeHtml(row.penalty_note)}" class="text-xs">${escapeHtml(String(row.penalty_note).slice(0, 40))}${String(row.penalty_note).length > 40 ? "…" : ""}</span>` : "—",
           status === "LEAVE" ? `<span class="bg-sky-50 text-sky-800 rounded px-2 py-1 text-xs">${Number(row.leave_paid) ? "Nghỉ phép có lương" : "Nghỉ không lương"}</span>` : badge(status), escapeHtml(row.source || (status === "LEAVE" ? "LEAVE_SYNC" : "—")), actions);
       } else {
-        cells.push(row.id ? number(row.standard_days) : number(state.standardDays), ...["actual_work_days", "paid_leave_days", "unpaid_leave_days", "total_payable_days"].map(key => row.id ? number(row[key]) : "—"), `${number(row.late_count)} / ${number(row.total_late_minutes)}`, `${number(row.ot_hours_150)} / ${number(row.ot_hours_200)} / ${number(row.ot_hours_300)}`, `${badge(row.status)}${!row.id ? '<div class="text-xs mt-1 text-on-surface-variant">Chưa tổng hợp</div>' : ""}`);
+        cells.push(row.id ? number(row.standard_days) : number(state.standardDays), ...["actual_work_days", "paid_leave_days", "unpaid_leave_days", "total_payable_days"].map(key => row.id ? number(row[key]) : "—"), `${number(row.late_count)} / ${number(row.total_late_minutes)}`, row.id ? `<span class="font-semibold">${money(row.total_late_penalty)}đ</span>` : "—", `${number(row.ot_hours_150)} / ${number(row.ot_hours_200)} / ${number(row.ot_hours_300)}`, `${badge(row.status)}${!row.id ? '<div class="text-xs mt-1 text-on-surface-variant">Chưa tổng hợp</div>' : ""}`);
       }
       return `<tr class="hover:bg-surface-container-low/60">${cells.map(cell => `<td class="px-4 py-3">${cell}</td>`).join("")}</tr>`;
     }).join("");
@@ -137,9 +145,9 @@ export function initChamCong(user = getCurrentUser(), initialTab = "daily") {
   }
   function exportCsv() {
     const daily = state.tab === "daily";
-    const fields = daily ? ["employee_code", "full_name", "department_name", "check_in", "check_out", "work_unit", "late_minutes", "early_leave_minutes", "status", "source"]
-      : ["employee_code", "full_name", "department_name", "standard_days", "actual_work_days", "paid_leave_days", "unpaid_leave_days", "total_payable_days", "late_count", "total_late_minutes", "ot_hours_150", "ot_hours_200", "ot_hours_300", "status"];
-    const headers = daily ? ["Mã NV", "Họ tên", "Phòng ban", "Giờ vào", "Giờ ra", "Công", "Phút muộn", "Phút về sớm", "Trạng thái", "Nguồn"] : ["Mã NV", "Họ tên", "Phòng ban", "Công chuẩn", "Công thực tế", "Nghỉ có lương", "Nghỉ không lương", "Công tính lương", "Lần muộn", "Phút muộn", "OT 150%", "OT 200%", "OT 300%", "Trạng thái"];
+    const fields = daily ? ["employee_code", "full_name", "department_name", "check_in", "check_out", "final_workday", "base_workday", "penalty_amount", "penalty_note", "late_minutes", "early_leave_minutes", "status", "source"]
+      : ["employee_code", "full_name", "department_name", "standard_days", "actual_work_days", "paid_leave_days", "unpaid_leave_days", "total_payable_days", "late_count", "total_late_minutes", "total_late_penalty", "ot_hours_150", "ot_hours_200", "ot_hours_300", "status"];
+    const headers = daily ? ["Mã NV", "Họ tên", "Phòng ban", "Giờ vào", "Giờ ra", "Công thực nhận", "Công gốc", "Tiền phạt tạm", "Ghi chú phạt", "Phút muộn", "Phút về sớm", "Trạng thái", "Nguồn"] : ["Mã NV", "Họ tên", "Phòng ban", "Công chuẩn", "Công thực tế", "Nghỉ có lương", "Nghỉ không lương", "Công tính lương", "Lần muộn", "Phút muộn", "Tổng phạt muộn", "OT 150%", "OT 200%", "OT 300%", "Trạng thái"];
     const quote = value => `"${String(value ?? "").replace(/^[=+@-]/, "'$&").replace(/"/g, '""')}"`;
     const records = filtered().map(row => fields.map(field => field === "status" ? labels[daily ? dailyStatus(row) : row.status] : row[field]));
     const url = URL.createObjectURL(new Blob(["\uFEFF", [headers, ...records].map(row => row.map(quote).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" }));
