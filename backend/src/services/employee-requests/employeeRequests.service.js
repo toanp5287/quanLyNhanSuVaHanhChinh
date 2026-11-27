@@ -4,6 +4,10 @@ import {
   buildEmployeeScope,
   hasPermission,
 } from "../../utils/helper.js";
+import {
+  clearLatePenalty,
+  ensureAttendancePolicySchema,
+} from "../attendance-policy/attendancePolicy.service.js";
 
 const fail = (message, status = 400) =>
   Object.assign(new Error(message), { status });
@@ -364,6 +368,18 @@ const resolveNextStatus = (requestType, status, action) => {
   throw fail("Đơn ở trạng thái hiện tại không thể duyệt", 409);
 };
 
+const eachDateInRange = (startDate, endDate) => {
+  const dates = [];
+  const cursor = new Date(`${startDate}T00:00:00Z`);
+  const last = new Date(`${endDate}T00:00:00Z`);
+  if (!Number.isFinite(cursor.getTime()) || !Number.isFinite(last.getTime()) || cursor > last) return dates;
+  for (let index = 0; index < 400 && cursor <= last; index += 1) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+};
+
 export const processEmployeeRequest = async (
   user,
   id,
@@ -418,6 +434,18 @@ export const processEmployeeRequest = async (
       "UPDATE employee_requests SET status = ? WHERE id = ?",
       [nextStatus, requestId],
     );
+    if (nextStatus === "APPROVED" && request.request_type === "TEMPORARY_LEAVE") {
+      await ensureAttendancePolicySchema();
+      const start = String(request.start_date || "").slice(0, 10);
+      const end = String(request.end_date || request.last_working_date || start).slice(0, 10);
+      for (const workDate of eachDateInRange(start, end)) {
+        await clearLatePenalty(connection, {
+          employeeId: request.employee_id,
+          workDate,
+          reason: "Miễn phạt: đơn xin phép đã duyệt",
+        });
+      }
+    }
     await connection.query(
       `INSERT INTO workflow_actions
         (entity_type, entity_id, actor_id, action, from_status, to_status, comment)

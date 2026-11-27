@@ -4,6 +4,7 @@ import { assertCanApprove, buildEmployeeScope } from "../../utils/helper.js";
 import { recalculateEmployeeMonth } from "../tong-hop-chot-cong/tongHopChotCong.service.js";
 import {
   buildPolicySnapshot,
+  calculateLatePenalty,
   computeWorkDay,
   ensureAttendancePolicySchema,
   getKioskConfig,
@@ -15,6 +16,10 @@ import {
   notifyEmployee,
   publishNotificationRow,
 } from "../notifications/notification.service.js";
+import {
+  ensureLateExplanationSchema,
+  handleLateCheckinHook,
+} from "../late-explanation/lateExplanation.service.js";
 
 export const attendanceError = (message, status = 400) =>
   Object.assign(new Error(message), { status });
@@ -81,6 +86,20 @@ const hasColumn = async (connection, table, column) => {
     `SELECT COUNT(*) AS total FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
     [table, column],
+  );
+  const value = Number(rows[0]?.total) > 0;
+  columnCache.set(key, { at: Date.now(), value });
+  return value;
+};
+
+const hasTable = async (connection, table) => {
+  const key = `table:${table}`;
+  const cached = columnCache.get(key);
+  if (cached && Date.now() - cached.at < 30000) return cached.value;
+  const [rows] = await connection.query(
+    `SELECT COUNT(*) AS total FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+    [table],
   );
   const value = Number(rows[0]?.total) > 0;
   columnCache.set(key, { at: Date.now(), value });
@@ -1190,6 +1209,7 @@ export const recalculateDailyAttendance = async (
   workDate,
 ) => {
   await ensureOvertimeSchema();
+  await ensureAttendancePolicySchema();
   const attendance = await getAttendanceForDate(
     employeeId,
     workDate,
@@ -1423,6 +1443,55 @@ export const recalculateDailyAttendance = async (
     }
   }
 
+  let penaltyAmount = 0;
+  let finalWorkday = round2(baseWorkday);
+  let penaltyNote = null;
+  let exemptionReason = null;
+  const penaltyRulesApplicable = Boolean(snapshot?.policy) || (!attendance.recalculated_at && Boolean(checkIn));
+  if (lateMinutes > 0 && leave) exemptionReason = "đơn nghỉ/xin phép đã duyệt";
+  if (lateMinutes > 0 && !exemptionReason) {
+    await ensureLateExplanationSchema();
+    if (await hasTable(connection, "employee_requests")) {
+      const [requestRows] = await connection.query(
+        `SELECT 1 FROM employee_requests
+          WHERE employee_id = ? AND status = 'APPROVED' AND request_type <> 'RESIGNATION'
+            AND ? BETWEEN start_date AND COALESCE(end_date, last_working_date, start_date)
+          LIMIT 1`,
+        [employeeId, workDate],
+      );
+      if (requestRows.length) exemptionReason = "đơn xin phép đã duyệt";
+    }
+    if (!exemptionReason) {
+      const [explanationRows] = await connection.query(
+        `SELECT 1 FROM attendance_late_explanations
+          WHERE attendance_id = ?
+            AND (approval_status = 'APPROVED'
+              OR (approval_status = 'AUTO_SELF_DECLARED' AND hr_status = 'RECORDED'))
+          LIMIT 1`,
+        [attendance.id],
+      );
+      if (explanationRows.length) exemptionReason = "giải trình đi muộn đã duyệt";
+    }
+    if (!exemptionReason) {
+      const [graceRows] = await connection.query(
+        "SELECT 1 FROM attendance_grace_usages WHERE attendance_id = ? LIMIT 1",
+        [attendance.id],
+      );
+      if (graceRows.length) exemptionReason = "lượt ân hạn đã sử dụng";
+    }
+  }
+  if (exemptionReason) {
+    penaltyNote = `Miễn phạt: ${exemptionReason}`;
+  } else if (lateMinutes > 0 && penaltyRulesApplicable) {
+    const penalty = calculateLatePenalty({ lateMinutes, rules });
+    if (penalty.exempt || penalty.matched) penaltyNote = penalty.note;
+    if (!penalty.exempt && penalty.matched) {
+      penaltyAmount = round2(penalty.amount);
+      if (penalty.max_workday !== null)
+        finalWorkday = round2(Math.max(0, Math.min(finalWorkday, penalty.max_workday)));
+    }
+  }
+
   let snapshotJson = null;
   const shouldCaptureSnapshot = Boolean(checkIn);
   if (shouldCaptureSnapshot && !snapshot) {
@@ -1435,6 +1504,7 @@ export const recalculateDailyAttendance = async (
     `UPDATE attendances
         SET check_out = ?, late_minutes = ?, early_leave_minutes = ?, actual_work_hours = ?,
             base_workday = ?, paid_leave_workday = ?, total_workday = ?,
+            final_workday = ?, penalty_amount = ?, penalty_note = ?,
             net_work_minutes = ?, work_day = ?, policy_snapshot = COALESCE(policy_snapshot, ?),
             recalculated_at = NOW(),
             raw_ot_minutes = ?, approved_ot_hours = ?, ot_rate = ?, status = ?
@@ -1447,6 +1517,9 @@ export const recalculateDailyAttendance = async (
       baseWorkday,
       paidLeaveWorkday,
       totalWorkday,
+      finalWorkday,
+      penaltyAmount,
+      penaltyNote,
       netWorkMinutes,
       baseWorkday,
       snapshotJson,
@@ -1468,6 +1541,9 @@ export const recalculateDailyAttendance = async (
     work_day: baseWorkday,
     policy_snapshot: snapshot,
     base_workday: baseWorkday,
+    final_workday: finalWorkday,
+    penalty_amount: penaltyAmount,
+    penalty_note: penaltyNote,
     paid_leave_workday: paidLeaveWorkday,
     total_workday: totalWorkday,
     raw_ot_minutes: rawOtMinutes,
@@ -1497,7 +1573,11 @@ const legacyLog = (attendance, source = null) => {
     early_leave_minutes: toNumber(attendance.early_leave_minutes, 0),
     work_unit: toNumber(attendance.total_workday, 0),
     total_workday: toNumber(attendance.total_workday, 0),
-    work_day: toNumber(attendance.work_day ?? attendance.total_workday, 0),
+    work_day: toNumber(attendance.final_workday ?? attendance.work_day ?? attendance.total_workday, 0),
+    base_workday: toNumber(attendance.base_workday ?? attendance.total_workday, 0),
+    final_workday: toNumber(attendance.final_workday ?? attendance.base_workday ?? attendance.total_workday, 0),
+    penalty_amount: toNumber(attendance.penalty_amount, 0),
+    penalty_note: attendance.penalty_note || null,
     net_work_minutes: toNumber(attendance.net_work_minutes, 0),
     status: LEGACY_STATUS[rawStatus] || rawStatus,
     raw_status: rawStatus,
@@ -1626,7 +1706,9 @@ const checkInInternal = async (employeeId, account, meta, connection) => {
   await recalculateDailyAttendance(connection, employeeId, now.today);
   await recalculateEmployeeMonth(connection, employeeId, now.today.slice(0, 7));
   const final = await getAttendanceForDate(employeeId, now.today, connection);
-  return { log: legacyLog(final, "FACE_ID"), shift, account };
+  await handleLateCheckinHook(connection, final);
+  const updated = await getAttendanceForDate(employeeId, now.today, connection);
+  return { log: legacyLog(updated, "FACE_ID"), shift, account };
 };
 
 const checkOutInternal = async (employeeId, account, meta, connection) => {
@@ -1956,9 +2038,10 @@ export const listAttendanceByDate = async (date, user) => {
   const [rows] = await db.query(
     `SELECT e.id AS employee_id, e.employee_code, e.full_name, e.department_id,
             COALESCE(d.department_name, d.name) AS department_name,
-            a.id AS log_id, a.check_in, a.check_out, a.total_workday,
-            a.status AS raw_status, a.late_minutes, a.early_leave_minutes,
-            a.note, ${withUser ? "a.user_id, u.username" : "NULL AS user_id, NULL AS username"},
+             a.id AS log_id, a.check_in, a.check_out, a.total_workday,
+             a.base_workday, a.final_workday, a.penalty_amount, a.penalty_note,
+             a.status AS raw_status, a.late_minutes, a.early_leave_minutes,
+             a.note, ${withUser ? "a.user_id, u.username" : "NULL AS user_id, NULL AS username"},
             ws.code AS shift_code, ws.start_time, ws.end_time,
             COALESCE(mt.status, 'OPEN') AS month_status,
             (SELECT MAX(lr.paid_workday > 0) FROM leave_requests lr
@@ -2029,8 +2112,9 @@ export const getMyAttendanceHistory = async (user, monthValue) => {
     `SELECT DATE_FORMAT(a.work_date, '%Y-%m-%d') AS work_date,
             TIME_FORMAT(a.check_in, '%H:%i') AS check_in,
             TIME_FORMAT(a.check_out, '%H:%i') AS check_out,
-            a.check_in_ip, a.status, a.actual_work_hours, a.base_workday,
-            a.paid_leave_workday, a.total_workday, a.late_minutes,
+             a.check_in_ip, a.status, a.actual_work_hours, a.base_workday,
+             a.final_workday, a.penalty_amount, a.penalty_note,
+             a.paid_leave_workday, a.total_workday, a.late_minutes,
             a.early_leave_minutes, a.raw_ot_minutes, a.approved_ot_hours,
             a.ot_rate, a.note,
             ws.code AS shift_code,

@@ -18,6 +18,12 @@ const hasColumn = async (connection, table, column) => {
   return value;
 };
 
+const DEFAULT_LATE_PENALTY_TIERS = [
+  { from_minute: 16, to_minute: 30, amount: 100000, max_workday: null, label: "Muộn 16–30 phút" },
+  { from_minute: 31, to_minute: 60, amount: 200000, max_workday: 0.75, label: "Muộn 31–60 phút" },
+  { from_minute: 61, to_minute: null, amount: 300000, max_workday: 0.5, label: "Muộn trên 60 phút" },
+];
+
 const DEFAULT_RULES = {
   work_day_mode: "PRO_RATA",
   pro_rata: { round_step: 0.25, round_method: "ROUND" },
@@ -30,6 +36,7 @@ const DEFAULT_RULES = {
   max_work_day: 1,
   grace_late_minutes: 5,
   grace_early_minutes: 0,
+  late_penalty: { enabled: false, tiers: DEFAULT_LATE_PENALTY_TIERS },
   clamp_early_in: true,
   clamp_late_out: true,
   missing_checkout_action: "ZERO_WAIT_EXPLAIN",
@@ -109,13 +116,31 @@ export const ensureAttendancePolicySchema = async () => {
         ["net_work_minutes", "INT NOT NULL DEFAULT 0"],
         ["work_day", "DECIMAL(4,2) NOT NULL DEFAULT 0.00"],
         ["recalculated_at", "DATETIME NULL"],
+        ["final_workday", "DECIMAL(3,2) NOT NULL DEFAULT 0.00"],
+        ["penalty_amount", "DECIMAL(12,2) NOT NULL DEFAULT 0.00"],
+        ["penalty_note", "VARCHAR(255) NULL"],
       ];
+      let backfillFinalWorkday = false;
       for (const [column, definition] of attendanceColumns) {
         if (await hasColumn(db, "attendances", column)) continue;
         await db.query(
           `ALTER TABLE attendances ADD COLUMN ${column} ${definition}`,
         );
         columnCache.delete(`attendances.${column}`);
+        if (column === "final_workday") backfillFinalWorkday = true;
+      }
+      if (!(await hasColumn(db, "monthly_timesheets", "total_late_penalty"))) {
+        await db.query(
+          "ALTER TABLE monthly_timesheets ADD COLUMN total_late_penalty DECIMAL(12,2) NOT NULL DEFAULT 0.00",
+        );
+        columnCache.delete("monthly_timesheets.total_late_penalty");
+      }
+      if (backfillFinalWorkday) {
+        await db.query(
+          `UPDATE attendances
+              SET final_workday = COALESCE(base_workday, 0.00)
+            WHERE final_workday = 0.00 AND COALESCE(base_workday, 0) > 0`,
+        );
       }
 
       await db.query(
@@ -177,6 +202,137 @@ const toMinutes = (value) => {
   return hour * 60 + minute;
 };
 
+const cloneDefaultLatePenalty = () => ({
+  enabled: false,
+  tiers: DEFAULT_LATE_PENALTY_TIERS.map((tier) => ({ ...tier })),
+});
+
+export const normalizeLatePenalty = (value, strict = false) => {
+  const raw = parseJson(value, null);
+  const fallback = cloneDefaultLatePenalty();
+  if (raw == null) return fallback;
+  const tiersSource = Array.isArray(raw.tiers) ? raw.tiers : fallback.tiers;
+  const tiers = tiersSource
+    .map((tier, index) => {
+      const from = Math.max(0, Math.floor(toNumber(tier?.from_minute ?? tier?.from, 0)));
+      const rawTo = tier?.to_minute ?? tier?.to;
+      const to =
+        rawTo === null || rawTo === undefined || rawTo === ""
+          ? null
+          : Math.max(0, Math.floor(toNumber(rawTo, from)));
+      const amount = Math.max(0, Math.round(toNumber(tier?.amount, 0)));
+      const rawMax = tier?.max_workday;
+      const maxWorkday =
+        rawMax === null || rawMax === undefined || rawMax === ""
+          ? null
+          : Math.max(0, Math.min(1, toNumber(rawMax, 1)));
+      return {
+        from_minute: from,
+        to_minute: to,
+        amount,
+        max_workday: maxWorkday,
+        label: String(tier?.label || "").trim().slice(0, 255),
+        order: index,
+      };
+    })
+    .sort((a, b) => a.from_minute - b.from_minute || a.order - b.order);
+  if (strict) {
+    for (let index = 0; index < tiers.length; index += 1) {
+      const tier = tiers[index];
+      if (tier.to_minute !== null && tier.to_minute <= tier.from_minute)
+        throw policyError(`Bậc phạt thứ ${index + 1}: phút kết thúc phải lớn hơn phút bắt đầu`);
+      if (!Number.isFinite(tier.amount) || tier.amount < 0)
+        throw policyError(`Bậc phạt thứ ${index + 1}: tiền phạt không hợp lệ`);
+      if (index > 0) {
+        const previous = tiers[index - 1];
+        if (previous.to_minute === null || tier.from_minute <= previous.to_minute)
+          throw policyError("Các bậc phạt đi muộn bị chồng lấn khoảng phút", 409);
+      }
+    }
+  }
+  return { enabled: Boolean(raw.enabled), tiers };
+};
+
+export const findLatePenaltyTier = (lateMinutes, tiers = []) => {
+  const minutes = Math.max(0, Math.floor(toNumber(lateMinutes, 0)));
+  return (
+    tiers.find(
+      (tier) =>
+        minutes >= tier.from_minute &&
+        (tier.to_minute === null || minutes <= tier.to_minute),
+    ) || null
+  );
+};
+
+export const calculateLatePenalty = ({ lateMinutes = 0, rules = null } = {}) => {
+  const config = normalizeLatePenalty(rules?.late_penalty);
+  const minutes = Math.max(0, Math.floor(toNumber(lateMinutes, 0)));
+  const grace = Math.max(0, toNumber(rules?.grace_late_minutes, 5));
+  if (!config.enabled || minutes <= 0)
+    return { exempt: false, matched: false, amount: 0, max_workday: null, note: null, tier: null };
+  if (minutes <= grace)
+    return {
+      exempt: true,
+      matched: true,
+      amount: 0,
+      max_workday: null,
+      note: `Miễn phạt: đi muộn ${minutes} phút trong ân hạn ${grace} phút`,
+      tier: null,
+    };
+  const tier = findLatePenaltyTier(minutes, config.tiers);
+  if (!tier)
+    return {
+      exempt: false,
+      matched: false,
+      amount: 0,
+      max_workday: null,
+      note: `Không có bậc phạt cho ${minutes} phút đi muộn`,
+      tier: null,
+    };
+  const range = tier.to_minute === null
+    ? `từ ${tier.from_minute} phút trở lên`
+    : `${tier.from_minute}–${tier.to_minute} phút`;
+  return {
+    exempt: false,
+    matched: true,
+    amount: tier.amount,
+    max_workday: tier.max_workday,
+    note: `${tier.label || `Bậc ${range}`} (${range}): phạt ${tier.amount.toLocaleString("vi-VN")}đ${tier.max_workday !== null ? `, công tối đa ${tier.max_workday}` : ""}`,
+    tier,
+  };
+};
+
+export const clearLatePenalty = async (
+  connection,
+  { attendanceId = null, employeeId = null, workDate = null, reason = "Miễn phạt" } = {},
+) => {
+  const month = String(workDate || "").slice(0, 7);
+  if (month && employeeId) {
+    const [locked] = await connection.query(
+      "SELECT status FROM monthly_timesheets WHERE employee_id = ? AND month_year = ? LIMIT 1",
+      [employeeId, month],
+    );
+    if (locked[0]?.status === "LOCKED") return { cleared: false };
+  }
+  const where = attendanceId ? "id = ?" : "employee_id = ? AND work_date = ?";
+  const params = attendanceId ? [reason, attendanceId] : [reason, employeeId, workDate];
+  const [result] = await connection.query(
+    `UPDATE attendances SET penalty_amount = 0, final_workday = base_workday, penalty_note = ? WHERE ${where}`,
+    params,
+  );
+  if (!month || !employeeId || !result.affectedRows) return { cleared: false };
+  await connection.query(
+    `UPDATE monthly_timesheets
+        SET total_late_penalty = (
+          SELECT COALESCE(SUM(a.penalty_amount), 0) FROM attendances a
+           WHERE a.employee_id = ? AND DATE_FORMAT(a.work_date, '%Y-%m') = ?
+        )
+      WHERE employee_id = ? AND month_year = ? AND status <> 'LOCKED'`,
+    [employeeId, month, employeeId, month],
+  );
+  return { cleared: true };
+};
+
 export const getShiftWorkWindow = (shift) => {
   if (!shift) return null;
   const start = toMinutes(shift.start_time);
@@ -222,6 +378,7 @@ export const normalizeRules = (value) => {
   rules.max_work_day = toNumber(rules.max_work_day, 1);
   rules.grace_late_minutes = toNumber(rules.grace_late_minutes, 5);
   rules.grace_early_minutes = toNumber(rules.grace_early_minutes, 0);
+  rules.late_penalty = normalizeLatePenalty(raw.late_penalty);
   rules.clamp_early_in = rules.clamp_early_in !== false;
   rules.clamp_late_out = rules.clamp_late_out !== false;
   rules.work_day_mode =
@@ -284,6 +441,7 @@ export const savePolicy = async (payload = {}, id = null) => {
     throw policyError("Mã quy chế phải từ 2-50 ký tự, chữ in hoa, số hoặc gạch dưới");
   if (!name) throw policyError("Tên quy chế không được để trống");
   const rules = normalizeRules(payload.rules_json ?? payload.rules ?? {});
+  normalizeLatePenalty(rules.late_penalty, true);
   const isDefault = Number(payload.is_default) ? 1 : 0;
   const [duplicate] = await db.query(
     "SELECT id FROM attendance_policies WHERE code = ? AND id <> ? LIMIT 1",
@@ -496,4 +654,26 @@ export const computeWorkDay = ({ netHours = 0, rules = null, shift = null }) => 
         ? Math.ceil(scaled - 1e-9)
         : Math.round(scaled);
   return Math.max(0, Math.min(cap, Number((rounded * step).toFixed(4))));
+};
+
+export const previewLatePenalty = async (payload = {}) => {
+  await ensureAttendancePolicySchema();
+  const minutes = Math.max(0, Math.round(toNumber(payload.minutes, 0)));
+  let rules;
+  if (payload.rules !== undefined || payload.rules_json !== undefined) {
+    rules = normalizeRules(payload.rules ?? payload.rules_json);
+  } else if (payload.policy_id) {
+    const policy = await getPolicy(payload.policy_id);
+    if (!policy) throw policyError("Không tìm thấy quy chế", 404);
+    rules = policy.rules;
+  } else {
+    rules = (await getDefaultPolicy())?.rules;
+  }
+  const result = calculateLatePenalty({ lateMinutes: minutes, rules });
+  return {
+    minutes,
+    grace_minutes: toNumber(rules?.grace_late_minutes, 5),
+    enabled: Boolean(rules?.late_penalty?.enabled),
+    ...result,
+  };
 };

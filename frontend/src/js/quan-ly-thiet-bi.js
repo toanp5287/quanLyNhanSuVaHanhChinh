@@ -2,6 +2,7 @@ import "../css/device-management.css";
 import deviceHtml from "../pages/quan-ly-thiet-bi.html?raw";
 import { adminDevicesApi } from "../services/deviceSecurity.js";
 import { getCurrentUser } from "../services/auth.service.js";
+import { getUiAccess } from "../utils/uiAccess.js";
 
 const escapeHtml = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (char) =>
@@ -23,7 +24,7 @@ const STATUS_META = {
 };
 
 export const initQuanLyThietBi = (user = getCurrentUser()) => {
-  if (!user || user.role_id !== "SUPER_ADMIN") return;
+  if (!user || !getUiAccess(user).canManageDevices) return;
   const main = document.querySelector("main");
   if (!main) return;
 

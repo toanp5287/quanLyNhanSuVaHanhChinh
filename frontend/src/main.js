@@ -1,7 +1,7 @@
 import homeHtml from "./pages/home.html?raw";
 import loginHtml from "./pages/login.html?raw";
 import { initLogin } from "./js/login.js";
-import { initHome, setupShell } from "./js/home.js";
+import { applyUiPermissions, initHome, setupShell } from "./js/home.js";
 import { initPermissions } from "./js/permissions.js";
 import { initQuanLyThietBi } from "./js/quan-ly-thiet-bi.js";
 import { initInformation } from "./js/information.js";
@@ -34,15 +34,16 @@ import {
   initRequestApprovals,
 } from "./js/request-approvals.js";
 import { initDocumentEditor } from "./js/document-editor.js";
+import { initGiaiTrinhDiMuon } from "./js/giai-trinh-di-muon.js";
 import {
   clearSession,
   getCurrentUser,
   getMe,
   getToken,
-  hasAnyPermission,
   hasPermission,
   logout,
 } from "./services/auth.service.js";
+import { getUiAccess } from "./utils/uiAccess.js";
 
 window.__HRM_SPA__ = true;
 
@@ -147,7 +148,7 @@ const clearHash = () => {
 };
 
 function showPermissions(user) {
-  if (!user || user.role_id !== "SUPER_ADMIN") {
+  if (!user || !getUiAccess(user).canManageSystem) {
     clearHash();
     showHome(user);
     return;
@@ -159,7 +160,7 @@ function showPermissions(user) {
 }
 
 function showDevicesAdmin(user) {
-  if (!user || user.role_id !== "SUPER_ADMIN") {
+  if (!user || !getUiAccess(user).canManageDevices) {
     clearHash();
     showHome(user);
     return;
@@ -171,7 +172,7 @@ function showDevicesAdmin(user) {
 }
 
 function showInformation(user) {
-  if (!user) {
+  if (!user || !getUiAccess(user).canViewInformation) {
     clearHash();
     showLogin();
     return;
@@ -183,7 +184,7 @@ function showInformation(user) {
 }
 
 function showMyProfile(user) {
-  if (!user || !hasPermission("ESS.SELF_PROFILE", user)) {
+  if (!user || !getUiAccess(user).canViewOwnProfile) {
     clearHash();
     showHome(user);
     return;
@@ -195,7 +196,7 @@ function showMyProfile(user) {
 }
 
 function showDiemDanh(user, tab = "daily") {
-  if (!user || !hasPermission("ATT.VIEW", user)) {
+  if (!user || !getUiAccess(user).canViewAttendance) {
     clearHash();
     showHome(user);
     return;
@@ -207,7 +208,7 @@ function showDiemDanh(user, tab = "daily") {
 }
 
 function showQuanLyCaLam(user) {
-  if (!user || (!hasPermission("ATT.SHIFT_OT_MANAGE", user) && !hasPermission("ATT.VIEW", user))) {
+  if (!user || !getUiAccess(user).canManageShifts) {
     clearHash();
     showHome(user);
     return;
@@ -218,7 +219,7 @@ function showQuanLyCaLam(user) {
 }
 
 function showQuanLyLamThemGio(user) {
-  if (!user || !hasPermission("ESS.SELF_PROFILE", user)) {
+  if (!user || !getUiAccess(user).canViewOwnProfile) {
     clearHash();
     showHome(user);
     return;
@@ -229,7 +230,7 @@ function showQuanLyLamThemGio(user) {
 }
 
 function showLichSuChamCong(user) {
-  if (!user || !hasPermission("ESS.SELF_PROFILE", user)) {
+  if (!user || !getUiAccess(user).canViewOwnProfile) {
     clearHash();
     showHome(user);
     return;
@@ -246,7 +247,7 @@ function showEmployees(user, mode = "all") {
     return;
   }
 
-  if (user.data_scope === "SELF") {
+  if (getUiAccess(user).isSelfScope) {
     window.location.hash = "#/ho-so-ca-nhan";
     return;
   }
@@ -264,7 +265,7 @@ function showOrganization(user, tab = "chart") {
     return;
   }
 
-  if (user.data_scope === "SELF") {
+  if (getUiAccess(user).isSelfScope) {
     window.location.hash = "#/ho-so-ca-nhan";
     return;
   }
@@ -276,12 +277,7 @@ function showOrganization(user, tab = "chart") {
 }
 
 function showContracts(user, status = "ALL") {
-  if (
-    !user ||
-    (!hasPermission("HR.CONTRACT_MANAGE", user) &&
-      !hasPermission("HR.CONTRACT_SIGN", user) &&
-      user.role_id !== "DIRECTOR")
-  ) {
+  if (!user || !getUiAccess(user).canViewContracts) {
     clearHash();
     showHome(user);
     return;
@@ -294,13 +290,7 @@ function showContracts(user, status = "ALL") {
 }
 
 function showEmployeeRequests(user, type = "ALL") {
-  if (
-    !user ||
-    !hasAnyPermission(
-      ["ESS.SELF_PROFILE", "LEAVE.APPROVE", "HR.PROFILE_MANAGE"],
-      user,
-    )
-  ) {
+  if (!user || !getUiAccess(user).canAccessRequests) {
     clearHash();
     showHome(user);
     return;
@@ -312,13 +302,7 @@ function showEmployeeRequests(user, type = "ALL") {
 }
 
 function showEmployeeRequestDetail(user, id) {
-  if (
-    !user ||
-    !hasAnyPermission(
-      ["ESS.SELF_PROFILE", "LEAVE.APPROVE", "HR.PROFILE_MANAGE"],
-      user,
-    )
-  ) {
+  if (!user || !getUiAccess(user).canAccessRequests) {
     clearHash();
     showHome(user);
     return;
@@ -330,16 +314,7 @@ function showEmployeeRequestDetail(user, id) {
 }
 
 function showRequestApprovals(user, status = "ALL") {
-  const approverRoles = ["MANAGER", "DIRECTOR", "HR_ADMIN"];
-  if (
-    !user ||
-    !hasAnyPermission(
-      ["ESS.SELF_PROFILE", "LEAVE.APPROVE", "HR.PROFILE_MANAGE"],
-      user,
-    ) ||
-    !approverRoles.includes(user.role_id) ||
-    user.data_scope === "SELF"
-  ) {
+  if (!user || !getUiAccess(user).canApproveRequests) {
     clearHash();
     showHome(user);
     return;
@@ -351,7 +326,7 @@ function showRequestApprovals(user, status = "ALL") {
 }
 
 function showDocumentEditor(user) {
-  if (!user) {
+  if (!user || !getUiAccess(user).canUseDocumentEditor) {
     clearHash();
     showHome(user);
     return;
@@ -360,6 +335,17 @@ function showDocumentEditor(user) {
   mountPage(homeHtml);
   setupShell(user);
   initDocumentEditor(user);
+}
+
+function showGiaiTrinhDiMuon(user) {
+  if (!user || !getUiAccess(user).canUseLateExplanation) {
+    clearHash();
+    showHome(user);
+    return;
+  }
+  mountPage(homeHtml);
+  setupShell(user);
+  initGiaiTrinhDiMuon(user);
 }
 
 function renderRouteView(user) {
@@ -373,6 +359,8 @@ function renderRouteView(user) {
 
   if (hash === "#/soan-van-ban") {
     showDocumentEditor(user);
+  } else if (hash === "#/giai-trinh-di-muon") {
+    showGiaiTrinhDiMuon(user);
   } else if (hash === "#/face-id") {
     initFaceKiosk();
   } else if (hash === "#/phan-quyen") {
@@ -421,7 +409,7 @@ function renderRouteView(user) {
     showDiemDanh(user, "monthly");
   } else if (hash === "#/trang-chu") {
     showHome(user);
-  } else if (!hash && user?.role_id === "EMPLOYEE") {
+  } else if (!hash && getUiAccess(user).isSelfScope) {
     showMyProfile(user);
   } else {
     showHome(user);
@@ -443,8 +431,8 @@ document.addEventListener("click", (event) => {
     const cardRoutes = {
        "Cổng thông tin cá nhân": "#/ho-so-ca-nhan",
        "Hồ sơ cá nhân & JD": "#/ho-so-ca-nhan",
-       "Dữ liệu máy chấm công": "#/diem-danh",
-        "Bảng chấm công tháng": "#/cham-cong/thang",
+      "Dữ liệu máy chấm công": "#/diem-danh",
+      "Bảng chấm công tháng": "#/cham-cong/thang",
       "Quản lý ca làm việc": "#/quan-ly-ca-lam",
       "Phân ca làm việc": "#/quan-ly-ca-lam",
       "Làm thêm giờ (OT)": "#/lam-them-gio",
@@ -460,13 +448,10 @@ document.addEventListener("click", (event) => {
       "Soạn văn bản A4": "#/soan-van-ban",
       "Sơ đồ phòng ban": "#/so-do-phong-ban",
       "Bản tin & Nội quy công ty": "#/thong-tin-noi-bo",
+      "Giải trình đi muộn/về sớm": "#/giai-trinh-di-muon",
     };
 
-    const approvalUser = getCurrentUser();
-    const cardRoute =
-      title === "Trung tâm Phê duyệt" && approvalUser?.role_id === "DIRECTOR"
-        ? "#/giam-doc-don-tu"
-        : cardRoutes[title];
+    const cardRoute = cardRoutes[title];
 
     if (cardRoute) {
       event.preventDefault();
@@ -519,7 +504,7 @@ document.addEventListener("click", (event) => {
   }
 });
 
-window.addEventListener("hashchange", () => {
+window.addEventListener("hashchange", async () => {
   if (window.location.hash === "#/face-id") {
     transitionTo(() => initFaceKiosk());
     return;
@@ -533,14 +518,13 @@ window.addEventListener("hashchange", () => {
     return;
   }
 
-  const user = getCurrentUser();
-
-  if (!user) {
+  try {
+    const user = await getMe();
+    renderRoute(user);
+  } catch {
+    clearSession();
     showLogin();
-    return;
   }
-
-  renderRoute(user);
 });
 
 window.addEventListener("hrm:login-success", (event) => {
@@ -553,6 +537,26 @@ window.addEventListener("hrm:login-success", (event) => {
     mountBell();
     initNotifications(event.detail);
   });
+});
+
+window.addEventListener("hrm:user-updated", (event) => {
+  applyUiPermissions(event.detail || getCurrentUser());
+});
+
+const syncUiFromServer = async () => {
+  if (!getToken()) return;
+
+  try {
+    applyUiPermissions(await getMe());
+  } catch {
+    clearSession();
+    showLogin();
+  }
+};
+
+window.addEventListener("focus", syncUiFromServer);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) syncUiFromServer();
 });
 
 const showLogoutConfirm = (onConfirm) => {

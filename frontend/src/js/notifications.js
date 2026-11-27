@@ -1,5 +1,6 @@
 import api from "../services/api.js";
 import { getToken } from "../services/auth.service.js";
+import { bindFaceEnrollModal, openFaceEnrollModal } from "./home.js";
 
 const state = {
   active: false,
@@ -9,6 +10,7 @@ const state = {
   notifications: [],
   blocking: [],
   unread: 0,
+  actionDismissedId: null,
 };
 
 const escapeHtml = (value) =>
@@ -103,10 +105,34 @@ const navigate = (url) => {
   if (!url) return;
   document.getElementById("hrmNotificationDropdown")?.classList.add("hidden");
   if (url.startsWith("#/")) {
-    window.location.hash = url;
+    if (window.location.hash === url) {
+      window.dispatchEvent(new Event("hashchange"));
+    } else {
+      window.location.hash = url;
+    }
     return;
   }
   window.location.href = url;
+};
+
+const handleAction = (item) => {
+  if (!item) return;
+  if (state.blocking.some((entry) => String(entry.id) === String(item.id))) {
+    state.actionDismissedId = String(item.id);
+    renderAll();
+  }
+  if (isFaceAlert(item)) {
+    const enrollModal = document.getElementById("modal-faceid-enroll");
+    if (!enrollModal) {
+      navigate(item.action_url || "#/ho-so-ca-nhan");
+      return;
+    }
+    if (!enrollModal.classList.contains("hidden")) return;
+    bindFaceEnrollModal();
+    void openFaceEnrollModal();
+    return;
+  }
+  navigate(item.action_url);
 };
 
 const resolveBlocking = async (item) => {
@@ -157,7 +183,7 @@ const renderBanner = () => {
       ${isFaceAlert(item) ? "" : `<button type="button" data-banner-resolve class="h-7 px-3 rounded bg-white/20 hover:bg-white/30 text-xs font-semibold">Đã xử lý</button>`}
     </div>
   `;
-  banner.querySelector("[data-banner-action]")?.addEventListener("click", () => navigate(item.action_url));
+  banner.querySelector("[data-banner-action]")?.addEventListener("click", () => handleAction(item));
   banner.querySelector("[data-banner-resolve]")?.addEventListener("click", () => resolveBlocking(item));
   addBannerOffset();
   document.body.classList.add("hrm-banner-open");
@@ -169,6 +195,7 @@ const renderModal = () => {
   const item = state.blocking.find(
     (entry) =>
       entry.priority === "CRITICAL" &&
+      String(entry.id) !== state.actionDismissedId &&
       !sessionStorage.getItem(deferredKey(entry.id)),
   );
 
@@ -199,7 +226,7 @@ const renderModal = () => {
     </div>
   `;
   container.querySelector("[data-modal-later]")?.addEventListener("click", () => deferBlocking(item));
-  container.querySelector("[data-modal-action]")?.addEventListener("click", () => navigate(item.action_url));
+  container.querySelector("[data-modal-action]")?.addEventListener("click", () => handleAction(item));
   container.querySelector("[data-modal-resolve]")?.addEventListener("click", () => resolveBlocking(item));
 };
 
@@ -241,7 +268,7 @@ const renderDropdown = () => {
       const item = itemFromDom(element);
       if (!item) return;
       markRead(item.id);
-      navigate(item.action_url);
+      handleAction(item);
     });
   });
 };
@@ -270,7 +297,7 @@ const showToast = (item) => {
       </button>
     </div>
   `;
-  toast.querySelector("[data-toast-action]")?.addEventListener("click", () => navigate(item.action_url));
+  toast.querySelector("[data-toast-action]")?.addEventListener("click", () => handleAction(item));
   toast.querySelector("[data-toast-close]")?.addEventListener("click", () => toast.remove());
   container.appendChild(toast);
   window.setTimeout(() => toast.remove(), sticky ? 10000 : 5000);
@@ -327,6 +354,7 @@ const handleIncoming = (payload) => {
 const handleResolved = (payload) => {
   const id = String(payload?.id ?? "");
   const type = payload?.type;
+  state.actionDismissedId = null;
   state.blocking = state.blocking.filter(
     (entry) =>
       String(entry.id) !== id &&
@@ -421,6 +449,7 @@ export const initNotifications = async (user) => {
   state.notifications = [];
   state.blocking = [];
   state.unread = 0;
+  state.actionDismissedId = null;
 
   ensureContainers();
   mountBell();

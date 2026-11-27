@@ -32,6 +32,7 @@ import {
   getKioskConfigHandler,
   getWorkShifts,
   listAttendancePoliciesHandler,
+  previewAttendancePenaltyHandler,
   removeAttendancePolicyHandler,
   saveAttendancePolicyHandler,
   postExplanation,
@@ -234,6 +235,11 @@ router.get(
   "/policies",
   requireAnyPermission(["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"]),
   listAttendancePoliciesHandler,
+);
+router.post(
+  "/policies/preview-penalty",
+  requireAnyPermission(["ATT.SHIFT_OT_MANAGE", "ATT.VIEW"]),
+  previewAttendancePenaltyHandler,
 );
 router.post(
   "/policies",

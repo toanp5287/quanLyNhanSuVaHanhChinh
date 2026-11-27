@@ -295,6 +295,28 @@
           <label class="text-sm">Cách làm tròn<select id="policyRoundMethod" class="mt-1 block w-full rounded border px-3 py-2"><option value="ROUND">Làm tròn</option><option value="FLOOR">Làm tròn xuống</option><option value="CEIL">Làm tròn lên</option></select></label>
           <label class="text-sm">Ân hạn đi muộn (phút)<input id="policyGrace" type="number" min="0" max="120" value="5" class="mt-1 block w-full rounded border px-3 py-2" /></label>
           <label class="text-sm md:col-span-2">Các bậc công CUSTOM_TIERS (JSON)<textarea id="policyTiers" rows="4" class="mt-1 block w-full rounded border px-3 py-2" placeholder='[{"min_hours":7.5,"work_day":1,"label":"Đủ công"}]'></textarea></label>
+          <div class="md:col-span-2 border-t border-outline-variant/60 pt-4">
+            <div class="flex flex-wrap justify-between items-center gap-2">
+              <div>
+                <h4 class="font-semibold">Quy chế phạt đi muộn</h4>
+                <p class="text-xs text-on-surface-variant mt-1">Áp dụng đúng 1 bậc khớp; các bậc không được chồng lấn khoảng phút. Cấu hình mới chỉ áp dụng cho lượt chấm công mới.</p>
+              </div>
+              <label class="inline-flex items-center gap-2 text-sm"><input id="policyPenaltyEnabled" type="checkbox" class="rounded" /> Bật phạt đi muộn</label>
+            </div>
+            <div class="overflow-x-auto mt-3">
+              <table class="w-full text-xs text-left">
+                <thead class="bg-surface-container-low text-on-surface-variant">
+                  <tr><th class="px-2 py-2">Từ phút</th><th class="px-2 py-2">Đến phút (trống = trở lên)</th><th class="px-2 py-2">Tiền phạt (VNĐ)</th><th class="px-2 py-2">Công tối đa</th><th class="px-2 py-2">Ghi chú</th><th class="px-2 py-2"></th></tr>
+                </thead>
+                <tbody id="penaltyTiersBody" class="divide-y"></tbody>
+              </table>
+            </div>
+            <button id="btnAddPenaltyTier" type="button" class="mt-2 rounded border px-3 py-1.5 text-sm">+ Thêm bậc phạt</button>
+            <div class="mt-4 flex flex-wrap items-center gap-3 rounded bg-surface-container-low p-3">
+              <label class="text-sm">Thử tính phạt<input id="penaltyTestMinutes" type="number" min="0" max="1440" value="30" class="ml-2 w-28 rounded border px-2 py-1" /></label>
+              <span id="penaltyTestResult" class="text-sm font-semibold text-on-surface-variant">Nhập số phút đi muộn để xem kết quả.</span>
+            </div>
+          </div>
           <label class="inline-flex items-center gap-2 text-sm md:col-span-2"><input id="policyIsDefault" type="checkbox" class="rounded" /> Đặt làm quy chế mặc định</label>
           <div class="md:col-span-2 flex justify-end gap-2"><button type="button" id="btnCancelPolicyEdit" class="rounded border px-4 py-2 text-sm">Hủy</button><button type="submit" class="rounded bg-primary text-white px-4 py-2 text-sm font-semibold">Lưu quy chế</button></div>
         </form>

@@ -17,6 +17,10 @@ import routerMyProfile from "./src/routes/myProfile.router.js";
 import routerNotifications from "./src/routes/notifications.router.js";
 import routerDevices from "./src/routes/deviceSecurity.router.js";
 import routerAdminDevices from "./src/routes/adminDevices.router.js";
+import routerLateExplanation, {
+  delegationRouter,
+} from "./src/routes/lateExplanation.routes.js";
+import { startLateExplanationSlaJobs } from "./src/jobs/lateExplanationSla.job.js";
 import connectMysql from "./src/config/database.js";
 
 dotenv.config();
@@ -48,7 +52,10 @@ const port = process.env.PORT || 8080;
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 app.use("/auth", routerAuth);
+app.use("/api/auth", routerAuth);
 app.use("/permissions", routerPermissions);
+app.use("/rbac", routerPermissions);
+app.use("/api/rbac", routerPermissions);
 app.use("/employees", routerEmployees);
 app.use("/organization", routerOrganization);
 app.use("/contracts", routerContracts);
@@ -64,9 +71,14 @@ app.use("/notifications", routerNotifications);
 app.use("/api/v1/notifications", routerNotifications);
 app.use("/api/devices", routerDevices);
 app.use("/api/admin", routerAdminDevices);
+app.use("/attendance-late-explanations", routerLateExplanation);
+app.use("/approval-delegations", delegationRouter);
+app.use("/api/attendance-late-explanations", routerLateExplanation);
+app.use("/api/approval-delegations", delegationRouter);
 
 const startServer = async () => {
   await connectMysql();
+  startLateExplanationSlaJobs();
   app.listen(port, () => {
     console.log(`Server đang chạy ở http://localhost:${port}`);
   });

@@ -7,6 +7,7 @@ import {
 } from "../services/auth.service.js";
 import api from "../services/api.js";
 import { requireDevicePermission } from "../services/deviceSecurity.js";
+import { UI_PERMISSIONS, getUiAccess } from "../utils/uiAccess.js";
 import { Human } from "@vladmandic/human";
 
 const ROLE_LABELS = {
@@ -29,7 +30,7 @@ const CARD_PERMISSIONS = {
   "Phân ca làm việc": ["ATT.SHIFT_OT_MANAGE"],
   "Dữ liệu máy chấm công": ["ATT.VIEW"],
   "Làm thêm giờ (OT)": ["ATT.SHIFT_OT_MANAGE", "ESS.SELF_PROFILE"],
-  "Giải trình đi muộn/về sớm": ["ATT.VIEW"],
+  "Giải trình đi muộn/về sớm": ["ATT.LATE_EXPLAIN_SELF", "ATT.LATE_EXPLAIN_APPROVE", "ATT.LATE_EXPLAIN_HR_VERIFY", "ATT.LATE_EXPLAIN_POLICY"],
   "Quỹ phép năm": ["LEAVE.QUOTA_MANAGE", "LEAVE.VIEW_REQUEST"],
   "Đơn xin nghỉ phép": ["LEAVE.VIEW_REQUEST", "LEAVE.APPROVE"],
   "Tạo & Kết chuyển phép": ["LEAVE.QUOTA_MANAGE"],
@@ -66,7 +67,7 @@ const CARD_PERMISSIONS = {
   "Cổng thông tin cá nhân": [],
   "Lịch sử chấm công": ["ESS.SELF_PROFILE"],
   "Tạo đơn từ trực tuyến": ["LEAVE.VIEW_REQUEST"],
-  "Trung tâm Phê duyệt": ["LEAVE.APPROVE", "ATT.SHIFT_OT_MANAGE"],
+  "Trung tâm Phê duyệt": [...UI_PERMISSIONS.approvals],
   "Bản tin & Nội quy công ty": [],
   "Dashboard Biến động nhân sự": ["BI.DASHBOARD_VIEW"],
   "Báo cáo Chi phí quỹ lương": ["BI.DASHBOARD_VIEW"],
@@ -89,6 +90,8 @@ const NAV_PERMISSIONS = {
   "bao-cao": ["BI.DASHBOARD_VIEW"],
   "thong-tin-noi-bo": [],
   "cham-cong": ["ATT.VIEW"],
+  "phan-quyen": UI_PERMISSIONS.system,
+  "quan-ly-thiet-bi": UI_PERMISSIONS.system,
 };
 
 const ACTION_BUTTONS = {
@@ -331,49 +334,11 @@ const setupHeaderUser = (user) => {
   });
 };
 
-const applyCategoryActions = (user) => {
+const applyCardPermissions = (user) => {
   document.querySelectorAll(".hrm-module-actions").forEach((el) => el.remove());
 
-  const actions = (ACTION_BUTTONS[user.role_id] || []).filter((action) =>
-    hasPermission(action.permission, user),
-  );
-
-  const grouped = new Map();
-
-  actions.forEach((action) => {
-    const category = ACTION_CATEGORY[action.label];
-    if (!category) return;
-
-    if (!grouped.has(category)) grouped.set(category, []);
-    grouped.get(category).push(action);
-  });
-
-  grouped.forEach((items, category) => {
-    const content = document.querySelector(
-      `.category-block[data-category="${category}"] .category-content`,
-    );
-    if (!content) return;
-
-    const wrapper = document.createElement("div");
-    wrapper.className =
-      "hrm-module-actions flex flex-wrap gap-space-xs pb-space-sm mb-space-sm border-b border-surface-variant";
-    wrapper.innerHTML = items
-      .map(
-        (action) => `
-          <button type="button" class="hrm-action-btn h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container font-label-md text-label-md flex items-center gap-1.5 transition-colors" data-action="${escapeHtml(action.label)}">
-            <span class="material-symbols-outlined text-[18px]">${escapeHtml(action.icon)}</span>
-            ${escapeHtml(action.label)}
-          </button>
-        `,
-      )
-      .join("");
-
-    content.insertBefore(wrapper, content.firstChild);
-  });
-};
-
-const applyCardPermissions = (user) => {
   const cards = document.querySelectorAll(".action-card");
+  const access = getUiAccess(user);
 
   cards.forEach((card) => {
     const title = card.getAttribute("data-title") || "";
@@ -386,37 +351,46 @@ const applyCardPermissions = (user) => {
 
     if (
       title === "Trung tâm Phê duyệt" &&
-      !["MANAGER", "DIRECTOR", "HR_ADMIN"].includes(user.role_id)
+      !hasAnyPermission(UI_PERMISSIONS.approvals, user)
     ) {
       allowed = false;
     }
 
-    if (title === "Trung tâm Phê duyệt" && user.role_id === "HR_ADMIN") {
+    if (title === "Trung tâm Phê duyệt") {
       const heading = card.querySelector("h4");
-      if (heading) heading.textContent = "Đơn chờ HR xử lý";
+      if (hasAnyPermission(["PAY.RUN_PAYROLL", "P3.CALCULATE_APPROVE"], user)) {
+        if (heading) heading.textContent = "Đơn chờ Giám đốc duyệt";
+        card.setAttribute("data-title", "Đơn chờ Giám đốc duyệt");
+      } else if (
+        hasAnyPermission(["HR.PROFILE_MANAGE", "ATT.LATE_EXPLAIN_HR_VERIFY"], user)
+      ) {
+        if (heading) heading.textContent = "Đơn chờ HR xử lý";
+        card.setAttribute("data-title", "Đơn chờ HR xử lý");
+      } else {
+        if (heading) heading.textContent = "Trung tâm Phê duyệt";
+        card.setAttribute("data-title", "Trung tâm Phê duyệt");
+      }
     }
 
-    if (title === "Trung tâm Phê duyệt" && user.role_id === "DIRECTOR") {
+    if (
+      !access.canViewEmployees &&
+      ["Tất cả nhân viên", "Nhân viên đang làm", "Nhân viên đã nghỉ", "Sơ đồ phòng ban"].includes(
+        title,
+      )
+    ) {
+      allowed = false;
+    }
+
+    if (
+      !access.canViewEmployees &&
+      title === "Tất cả nhân viên" &&
+      hasPermission("ESS.SELF_PROFILE", user)
+    ) {
       const heading = card.querySelector("h4");
-      if (heading) heading.textContent = "Đơn chờ Giám đốc duyệt";
       const description = card.querySelector("p");
-      if (description) {
-        description.textContent = "Danh sách đơn trình Giám đốc và trạng thái xử lý.";
-      }
-    }
-
-    if (user.data_scope === "SELF") {
-      if (["Nhân viên đang làm", "Nhân viên đã nghỉ", "Sơ đồ phòng ban"].includes(title)) {
-        allowed = false;
-      }
-
-      if (title === "Tất cả nhân viên") {
-        const heading = card.querySelector("h4");
-        const description = card.querySelector("p");
-        if (heading) heading.textContent = "Hồ sơ cá nhân & JD";
-        if (description) description.textContent = "Thông tin cá nhân và mô tả công việc";
-        card.setAttribute("data-title", "Hồ sơ cá nhân & JD");
-      }
+      if (heading) heading.textContent = "Hồ sơ cá nhân & JD";
+      if (description) description.textContent = "Thông tin cá nhân và mô tả công việc";
+      card.setAttribute("data-title", "Hồ sơ cá nhân & JD");
     }
 
     if (!allowed) {
@@ -438,12 +412,13 @@ const applyCardPermissions = (user) => {
     );
     if (countBadge) countBadge.textContent = String(visibleCards.length);
 
-    const hasActions = Boolean(section.querySelector(".hrm-module-actions"));
-    section.style.display = visibleCards.length || hasActions ? "block" : "none";
+    section.style.display = visibleCards.length ? "block" : "none";
   });
 };
 
 const applyNavPermissions = (user) => {
+  const access = getUiAccess(user);
+
   document.querySelectorAll("aside nav a[data-path]").forEach((link) => {
     const path = link.getAttribute("data-path");
     const requiredPermissions = NAV_PERMISSIONS[path];
@@ -453,15 +428,25 @@ const applyNavPermissions = (user) => {
       allowed = hasAnyPermission(requiredPermissions, user);
     }
 
-    if (!allowed) {
-      link.style.display = "none";
+    if (path === "nhan-su" && !access.canViewEmployees) {
+      allowed = false;
     }
+
+    if (path === "phan-quyen" && !access.canManageSystem) {
+      allowed = false;
+    }
+
+    if (path === "quan-ly-thiet-bi" && !access.canManageDevices) {
+      allowed = false;
+    }
+
+    link.style.display = allowed ? "" : "none";
   });
 };
 
 const ensurePermissionsNav = (user) => {
   const nav = document.querySelector("aside nav");
-  if (!nav || user?.role_id !== "SUPER_ADMIN") return;
+  if (!nav || !getUiAccess(user).canManageSystem) return;
 
   const adminLinks = [
     { path: "phan-quyen", title: "Phân quyền", icon: "admin_panel_settings" },
@@ -1504,12 +1489,6 @@ const bindActions = () => {
       window.dispatchEvent(new CustomEvent("hrm:logout-request"));
     });
 
-  document.querySelectorAll(".hrm-action-btn").forEach((button) => {
-    button.addEventListener("click", () => {
-      const action = button.getAttribute("data-action") || "thao tác";
-      showToast(`Đã ghi nhận yêu cầu: ${action}`);
-    });
-  });
 };
 
 export const setupShell = (user = getCurrentUser()) => {
@@ -1533,6 +1512,14 @@ export const setupShell = (user = getCurrentUser()) => {
   promptFaceEnrollmentIfMissing(user);
 };
 
+export const applyUiPermissions = (user = getCurrentUser()) => {
+  if (!user) return;
+
+  ensurePermissionsNav(user);
+  applyNavPermissions(user);
+  applyCardPermissions(user);
+};
+
 export const initHome = (user = getCurrentUser()) => {
   if (!user) {
     logout();
@@ -1543,6 +1530,5 @@ export const initHome = (user = getCurrentUser()) => {
   if (!workspace) return;
 
   setupShell(user);
-  applyCategoryActions(user);
   applyCardPermissions(user);
 };
