@@ -334,7 +334,7 @@ function showDocumentEditor(user) {
 
   mountPage(homeHtml);
   setupShell(user);
-  initDocumentEditor(user);
+  initDocumentEditor(user, { requestFlow: inRequestFlow });
 }
 
 function showGiaiTrinhDiMuon(user) {

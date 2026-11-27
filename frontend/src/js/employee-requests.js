@@ -3,6 +3,11 @@ import api from "../services/api.js";
 import { getCurrentUser, logout } from "../services/auth.service.js";
 import { setupShell } from "./home.js";
 
+const REQUEST_FORM_DRAFT_KEY = "hrm.employeeRequest.formDraft";
+const REQUEST_DOCUMENT_DRAFT_KEY = "hrm.employeeRequest.documentDraft";
+const REQUEST_DOCUMENT_CONTEXT_KEY = "hrm.documentEditor.requestContext";
+const REQUEST_REOPEN_KEY = "hrm.employeeRequest.reopenForm";
+
 export const ACTIVE_STATUSES = [
   "DRAFT",
   "PENDING_DEPARTMENT",
@@ -188,7 +193,10 @@ const renderRows = () => {
           : row.end_date;
 
       return `
-        <tr class="hover:bg-surface-container-low transition-colors">
+        <tr
+          class="cursor-pointer hover:bg-surface-container-low transition-colors"
+          data-view-request-id="${escapeHtml(row.id)}"
+        >
           <td class="px-3 py-3 font-semibold text-on-surface">#${escapeHtml(row.id)}</td>
           <td class="px-3 py-3 text-on-surface">${escapeHtml(typeLabel)}</td>
           <td class="px-3 py-3 min-w-[240px]">
@@ -333,17 +341,127 @@ const hideFormError = () => {
   error.classList.add("hidden");
 };
 
-const openCreateForm = (type) => {
-  const modal = document.getElementById("modal-employee-request-form");
-  const form = document.getElementById("employeeRequestForm");
-  if (!modal || !form) return;
+const readSessionJson = (key) => {
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+};
 
-  state.formType = type;
-  const isResignation = type === "RESIGNATION";
+const writeSessionJson = (key, value) => {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    setFormError("Không thể lưu dữ liệu tạm trên trình duyệt.");
+    return false;
+  }
+};
+
+const templateIdForRequestType = (type) =>
+  type === "TEMPORARY_LEAVE" ? "temporary-leave" : "resignation";
+
+const getRequestFormValues = () => {
+  const user = getCurrentUser() || {};
+  return {
+    type: state.formType,
+    title: REQUEST_TYPES[state.formType] || "Đơn từ",
+    reason: document.getElementById("employeeRequestReason")?.value || "",
+    startDate: document.getElementById("employeeRequestStartDate")?.value || "",
+    endDate: document.getElementById("employeeRequestEndDate")?.value || "",
+    lastWorkingDate:
+      document.getElementById("employeeRequestLastWorkingDate")?.value || "",
+    fullName: user.full_name || user.username || "",
+    employeeCode: user.employee_code || "",
+    departmentName: user.department_name || "",
+    positionName: user.position_name || "",
+  };
+};
+
+const saveRequestFormDraft = () =>
+  writeSessionJson(REQUEST_FORM_DRAFT_KEY, getRequestFormValues());
+
+const restoreRequestFormDraft = () => {
+  const draft = readSessionJson(REQUEST_FORM_DRAFT_KEY);
+  if (!draft) return null;
+
+  const reason = document.getElementById("employeeRequestReason");
+  const startDate = document.getElementById("employeeRequestStartDate");
+  const endDate = document.getElementById("employeeRequestEndDate");
+  const lastWorkingDate = document.getElementById("employeeRequestLastWorkingDate");
+  if (reason) reason.value = draft.reason || "";
+  if (startDate) startDate.value = draft.startDate || "";
+  if (endDate) endDate.value = draft.endDate || "";
+  if (lastWorkingDate) lastWorkingDate.value = draft.lastWorkingDate || "";
+  setText("#employeeRequestReasonCount", `${(draft.reason || "").length} / 5000`);
+  return draft;
+};
+
+const renderAttachedDocument = () => {
+  const summary = document.getElementById("employeeRequestDocumentSummary");
+  const hint = document.getElementById("employeeRequestDocumentHint");
+  const draft = readSessionJson(REQUEST_DOCUMENT_DRAFT_KEY);
+  const active = draft && String(draft.type) === String(state.formType);
+
+  summary?.classList.toggle("hidden", !active);
+  if (active) {
+    const time = draft.saved_at
+      ? new Date(draft.saved_at).toLocaleString("vi-VN")
+      : "";
+    if (summary) {
+      summary.textContent = `Đã lưu văn bản: ${draft.title || "Văn bản đơn từ"}${time ? ` — ${time}` : ""}. Nhấn “Mở mẫu Word” để chỉnh sửa lại.`;
+    }
+  }
+  if (hint) {
+    hint.textContent = active
+      ? "Văn bản mẫu đã được lưu và sẽ gửi kèm cùng đơn."
+      : "Chọn loại đơn rồi mở mẫu Word tương ứng để soạn thảo ngay tại đây.";
+  }
+};
+
+const clearAttachedDocument = () => {
+  try {
+    sessionStorage.removeItem(REQUEST_DOCUMENT_DRAFT_KEY);
+  } catch (error) {
+    setFormError("Không thể xóa văn bản đính kèm tạm.");
+  }
+  renderAttachedDocument();
+};
+
+const openRequestDocument = () => {
+  if (!saveRequestFormDraft()) return;
+  const templateId = templateIdForRequestType(state.formType);
+  const returnHash = window.location.hash.startsWith("#/don-tu")
+    ? window.location.hash
+    : "#/don-tu";
+  const saved = writeSessionJson(REQUEST_DOCUMENT_CONTEXT_KEY, {
+    type: state.formType,
+    template_id: templateId,
+    return_hash: returnHash,
+  });
+  if (!saved) return;
+  try {
+    sessionStorage.setItem(REQUEST_REOPEN_KEY, "1");
+  } catch (error) {
+    setFormError("Không thể lưu trạng thái quay lại form tạo đơn.");
+    return;
+  }
+  closeCreateForm();
+  window.location.hash = "#/soan-van-ban/don-tu";
+};
+
+const applyFormTypeUi = (type) => {
+  state.formType = type === "TEMPORARY_LEAVE" ? "TEMPORARY_LEAVE" : "RESIGNATION";
+  const isResignation = state.formType === "RESIGNATION";
+
+  const typeSelect = document.getElementById("employeeRequestType");
+  if (typeSelect) typeSelect.value = state.formType;
 
   setText(
     "#employeeRequestFormTitle",
-    isResignation ? "Gửi đơn xin nghỉ việc" : "Gửi đơn xin tạm nghỉ",
+    isResignation ? "Tạo đơn xin nghỉ việc" : "Tạo đơn xin tạm nghỉ",
   );
   setText(
     "#employeeRequestFormSubtitle",
@@ -358,16 +476,27 @@ const openCreateForm = (type) => {
   document
     .getElementById("employeeRequestEndGroup")
     ?.classList.toggle("hidden", isResignation);
-  document.getElementById("employeeRequestLastWorkingDate").required = isResignation;
-  document.getElementById("employeeRequestEndDate").required = !isResignation;
+  const lastWorkingDate = document.getElementById("employeeRequestLastWorkingDate");
+  const endDate = document.getElementById("employeeRequestEndDate");
+  if (lastWorkingDate) lastWorkingDate.required = isResignation;
+  if (endDate) endDate.required = !isResignation;
   setText(
     'label[for="employeeRequestStartDate"]',
     isResignation ? "Ngày bắt đầu nghỉ *" : "Ngày bắt đầu tạm nghỉ *",
   );
+};
 
+const openCreateForm = (type) => {
+  const modal = document.getElementById("modal-employee-request-form");
+  const form = document.getElementById("employeeRequestForm");
+  if (!modal || !form) return;
+
+  const draft = readSessionJson(REQUEST_FORM_DRAFT_KEY);
   form.reset();
-  setText("#employeeRequestReasonCount", "0 / 5000");
   hideFormError();
+  applyFormTypeUi(type || draft?.type || state.formType || "RESIGNATION");
+  restoreRequestFormDraft();
+  renderAttachedDocument();
   modal.classList.remove("hidden");
   modal.classList.add("flex");
 };
@@ -383,6 +512,8 @@ const submitCreateForm = async (event) => {
   event.preventDefault();
   hideFormError();
 
+  const formType = document.getElementById("employeeRequestType")?.value || state.formType;
+  state.formType = formType === "TEMPORARY_LEAVE" ? "TEMPORARY_LEAVE" : "RESIGNATION";
   const isResignation = state.formType === "RESIGNATION";
   const reason = document.getElementById("employeeRequestReason")?.value.trim();
   const startDate = document.getElementById("employeeRequestStartDate")?.value;
@@ -434,6 +565,15 @@ const submitCreateForm = async (event) => {
     };
   }
 
+  const documentDraft = readSessionJson(REQUEST_DOCUMENT_DRAFT_KEY);
+  if (documentDraft && String(documentDraft.type) === String(state.formType)) {
+    payload.document_title = documentDraft.title || REQUEST_TYPES[state.formType];
+    payload.document_template_code =
+      documentDraft.template_id || templateIdForRequestType(state.formType);
+    payload.document_content_json = documentDraft.content || null;
+    payload.document_content_html = documentDraft.html || "";
+  }
+
   const button = document.getElementById("btnSubmitEmployeeRequest");
   const originalHtml = button?.innerHTML || "";
   if (button) {
@@ -446,6 +586,12 @@ const submitCreateForm = async (event) => {
     closeCreateForm();
     const data = response.data?.data || {};
     showNotice(`Đã gửi ${data.request_type === "TEMPORARY_LEAVE" ? "đơn xin tạm nghỉ" : "đơn xin nghỉ việc"} #${data.id || ""}.`, false);
+    try {
+      sessionStorage.removeItem(REQUEST_FORM_DRAFT_KEY);
+      sessionStorage.removeItem(REQUEST_DOCUMENT_DRAFT_KEY);
+    } catch (error) {
+      showNotice("Đã gửi đơn nhưng không thể dọn dữ liệu tạm.", true);
+    }
     loadRequests();
   } catch (error) {
     setFormError(
@@ -503,12 +649,16 @@ const bindEvents = () => {
     window.location.hash = `#/don-tu/${button.getAttribute("data-view-request-id")}`;
   });
 
-  bindOnce(document.getElementById("btnCreateResignation"), "click", () => {
-    openCreateForm("RESIGNATION");
+  bindOnce(document.getElementById("btnCreateEmployeeRequest"), "click", () => {
+    openCreateForm();
   });
-  bindOnce(document.getElementById("btnCreateTemporaryLeave"), "click", () => {
-    openCreateForm("TEMPORARY_LEAVE");
+  bindOnce(document.getElementById("employeeRequestType"), "change", (event) => {
+    saveRequestFormDraft();
+    const previous = state.formType;
+    applyFormTypeUi(event.target.value);
+    if (previous !== state.formType) clearAttachedDocument();
   });
+  bindOnce(document.getElementById("btnOpenRequestDocument"), "click", openRequestDocument);
   bindOnce(document.getElementById("btnCloseEmployeeRequestForm"), "click", closeCreateForm);
   bindOnce(document.getElementById("btnCancelEmployeeRequestForm"), "click", closeCreateForm);
   bindOnce(document.getElementById("employeeRequestForm"), "submit", submitCreateForm);
@@ -558,4 +708,13 @@ export const initEmployeeRequests = (
   bindEvents();
   renderStatusCards();
   loadRequests();
+
+  try {
+    if (sessionStorage.getItem(REQUEST_REOPEN_KEY) === "1") {
+      sessionStorage.removeItem(REQUEST_REOPEN_KEY);
+      openCreateForm();
+    }
+  } catch (error) {
+    showNotice("Không thể khôi phục form tạo đơn.", true);
+  }
 };

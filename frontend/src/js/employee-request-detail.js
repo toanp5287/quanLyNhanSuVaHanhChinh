@@ -881,6 +881,33 @@ const renderDetail = (request) => {
   setText("#detailSubmittedAt", formatDateTime(request.submitted_at));
   setText("#detailReason", request.reason || "—");
 
+  const documentSection = document.getElementById("detailDocumentSection");
+  const hasDocument = Boolean(
+    request.document_title ||
+      request.document_content_html ||
+      request.document_content_json,
+  );
+  documentSection?.classList.toggle("hidden", !hasDocument);
+  if (hasDocument) {
+    const templateLabels = {
+      resignation: "Đơn xin nghỉ việc",
+      "temporary-leave": "Đơn xin tạm nghỉ",
+    };
+    setText("#detailDocumentTitle", request.document_title || "Văn bản đính kèm");
+    setText(
+      "#detailDocumentTemplate",
+      templateLabels[request.document_template_code] ||
+        request.document_template_code ||
+        "Văn bản",
+    );
+    const documentContent = document.getElementById("detailDocumentContent");
+    if (documentContent) {
+      documentContent.innerHTML =
+        request.document_content_html ||
+        `<p class="text-on-surface-variant">Văn bản đã được lưu kèm đơn (${escapeHtml(request.document_title || "văn bản")}).</p>`;
+    }
+  }
+
   renderHrActions(request);
   renderDirectorActions(request);
   renderHrProfile(request);

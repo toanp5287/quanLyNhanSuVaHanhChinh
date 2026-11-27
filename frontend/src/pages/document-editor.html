@@ -134,19 +134,27 @@
         <h1 class="font-headline-lg text-headline-lg text-on-surface" id="documentEditorTitle">
           Soạn văn bản A4
         </h1>
-        <p class="font-body-md text-body-md text-on-surface-variant">
+        <p class="font-body-md text-body-md text-on-surface-variant" id="documentEditorDescription">
           Soạn biên bản bàn giao, thanh lý hợp đồng trên Tiptap, lưu phiên bản và xuất DOCX/PDF.
         </p>
       </div>
-      <div class="flex items-center gap-space-xs">
-        <span
-          class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm"
-          id="documentEditorPermissionInfo"
-        >
-          <span class="material-symbols-outlined text-[14px]">description</span>
-          Quyền: đang kiểm tra
-        </span>
-      </div>
+        <div class="flex items-center gap-space-xs">
+          <span
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm"
+            id="documentEditorPermissionInfo"
+          >
+            <span class="material-symbols-outlined text-[14px]">description</span>
+            Quyền: đang kiểm tra
+          </span>
+          <button
+            class="hidden h-9 px-space-md rounded bg-primary text-on-primary hover:bg-primary-container font-label-lg text-label-lg flex items-center gap-1.5"
+            id="btnReturnFromRequestDocument"
+            type="button"
+          >
+            <span class="material-symbols-outlined text-[18px]">save</span>
+            <span>Lưu và quay lại đơn</span>
+          </button>
+        </div>
     </div>
 
     <div

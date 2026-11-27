@@ -14,6 +14,8 @@ import routerDiemDanhNhatKyQuetThePhanCa from "./src/routes/diemDanhNhatKyQuetTh
 import routerQuanLyLamThemGio from "./src/routes/quanLyLamThemGio.router.js";
 import routerQuanLyNghiPhepVaQuyPhepNam from "./src/routes/quan-ly-nghi-phep-va-quy-phep-nam.service.js";
 import routerMyProfile from "./src/routes/myProfile.router.js";
+import routerEmployeeRequests from "./src/routes/employeeRequests.router.js";
+import routerDocuments from "./src/routes/documents.router.js";
 import routerNotifications from "./src/routes/notifications.router.js";
 import routerDevices from "./src/routes/deviceSecurity.router.js";
 import routerAdminDevices from "./src/routes/adminDevices.router.js";
@@ -61,6 +63,8 @@ app.use("/organization", routerOrganization);
 app.use("/contracts", routerContracts);
 app.use("/contract-renewals", routerContractRenewals);
 app.use("/my-profile", routerMyProfile);
+app.use("/employee-requests", routerEmployeeRequests);
+app.use("/documents", routerDocuments);
 app.use("/notifications", routerNotifications);
 app.use("/attendance", routerDiemDanhNhatKyQuetThePhanCa);
 app.use("/timesheets", routerTongHopChotCong);

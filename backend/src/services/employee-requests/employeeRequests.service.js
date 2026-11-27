@@ -31,7 +31,8 @@ const VIEW_STATUSES = [
   "CANCELLED",
 ];
 const REQUEST_COLUMNS = `r.id, r.employee_id, r.department_id, r.request_type,
-  r.title, r.reason,
+  r.title, r.reason, r.document_id, r.document_title, r.document_template_code,
+  r.document_content_json, r.document_content_html,
   DATE_FORMAT(r.start_date, '%Y-%m-%d') AS start_date,
   DATE_FORMAT(r.last_working_date, '%Y-%m-%d') AS last_working_date,
   DATE_FORMAT(r.end_date, '%Y-%m-%d') AS end_date,
@@ -74,6 +75,25 @@ const parsePositiveInt = (value, field) => {
     throw fail(`${field} không hợp lệ`);
   }
   return number;
+};
+
+const normalizeRequestRow = (row) => {
+  if (!row) return row;
+  let documentContent = null;
+  if (row.document_content_json) {
+    try {
+      documentContent =
+        typeof row.document_content_json === "string"
+          ? JSON.parse(row.document_content_json)
+          : row.document_content_json;
+    } catch (error) {
+      documentContent = null;
+    }
+  }
+  return {
+    ...row,
+    document_content_json: documentContent,
+  };
 };
 
 const buildListFilters = (filters = {}) => {
@@ -149,6 +169,27 @@ export const createEmployeeRequest = async (
     required: true,
     max: 5000,
   });
+  const documentId = parsePositiveInt(payload.document_id, "Mã văn bản");
+  const documentTitle = payload.document_title
+    ? parseText(payload.document_title, "tiêu đề văn bản", { max: 255 })
+    : null;
+  const documentTemplateCode = payload.document_template_code
+    ? parseText(payload.document_template_code, "mẫu văn bản", { max: 50 }).toLowerCase()
+    : null;
+  let documentContentJson = null;
+  let documentContentHtml = null;
+  if (payload.document_content_json) {
+    documentContentJson =
+      typeof payload.document_content_json === "string"
+        ? payload.document_content_json
+        : JSON.stringify(payload.document_content_json);
+    parseText(documentContentJson, "nội dung văn bản", { max: 2000000 });
+  }
+  if (payload.document_content_html) {
+    documentContentHtml = parseText(payload.document_content_html, "nội dung văn bản", {
+      max: 2000000,
+    });
+  }
 
   let startDate;
   let lastWorkingDate = null;
@@ -204,8 +245,10 @@ export const createEmployeeRequest = async (
     const [result] = await connection.query(
       `INSERT INTO employee_requests
         (employee_id, department_id, employee_code_snapshot, full_name_snapshot, department_name_snapshot,
-         request_type, title, reason, start_date, last_working_date, end_date, status, submitted_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_DEPARTMENT', NOW())`,
+         request_type, title, reason, document_id, document_title, document_template_code,
+         document_content_json, document_content_html,
+         start_date, last_working_date, end_date, status, submitted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_DEPARTMENT', NOW())`,
       [
         employeeId,
         departmentId,
@@ -215,6 +258,11 @@ export const createEmployeeRequest = async (
         requestType,
         title,
         reason,
+        documentId,
+        documentTitle,
+        documentTemplateCode,
+        documentContentJson,
+        documentContentHtml,
         startDate,
         lastWorkingDate,
         endDate,
@@ -297,7 +345,7 @@ export const listEmployeeRequests = async (user, filters = {}) => {
     rejected: rows.filter((row) => row.status === "REJECTED").length,
   };
 
-  return { total: rows.length, summary, requests: rows };
+  return { total: rows.length, summary, requests: rows.map(normalizeRequestRow) };
 };
 
 const selectWorkflowHistory = async (executor, requestId) => {
@@ -331,7 +379,7 @@ export const getEmployeeRequestDetail = async (user, id) => {
   if (!rows.length) throw fail("Không tìm thấy đơn", 404);
 
   const timeline = await selectWorkflowHistory(db, requestId);
-  return { ...rows[0], timeline };
+  return { ...normalizeRequestRow(rows[0]), timeline };
 };
 
 export const getEmployeeRequestHistory = async (user, id) => {
